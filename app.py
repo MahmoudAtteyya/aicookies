@@ -135,8 +135,8 @@ def init_db():
         
         ("fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1",
          "https://docs.fireworks.ai/",
-         '["accounts/fireworks/models/llama-v3p1-8b-instruct","accounts/fireworks/models/mixtral-8x7b-instruct","accounts/fireworks/models/deepseek-r1-basic"]',
-         "Free tier: 10 req/sec. OpenAI-compatible. Keys start with fw_."),
+         '["accounts/fireworks/models/glm-5p2","accounts/fireworks/models/kimi-k2p7-code","accounts/fireworks/models/qwen3p7-plus","accounts/fireworks/models/deepseek-v4-pro"]',
+         "Free tier: 10 req/sec. OpenAI-compatible. Keys start with fw_. ✅ Tested working with 4 models above."),
         
         ("xai", "xAI (Grok)", "https://api.x.ai/v1",
          "https://docs.x.ai/",

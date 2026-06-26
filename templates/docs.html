@@ -89,7 +89,7 @@ print(response.choices[0].message.content)</code></pre>
 {% for slug, info in models|dictsort if info.provider == 'claude' %}
 <div class="model-card">
     <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4><p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">Uses browser cookies (not API key). Upload at <a href="/upload">/upload</a>.</p>
+    <p style="font-size:0.7rem;color:var(--text-dim);">Max context: {{ info.tokens|default('200K') }} tokens. Cookie-based auth.</p>
 </div>{% endfor %}</div>
 
 <h3>Mistral AI <span class="badge-free">FREE</span> — all ⚡ Direct</h3>
@@ -97,7 +97,7 @@ print(response.choices[0].message.content)</code></pre>
 {% for slug, info in models|dictsort if info.provider == 'mistral' %}
 <div class="model-card">
     <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4><p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">~400-800ms latency</p>
+    <p style="font-size:0.7rem;color:var(--text-dim);">Max context: {{ info.tokens|default('32K') }} tokens | ~400-800ms</p>
 </div>{% endfor %}</div>
 
 <h3>Cohere <span class="badge-free">FREE</span> — all ⚡ Direct</h3>
@@ -105,7 +105,7 @@ print(response.choices[0].message.content)</code></pre>
 {% for slug, info in models|dictsort if info.provider == 'cohere' %}
 <div class="model-card">
     <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4><p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">~400-500ms latency</p>
+    <p style="font-size:0.7rem;color:var(--text-dim);">Max context: {{ info.tokens|default('128K') }} tokens | ~400-500ms</p>
 </div>{% endfor %}</div>
 
 <h3>SambaNova <span class="badge-free">FREE</span> — ⚡ Direct</h3>
@@ -113,7 +113,7 @@ print(response.choices[0].message.content)</code></pre>
 {% for slug, info in models|dictsort if info.provider == 'sambanova' %}
 <div class="model-card">
     <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4><p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">~800ms latency</p>
+    <p style="font-size:0.7rem;color:var(--text-dim);">Max context: {{ info.tokens|default('131K') }} tokens | ~800ms</p>
 </div>{% endfor %}</div>
 
 <h3>Fireworks AI <span class="badge-prepaid">💀 PREPAID ($6/account)</span></h3>
@@ -128,7 +128,8 @@ print(response.choices[0].message.content)</code></pre>
         {% endif %}
     </h4><p>{{ info.desc }}</p>
     <p style="font-size:0.7rem;color:var(--text-dim);">
-        {% if info.style == 'reasoning' %}Shows thinking process. Use high max_tokens.{% else %}Replies directly. Fast.{% endif %}
+        Max context: {{ info.tokens|default('128K') }} tokens |
+        {% if info.style == 'reasoning' %}Shows thinking. Use high max_tokens.{% else %}Replies directly. Fast.{% endif %}
     </p>
 </div>{% endfor %}</div>
 

@@ -113,25 +113,25 @@ def login_required(f):
 # ═══════════════════════════════════════════════════════════════════════════
 
 MODELS = {
-    # Mistral
-    "mistral-small":     {"provider": "mistral", "real_model": "mistral-small-latest",     "desc": "Mistral Small — fast, efficient"},
-    "mistral-medium":    {"provider": "mistral", "real_model": "mistral-medium-latest",    "desc": "Mistral Medium — balanced"},
-    "mistral-nemo":      {"provider": "mistral", "real_model": "open-mistral-nemo",        "desc": "Open Mistral Nemo — 12B"},
-    "codestral":         {"provider": "mistral", "real_model": "codestral-latest",         "desc": "Codestral — code generation"},
-    "ministral-8b":      {"provider": "mistral", "real_model": "ministral-8b-latest",      "desc": "Ministral 8B — lightweight"},
-    # Cohere
-    "command-a":         {"provider": "cohere",  "real_model": "command-a-03-2025",        "desc": "Command A — latest flagship"},
-    "command-r7b":       {"provider": "cohere",  "real_model": "command-r7b-12-2024",      "desc": "Command R7B — fast & capable"},
-    "command-r-plus":    {"provider": "cohere",  "real_model": "command-r-plus-08-2024",   "desc": "Command R+ — most powerful"},
-    # SambaNova
-    "llama-3.3-70b":     {"provider": "sambanova", "real_model": "Meta-Llama-3.3-70B-Instruct",          "desc": "Llama 3.3 70B — powerful", "style": "direct"},
-    # Fireworks
-    "glm-5p2":           {"provider": "fireworks", "real_model": "accounts/fireworks/models/glm-5p2",          "desc": "GLM 5P2 — general reasoning", "style": "reasoning"},
-    "kimi-k2p7-code":    {"provider": "fireworks", "real_model": "accounts/fireworks/models/kimi-k2p7-code",   "desc": "Kimi K2.7 — code generation", "style": "direct"},
-    "qwen3p7-plus":      {"provider": "fireworks", "real_model": "accounts/fireworks/models/qwen3p7-plus",     "desc": "Qwen 3.7 Plus — multimodal reasoning", "style": "reasoning"},
-    "deepseek-v4-pro":   {"provider": "fireworks", "real_model": "accounts/fireworks/models/deepseek-v4-pro",  "desc": "DeepSeek V4 Pro — deep reasoning", "style": "reasoning"},
     # Claude (cookie-based — special handling)
-    "claude-sonnet":     {"provider": "claude",  "real_model": "claude-sonnet-4-6",  "desc": "Claude Sonnet 4 — Anthropic's best", "style": "direct"},
+    "claude-sonnet":     {"provider": "claude",  "real_model": "claude-sonnet-4-6",  "desc": "Claude Sonnet 4 — 200K context", "style": "direct", "tokens": 200000},
+    # Mistral
+    "mistral-small":     {"provider": "mistral", "real_model": "mistral-small-latest",     "desc": "Mistral Small — fast, efficient", "tokens": 32000},
+    "mistral-medium":    {"provider": "mistral", "real_model": "mistral-medium-latest",    "desc": "Mistral Medium — balanced", "tokens": 32000},
+    "mistral-nemo":      {"provider": "mistral", "real_model": "open-mistral-nemo",        "desc": "Open Mistral Nemo — 12B", "tokens": 128000},
+    "codestral":         {"provider": "mistral", "real_model": "codestral-latest",         "desc": "Codestral — code generation", "tokens": 256000},
+    "ministral-8b":      {"provider": "mistral", "real_model": "ministral-8b-latest",      "desc": "Ministral 8B — lightweight", "tokens": 128000},
+    # Cohere
+    "command-a":         {"provider": "cohere",  "real_model": "command-a-03-2025",        "desc": "Command A — latest flagship", "tokens": 256000},
+    "command-r7b":       {"provider": "cohere",  "real_model": "command-r7b-12-2024",      "desc": "Command R7B — fast & capable", "tokens": 128000},
+    "command-r-plus":    {"provider": "cohere",  "real_model": "command-r-plus-08-2024",   "desc": "Command R+ — most powerful", "tokens": 128000},
+    # SambaNova
+    "llama-3.3-70b":     {"provider": "sambanova", "real_model": "Meta-Llama-3.3-70B-Instruct",          "desc": "Llama 3.3 70B — powerful", "style": "direct", "tokens": 131072},
+    # Fireworks
+    "glm-5p2":           {"provider": "fireworks", "real_model": "accounts/fireworks/models/glm-5p2",          "desc": "GLM 5P2 — general reasoning", "style": "reasoning", "tokens": 131072},
+    "kimi-k2p7-code":    {"provider": "fireworks", "real_model": "accounts/fireworks/models/kimi-k2p7-code",   "desc": "Kimi K2.7 — code generation", "style": "direct", "tokens": 32768},
+    "qwen3p7-plus":      {"provider": "fireworks", "real_model": "accounts/fireworks/models/qwen3p7-plus",     "desc": "Qwen 3.7 Plus — multimodal reasoning", "style": "reasoning", "tokens": 4000},
+    "deepseek-v4-pro":   {"provider": "fireworks", "real_model": "accounts/fireworks/models/deepseek-v4-pro",  "desc": "DeepSeek V4 Pro — deep reasoning", "style": "reasoning", "tokens": 131072},
 }
 
 # ── Cookie parser ───────────────────────────────────────────────────────

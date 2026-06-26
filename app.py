@@ -236,28 +236,34 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                 url = f"{base_url}/chat/completions"
                 payload = inject_model_into_body(body, real_model, provider_slug)
             
+            # Detect streaming request
+            is_streaming = False
+            try:
+                body_data = json.loads(payload)
+                is_streaming = body_data.get("stream", False)
+            except: pass
+            
             req = urllib.request.Request(url, data=payload, method="POST")
             req.add_header("Authorization", f"Bearer {key_val}")
             req.add_header("Content-Type", "application/json")
-            req.add_header("Accept", "application/json" if "stream" not in str(body).lower() else "text/event-stream")
+            req.add_header("Accept", "text/event-stream" if is_streaming else "application/json")
             for h, v in incoming_headers.items():
                 try: req.add_header(h, v)
                 except: pass
             
             resp = urllib.request.urlopen(req, timeout=120, context=ctx)
             latency = int((time.time() - start) * 1000)
-            status = "ok"
             bump_key_usage(key_id)
-            record_proxy_request(model_slug, provider_slug, key_id, status, latency)
+            record_proxy_request(model_slug, provider_slug, key_id, "ok", latency)
             
-            # Stream response back
+            # Stream response back (works for both regular JSON and SSE)
             def generate():
                 while True:
                     chunk = resp.read(8192)
                     if not chunk: break
                     yield chunk
             return Response(stream_with_context(generate()), status=resp.status, headers={
-                "Content-Type": resp.headers.get("Content-Type", "application/json"),
+                "Content-Type": resp.headers.get("Content-Type", "text/event-stream" if is_streaming else "application/json"),
                 "X-Proxy-Provider": provider_slug,
                 "X-Proxy-Key": str(key_id),
                 "X-Proxy-Latency": str(latency),
@@ -302,12 +308,12 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             tried_keys.append({"key_id": key_id, "error": error_msg})
             continue
     
-    # All keys failed
+    # All keys failed — return clean error without exposing provider internals
     return jsonify({
-        "error": "All keys exhausted",
+        "error": "Service Unavailable",
+        "message": "All providers are currently busy. Please try again in a moment.",
         "model": model_slug,
-        "provider": provider_slug,
-        "tried_keys": tried_keys,
+        "retry_after_ms": 5000,
     }), 503
 
 def inject_model_into_body(body, real_model, provider_slug):
@@ -343,12 +349,36 @@ def check_proxy_auth():
     return None
 
 # ═══════════════════════════════════════════════════════════════════════════
-# PROXY ROUTES — /v1/{model_slug}/chat/completions
+# PROXY ROUTES
 # ═══════════════════════════════════════════════════════════════════════════
 
+@app.route("/v1/chat/completions", methods=["POST"])
+def proxy_chat_standard():
+    """OpenAI-standard endpoint — reads model from JSON body."""
+    auth_err = check_proxy_auth()
+    if auth_err: return auth_err
+    
+    body = request.get_data()
+    try:
+        data = json.loads(body)
+        model_slug = data.get("model", "")
+    except:
+        return jsonify({"error": "Invalid JSON body", "hint": "Send {\"model\":\"...\",\"messages\":[...]}"}), 400
+    
+    if not model_slug or model_slug not in MODELS:
+        return jsonify({
+            "error": f"Unknown model: '{model_slug}'",
+            "available_models": list(MODELS.keys()),
+            "hint": "Use /v1/chat/completions with \"model\" in the JSON body, or /v1/{model}/chat/completions",
+            "docs": "https://aicookies.elliaa.com/docs"
+        }), 404
+    
+    model_info = MODELS[model_slug]
+    return proxy_to_provider(model_info["provider"], model_info["real_model"], model_slug)
+
 @app.route("/v1/<model_slug>/chat/completions", methods=["POST"])
-def proxy_chat(model_slug):
-    """OpenAI-compatible proxy endpoint — routes to the best available key."""
+def proxy_chat_legacy(model_slug):
+    """Legacy endpoint — model in URL path. Kept for backward compatibility."""
     auth_err = check_proxy_auth()
     if auth_err: return auth_err
     
@@ -356,6 +386,7 @@ def proxy_chat(model_slug):
         return jsonify({
             "error": f"Unknown model: '{model_slug}'",
             "available_models": list(MODELS.keys()),
+            "hint": "Use /v1/chat/completions with \"model\" in the JSON body instead",
             "docs": "https://aicookies.elliaa.com/docs"
         }), 404
     
@@ -444,28 +475,23 @@ def docs_page():
 def docs_md():
     """Generate downloadable markdown documentation."""
     md = []
-    md.append("# AI Proxy Gateway — API Documentation\n")
-    md.append("## Endpoint\n")
-    md.append("```\nPOST https://aicookies.elliaa.com/v1/{model-slug}/chat/completions\n```\n")
-    md.append("## Authentication\n")
-    md.append("All requests require a Bearer token:\n")
-    md.append("```\nAuthorization: Bearer sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5\n```\n")
-    md.append("## Available Models\n")
+    md.append("# AI Proxy Gateway — API Documentation\n\n")
+    md.append("## Endpoint\n\n```\nPOST https://aicookies.elliaa.com/v1/chat/completions\n```\n\n")
+    md.append("## Authentication\n\nAll requests require a Bearer token:\n\n```\nAuthorization: Bearer YOUR_AICOOKIES_API_KEY\n```\n\n")
+    md.append("## Available Models\n\n")
     md.append("| Model | Provider | Style |\n|-------|----------|-------|\n")
     for slug, info in sorted(MODELS.items()):
         style = "🧠 Reasoning" if info.get("style") == "reasoning" else "⚡ Direct"
         md.append(f"| `{slug}` | {info['provider']} | {style} |\n")
-    md.append(f"\n**Total:** {len(MODELS)} models\n")
-    md.append("\n## Response Styles\n")
-    md.append("### ⚡ Direct Response\nModels that reply immediately — just the answer. **All** Mistral, Cohere, SambaNova, and `kimi-k2p7-code`.\n")
-    md.append("### 🧠 Reasoning Response\nModels that show thinking process before answering: `glm-5p2`, `qwen3p7-plus`, `deepseek-v4-pro`.\n**Important:** set `max_tokens ≥ 500` or answer may be cut off.\n")
-    md.append("## cURL Example\n")
-    md.append("```bash\ncurl -X POST https://aicookies.elliaa.com/v1/mistral-small/chat/completions \\\n  -H \"Authorization: Bearer sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"mistral-small\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'\n```\n")
-    md.append("## Python (OpenAI SDK)\n")
-    md.append("```python\nfrom openai import OpenAI\nclient = OpenAI(base_url=\"https://aicookies.elliaa.com/v1\", api_key=\"sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5\")\nresponse = client.chat.completions.create(model=\"mistral-small\", messages=[{\"role\":\"user\",\"content\":\"Hello!\"}])\n```\n")
-    md.append("## Smart Key Rotation\n")
-    md.append("- 429 → rotate to next key (free providers recover)\n- 402 → Fireworks: 💀 dead permanently | Others: temporarily disabled\n- Keys ordered by usage count (least-used first)\n")
-    md.append(f"\n*Generated from https://aicookies.elliaa.com/docs*\n")
+    md.append(f"\n**Total:** {len(MODELS)} models\n\n")
+    md.append("## Response Styles\n\n")
+    md.append("### ⚡ Direct Response\nModels that reply immediately — just the answer. **All** Mistral, Cohere, SambaNova, and `kimi-k2p7-code`.\n\n")
+    md.append("### 🧠 Reasoning Response\nModels that show thinking process before answering: `glm-5p2`, `qwen3p7-plus`, `deepseek-v4-pro`.\n**Important:** set `max_tokens ≥ 500` or answer may be cut off.\n\n")
+    md.append("## Streaming (SSE)\n\nAdd `\"stream\": true` to the request body for real-time token streaming:\n\n```bash\ncurl -X POST https://aicookies.elliaa.com/v1/chat/completions \\\n  -H \"Authorization: Bearer YOUR_AICOOKIES_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"mistral-small\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'\n```\n\n")
+    md.append("## cURL Example\n\n```bash\ncurl -X POST https://aicookies.elliaa.com/v1/chat/completions \\\n  -H \"Authorization: Bearer YOUR_AICOOKIES_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"mistral-small\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'\n```\n\n")
+    md.append("## Python (OpenAI SDK)\n\n```python\nfrom openai import OpenAI\nclient = OpenAI(base_url=\"https://aicookies.elliaa.com/v1\", api_key=\"YOUR_AICOOKIES_API_KEY\")\nresponse = client.chat.completions.create(model=\"mistral-small\", messages=[{\"role\":\"user\",\"content\":\"Hello!\"}])\n```\n\n")
+    md.append("## Smart Key Rotation\n\n- 429/402 → rotate to next key (free providers recover; Fireworks 💀 dies)\n- All keys busy → 503 with `retry_after_ms: 5000`\n- Keys ordered by usage count (least-used first)\n\n")
+    md.append(f"*Generated from https://aicookies.elliaa.com/docs*\n")
     return "".join(md), 200, {"Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": "attachment; filename=aicookies-api-docs.md"}
 
 # ── Cookie routes ───────────────────────────────────────────────────────

@@ -31,16 +31,16 @@
 </div>
 
 <h2>🚀 Quick Start</h2>
-<p>All endpoints are <strong>OpenAI-compatible</strong>. Replace your <code>base_url</code> and use any model slug below.</p>
-<div class="endpoint-box">POST https://aicookies.elliaa.com/v1/<strong>{model-slug}</strong>/chat/completions</div>
+<p>Fully <strong>OpenAI-compatible</strong>. Use the standard endpoint + your API key + any model from the list below.</p>
+<div class="endpoint-box">POST https://aicookies.elliaa.com/v1/chat/completions</div>
 
 <h2>🔐 Authentication</h2>
-<p>All proxy endpoints require a <strong>Bearer token</strong> in the Authorization header:</p>
-<pre><code>Authorization: Bearer sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5</code></pre>
+<p>All requests require a Bearer token:</p>
+<pre><code>Authorization: Bearer YOUR_AICOOKIES_API_KEY</code></pre>
 
 <h3>cURL</h3>
-<pre><code>curl -X POST https://aicookies.elliaa.com/v1/mistral-small/chat/completions \
-  -H "Authorization: Bearer sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5" \
+<pre><code>curl -X POST https://aicookies.elliaa.com/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_AICOOKIES_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"mistral-small","messages":[{"role":"user","content":"Hello!"}]}'</code></pre>
 
@@ -48,7 +48,7 @@
 <pre><code>from openai import OpenAI
 client = OpenAI(
     base_url="https://aicookies.elliaa.com/v1",
-    api_key="sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5"
+    api_key="YOUR_AICOOKIES_API_KEY"
 )
 response = client.chat.completions.create(
     model="mistral-small",
@@ -56,21 +56,28 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)</code></pre>
 
 <h3>Node.js</h3>
-<pre><code>const res = await fetch("https://aicookies.elliaa.com/v1/mistral-small/chat/completions", {
+<pre><code>const res = await fetch("https://aicookies.elliaa.com/v1/chat/completions", {
   method:"POST",
   headers: {
     "Content-Type":"application/json",
-    "Authorization":"Bearer sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5"
+    "Authorization":"Bearer YOUR_AICOOKIES_API_KEY"
   },
   body: JSON.stringify({model:"mistral-small", messages:[{role:"user",content:"Hello!"}]})
 });</code></pre>
+
+<h3>Streaming (SSE)</h3>
+<p>Add <code>"stream": true</code> to the request body for real-time token-by-token streaming:</p>
+<pre><code>curl -X POST https://aicookies.elliaa.com/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_AICOOKIES_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"mistral-small","stream":true,"messages":[{"role":"user","content":"Hello!"}]}'</code></pre>
 
 <!-- ═══════════════════════════════════════════ -->
 <h2>📋 Available Models <span style="font-size:0.7rem;color:var(--text-dim);">(13 models — all tested)</span></h2>
 
 <div style="margin-bottom:1rem;">
-    <span class="badge-direct">⚡ Direct</span> = replies immediately, no thinking output |
-    <span class="badge-reasoning">🧠 Reasoning</span> = shows thought process before answering |
+    <span class="badge-direct">⚡ Direct</span> = replies immediately |
+    <span class="badge-reasoning">🧠 Reasoning</span> = shows thinking first (use <code>max_tokens ≥ 500</code>) |
     <span class="badge-free">🔄 FREE</span> = recovers after rate limit |
     <span class="badge-prepaid">💀 PREPAID</span> = dies permanently when $0
 </div>
@@ -80,7 +87,6 @@ print(response.choices[0].message.content)</code></pre>
 {% for slug, info in models|dictsort if info.provider == 'mistral' %}
 <div class="model-card">
     <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4><p>{{ info.desc }}</p>
-    <div class="ep">POST /v1/{{ slug }}/chat/completions</div>
     <p style="font-size:0.7rem;color:var(--text-dim);">~400-800ms latency</p>
 </div>{% endfor %}</div>
 
@@ -89,7 +95,6 @@ print(response.choices[0].message.content)</code></pre>
 {% for slug, info in models|dictsort if info.provider == 'cohere' %}
 <div class="model-card">
     <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4><p>{{ info.desc }}</p>
-    <div class="ep">POST /v1/{{ slug }}/chat/completions</div>
     <p style="font-size:0.7rem;color:var(--text-dim);">~400-500ms latency</p>
 </div>{% endfor %}</div>
 
@@ -98,7 +103,6 @@ print(response.choices[0].message.content)</code></pre>
 {% for slug, info in models|dictsort if info.provider == 'sambanova' %}
 <div class="model-card">
     <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4><p>{{ info.desc }}</p>
-    <div class="ep">POST /v1/{{ slug }}/chat/completions</div>
     <p style="font-size:0.7rem;color:var(--text-dim);">~800ms latency</p>
 </div>{% endfor %}</div>
 
@@ -113,43 +117,35 @@ print(response.choices[0].message.content)</code></pre>
         <span class="badge-direct">⚡ Direct</span>
         {% endif %}
     </h4><p>{{ info.desc }}</p>
-    <div class="ep">POST /v1/{{ slug }}/chat/completions</div>
     <p style="font-size:0.7rem;color:var(--text-dim);">
         {% if info.style == 'reasoning' %}Shows thinking process. Use high max_tokens.{% else %}Replies directly. Fast.{% endif %}
     </p>
 </div>{% endfor %}</div>
 
 <!-- ═══════════════════════════════════════════ -->
-<h2>🧠 Response Styles Explained</h2>
+<h2>🧠 Response Styles</h2>
 
 <h3>⚡ Direct Response</h3>
-<p>Models that reply immediately — just the answer, no thinking process visible.</p>
 <pre><code># Request
 curl ... -d '{"messages":[{"role":"user","content":"Say hello in Arabic"}]}'
-
 # Response — just the answer
 {"choices":[{"message":{"content":"مرحباً!"}}]}</code></pre>
 <p><strong>All</strong> Mistral, Cohere, SambaNova, and <code>kimi-k2p7-code</code> are direct.</p>
 
 <h3>🧠 Reasoning Response</h3>
-<p>Models that show their thinking process before answering. <strong>Important:</strong> set <code>max_tokens</code> high enough (≥200) or the answer may be cut off.</p>
 <pre><code># Request — note higher max_tokens
 curl ... -d '{"model":"glm-5p2","max_tokens":500,
   "messages":[{"role":"user","content":"Explain quantum computing"}]}'
-
 # Response — thinking first, then answer
-{"choices":[{"message":{"content":"1. Analyze: quantum computing uses qubits...
-2. Key concepts: superposition, entanglement...
-3. Answer: Quantum computing is..."}}]}</code></pre>
+{"choices":[{"message":{"content":"1. Analyze: quantum computing uses qubits..."}}]}</code></pre>
 <p><strong>Reasoning models:</strong> <code>glm-5p2</code>, <code>qwen3p7-plus</code>, <code>deepseek-v4-pro</code></p>
 
 <!-- ═══════════════════════════════════════════ -->
 <h2>🔄 Smart Key Rotation</h2>
 <ol>
     <li>Request → least-used active key → real provider API</li>
-    <li><strong>429 Rate Limit</strong> → rotate to next key (free providers recover)</li>
-    <li><strong>402 Payment Required</strong> → Fireworks: 💀 DEAD permanently</li>
-    <li><strong>401/403 Auth Error</strong> → disabled after 10 consecutive errors</li>
+    <li><strong>429/402</strong> → rotate to next key (free providers recover; Fireworks dies permanently)</li>
+    <li><strong>All keys busy</strong> → returns <code>503 Service Unavailable</code> with <code>retry_after_ms: 5000</code></li>
     <li>Response includes <code>X-Proxy-Provider</code>, <code>X-Proxy-Key</code>, <code>X-Proxy-Latency</code> headers</li>
 </ol>
 
@@ -158,30 +154,16 @@ curl ... -d '{"model":"glm-5p2","max_tokens":500,
 <pre><code>from langchain_openai import ChatOpenAI
 llm = ChatOpenAI(
     base_url="https://aicookies.elliaa.com/v1",
-    api_key="sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5",
+    api_key="YOUR_AICOOKIES_API_KEY",
     model="mistral-small"
 )</code></pre>
 
 <h3>Open WebUI / LibreChat</h3>
 <pre><code>API Base: https://aicookies.elliaa.com/v1
-API Key: sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5
+API Key: YOUR_AICOOKIES_API_KEY
 Models: mistral-small, command-a, llama-3.3-70b, glm-5p2, deepseek-v4-pro, ...</code></pre>
-
-<h3>Any OpenAI-compatible tool</h3>
-<pre><code>base_url = "https://aicookies.elliaa.com/v1"
-api_key = "sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5"</code></pre>
 
 <h2>📊 Monitoring</h2>
 <div class="endpoint-box">GET https://aicookies.elliaa.com/v1/models</div>
-<div class="endpoint-box">GET https://aicookies.elliaa.com/v1/{model}</div>
 <p>Check the <a href="/">dashboard</a> for key status and dead key counts.</p>
-
-<h2>💡 Tips</h2>
-<ul>
-    <li>Add more keys per provider → higher throughput</li>
-    <li>Fireworks accounts: ~$6 each. When depleted → 💀 dead.</li>
-    <li>Free providers recover after rate limit window resets.</li>
-    <li>Streaming: add <code>"stream": true</code> to request body.</li>
-    <li>Reasoning models: use <code>max_tokens ≥ 500</code> to see full answer after thinking.</li>
-</ul>
 {% endblock %}

@@ -10,6 +10,7 @@
     h3 { margin-top: 1.5rem; color: var(--accent); }
     .badge-free { background: #1a3a2a; color: #7ee787; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; }
     .badge-prepaid { background: #3a2e1a; color: #d2991d; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; }
+    .badge-cookie { background: #2a1a3a; color: #d2a8ff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; }
     .badge-direct { background: #1a3a2a; color: #7ee787; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.7rem; }
     .badge-reasoning { background: #3a1a2a; color: #f0883e; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.7rem; }
     .endpoint-box { background: var(--bg-card); border: 1px solid var(--accent); border-radius: 8px; padding: 0.75rem 1rem; margin: 0.5rem 0; font-family: monospace; font-size: 0.85rem; }
@@ -79,8 +80,17 @@ print(response.choices[0].message.content)</code></pre>
     <span class="badge-direct">⚡ Direct</span> = replies immediately |
     <span class="badge-reasoning">🧠 Reasoning</span> = shows thinking first (use <code>max_tokens ≥ 500</code>) |
     <span class="badge-free">🔄 FREE</span> = recovers after rate limit |
-    <span class="badge-prepaid">💀 PREPAID</span> = dies permanently when $0
+    <span class="badge-prepaid">💀 PREPAID</span> = dies permanently when $0 |
+    <span class="badge-cookie">🍪 Cookie</span> = uses browser session, upload via dashboard
 </div>
+
+<h3>🤖 Claude <span class="badge-cookie">🍪 Cookie-based</span></h3>
+<div class="model-grid">
+{% for slug, info in models|dictsort if info.provider == 'claude' %}
+<div class="model-card">
+    <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4><p>{{ info.desc }}</p>
+    <p style="font-size:0.7rem;color:var(--text-dim);">Uses browser cookies (not API key). Upload at <a href="/upload">/upload</a>.</p>
+</div>{% endfor %}</div>
 
 <h3>Mistral AI <span class="badge-free">FREE</span> — all ⚡ Direct</h3>
 <div class="model-grid">
@@ -139,6 +149,23 @@ curl ... -d '{"model":"glm-5p2","max_tokens":500,
 # Response — thinking first, then answer
 {"choices":[{"message":{"content":"1. Analyze: quantum computing uses qubits..."}}]}</code></pre>
 <p><strong>Reasoning models:</strong> <code>glm-5p2</code>, <code>qwen3p7-plus</code>, <code>deepseek-v4-pro</code></p>
+
+<h3>🍪 Claude Response (Cookie-based)</h3>
+<p>Claude uses browser cookies instead of API keys. Its response format differs slightly:</p>
+<pre><code># Non-streaming response — standard OpenAI format
+{
+  "model": "claude-sonnet-4-6",
+  "choices": [{"message": {"content": "مرحباً بك! 😊"}, "finish_reason": "stop_sequence"}]
+}
+
+# Streaming response — raw Claude SSE passthrough
+event: completion
+data: {"completion":" مرحباً","stop_reason":null}
+event: completion
+data: {"completion":" بك! كيف حالك؟","stop_reason":null}
+event: completion
+data: {"completion":"","stop_reason":"stop_sequence"}</code></pre>
+<p><strong>Rate limits:</strong> Claude uses session-based limits (per 5 hours / 7 days). The proxy automatically rotates between uploaded cookie sets when one hits the limit.</p>
 
 <!-- ═══════════════════════════════════════════ -->
 <h2>🔄 Smart Key Rotation</h2>

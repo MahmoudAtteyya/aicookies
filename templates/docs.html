@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}API Docs — AI Proxy Gateway{% endblock %}
+{% block content %}
+
+<style>
+    pre { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+    code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; background: var(--bg-input); padding: 0.1rem 0.4rem; border-radius: 4px; }
+    pre code { background: none; padding: 0; }
+    h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-top: 2rem; }
+    h3 { margin-top: 1.5rem; color: var(--accent); }
+    .badge-free { background: #1a3a2a; color: #7ee787; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; }
+    .badge-prepaid { background: #3a2e1a; color: #d2991d; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; }
+    .endpoint-box { background: var(--bg-card); border: 1px solid var(--accent); border-radius: 8px; padding: 0.75rem 1rem; margin: 0.5rem 0; font-family: monospace; font-size: 0.85rem; }
+    .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+    .model-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+    .model-card h4 { margin: 0 0 0.25rem 0; color: var(--accent); }
+    .model-card p { color: var(--text-dim); font-size: 0.8rem; margin: 0.25rem 0; }
+    .model-card .ep { font-family: monospace; font-size: 0.7rem; background: #0d1117; padding: 0.3rem 0.5rem; border-radius: 4px; margin: 0.5rem 0; word-break: break-all; }
+</style>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <h1 style="margin:0;">📚 API Documentation</h1>
+    <a href="/" class="btn">← Dashboard</a>
+</div>
+
+<h2>🚀 Quick Start</h2>
+<p>All endpoints are <strong>OpenAI-compatible</strong>. Replace your <code>base_url</code> and use any model slug below.</p>
+<div class="endpoint-box">POST https://aicookies.elliaa.com/v1/<strong>{model-slug}</strong>/chat/completions</div>
+
+<h3>cURL</h3>
+<pre><code>curl -X POST https://aicookies.elliaa.com/v1/mistral-small/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"mistral-small","messages":[{"role":"user","content":"Hello!"}]}'</code></pre>
+
+<h3>Python (OpenAI SDK)</h3>
+<pre><code>from openai import OpenAI
+client = OpenAI(base_url="https://aicookies.elliaa.com/v1", api_key="x")
+response = client.chat.completions.create(
+    model="mistral-small",
+    messages=[{"role":"user","content":"Hello!"}])
+print(response.choices[0].message.content)</code></pre>
+
+<h3>Node.js / TypeScript</h3>
+<pre><code>const res = await fetch("https://aicookies.elliaa.com/v1/mistral-small/chat/completions", {
+  method:"POST", headers:{"Content-Type":"application/json"},
+  body: JSON.stringify({model:"mistral-small", messages:[{role:"user",content:"Hello!"}]})
+});
+console.log((await res.json()).choices[0].message.content);</code></pre>
+
+<h2>📋 Available Models</h2>
+<p><span class="badge-free">🔄 FREE</span> = recovers after rate limit | <span class="badge-prepaid">💀 PREPAID</span> = dies permanently when $0</p>
+
+<h3>Mistral AI <span class="badge-free">FREE</span></h3>
+<div class="model-grid">
+{% for slug, info in models|dictsort if info.provider == 'mistral' %}
+<div class="model-card">
+    <h4>{{ slug }}</h4><p>{{ info.desc }}</p>
+    <div class="ep">POST /v1/{{ slug }}/chat/completions</div>
+</div>{% endfor %}</div>
+
+<h3>Cohere <span class="badge-free">FREE</span></h3>
+<div class="model-grid">
+{% for slug, info in models|dictsort if info.provider == 'cohere' %}
+<div class="model-card">
+    <h4>{{ slug }}</h4><p>{{ info.desc }}</p>
+    <div class="ep">POST /v1/{{ slug }}/chat/completions</div>
+</div>{% endfor %}</div>
+
+<h3>SambaNova <span class="badge-free">FREE</span></h3>
+<div class="model-grid">
+{% for slug, info in models|dictsort if info.provider == 'sambanova' %}
+<div class="model-card">
+    <h4>{{ slug }}</h4><p>{{ info.desc }}</p>
+    <div class="ep">POST /v1/{{ slug }}/chat/completions</div>
+</div>{% endfor %}</div>
+
+<h3>Fireworks AI <span class="badge-prepaid">💀 PREPAID ($6/account)</span></h3>
+<div class="model-grid">
+{% for slug, info in models|dictsort if info.provider == 'fireworks' %}
+<div class="model-card">
+    <h4>{{ slug }}</h4><p>{{ info.desc }}</p>
+    <div class="ep">POST /v1/{{ slug }}/chat/completions</div>
+</div>{% endfor %}</div>
+
+<h2>🔄 Smart Key Rotation</h2>
+<ol>
+    <li>Request → least-used active key → real provider API</li>
+    <li><strong>429 Rate Limit</strong> → rotate to next key (free providers recover)</li>
+    <li><strong>402 Payment Required</strong> → Fireworks: 💀 DEAD permanently | Free: temporarily disabled</li>
+    <li><strong>401/403 Auth Error</strong> → disabled after 10 consecutive errors</li>
+    <li>Response includes <code>X-Proxy-Provider</code>, <code>X-Proxy-Key</code>, <code>X-Proxy-Latency</code> headers</li>
+</ol>
+
+<h2>🔌 Integration Examples</h2>
+<h3>LangChain</h3>
+<pre><code>from langchain_openai import ChatOpenAI
+llm = ChatOpenAI(base_url="https://aicookies.elliaa.com/v1", api_key="x", model="mistral-small")</code></pre>
+
+<h3>Open WebUI / LibreChat</h3>
+<pre><code>API Base: https://aicookies.elliaa.com/v1
+API Key: any-value
+Models: mistral-small, command-a, llama-3.1-8b, glm-5p2, ...</code></pre>
+
+<h3>Any OpenAI-compatible tool</h3>
+<pre><code>base_url = "https://aicookies.elliaa.com/v1"
+# No API key needed — auth handled server-side</code></pre>
+
+<h2>📊 Monitoring</h2>
+<div class="endpoint-box">GET https://aicookies.elliaa.com/v1/models</div>
+<div class="endpoint-box">GET https://aicookies.elliaa.com/v1/{model}</div>
+<p>Check the <a href="/">dashboard</a> for key status and dead key counts.</p>
+
+<h2>💡 Tips</h2>
+<ul>
+    <li>Add more keys per provider → higher throughput</li>
+    <li>Fireworks accounts: ~$6 each. When depleted → 💀 dead.</li>
+    <li>Free providers recover after rate limit window resets.</li>
+    <li>Streaming: add <code>"stream": true</code> to request body.</li>
+</ul>
+{% endblock %}

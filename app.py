@@ -74,7 +74,7 @@ def init_db():
          '["command-a-03-2025","command-r7b-12-2024","command-r-plus-08-2024"]',
          "Free trial: 1000 req/month. Uses /v2/chat endpoint."),
         ("sambanova", "SambaNova", "https://api.sambanova.ai/v1", "free",
-         '["Meta-Llama-3.1-8B-Instruct","Meta-Llama-3.3-70B-Instruct","Meta-Llama-4-Scout-17B-16E-Instruct","Qwen2.5-72B-Instruct","DeepSeek-R1-Distill-Llama-70B"]',
+         '["Meta-Llama-3.3-70B-Instruct","Meta-Llama-4-Scout-17B-16E-Instruct","Qwen2.5-72B-Instruct","DeepSeek-R1-Distill-Llama-70B"]',
          "Free tier: generous rate limits. OpenAI-compatible."),
         ("fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "prepaid",
          '["accounts/fireworks/models/glm-5p2","accounts/fireworks/models/kimi-k2p7-code","accounts/fireworks/models/qwen3p7-plus","accounts/fireworks/models/deepseek-v4-pro"]',
@@ -123,7 +123,6 @@ MODELS = {
     "command-r7b":       {"provider": "cohere",  "real_model": "command-r7b-12-2024",      "desc": "Command R7B — fast & capable"},
     "command-r-plus":    {"provider": "cohere",  "real_model": "command-r-plus-08-2024",   "desc": "Command R+ — most powerful"},
     # SambaNova
-    "llama-3.1-8b":      {"provider": "sambanova", "real_model": "Meta-Llama-3.1-8B-Instruct",           "desc": "Llama 3.1 8B — fast"},
     "llama-3.3-70b":     {"provider": "sambanova", "real_model": "Meta-Llama-3.3-70B-Instruct",          "desc": "Llama 3.3 70B — powerful"},
     "llama-4-scout":     {"provider": "sambanova", "real_model": "Meta-Llama-4-Scout-17B-16E-Instruct",  "desc": "Llama 4 Scout 17B"},
     "qwen2.5-72b":       {"provider": "sambanova", "real_model": "Qwen2.5-72B-Instruct",                 "desc": "Qwen 2.5 72B"},
@@ -214,7 +213,7 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
         return jsonify({"error": f"No active keys for provider '{provider_slug}'", "model": model_slug}), 503
     
     body = request.get_data()
-    incoming_headers = {k: v for k, v in request.headers.items() if k.lower() not in ('host', 'content-length', 'authorization')}
+    incoming_headers = {k: v for k, v in request.headers.items() if k.lower() not in ('host', 'content-length', 'authorization', 'accept-encoding')}
     
     ctx = ssl.create_default_context()
     tried_keys = []

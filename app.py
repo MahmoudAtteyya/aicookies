@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """AI Proxy Gateway — Smart model-level proxy with automatic key rotation."""
 
-import os, re, json, sqlite3, secrets, time, uuid
+import os, re, json, sqlite3, secrets, time, uuid, hashlib
 from datetime import datetime, timezone
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, Response, stream_with_context
@@ -15,7 +15,7 @@ app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 # ── Auth ──────────────────────────────────────────────────────────────────
 AUTH_USERNAME = os.environ.get("AUTH_USERNAME", "mahmoud")
 AUTH_PASSWORD_HASH = generate_password_hash(os.environ.get("AUTH_PASSWORD", "Mmm12011305"))
-PROXY_API_KEY = os.environ.get("PROXY_API_KEY", "")  # If set, required for /v1/* endpoints
+PROXY_API_KEY_HASH = os.environ.get("PROXY_API_KEY_HASH", "")  # SHA256 hash of the real key
 
 # ── Database ──────────────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "/data/cookies.db")
@@ -334,12 +334,15 @@ def inject_model_into_body(body, real_model, provider_slug):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def check_proxy_auth():
-    """If PROXY_API_KEY is set, require Bearer token on all /v1/* routes."""
-    if not PROXY_API_KEY:
-        return None  # No auth required
+    """If PROXY_API_KEY_HASH is set, require Bearer token on all /v1/* routes."""
+    if not PROXY_API_KEY_HASH:
+        return None
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or auth[7:] != PROXY_API_KEY:
+    if not auth.startswith("Bearer "):
         return jsonify({"error": "Unauthorized — valid API key required", "hint": "Use Authorization: Bearer <key>"}), 401
+    key_hash = hashlib.sha256(auth[7:].encode()).hexdigest()
+    if key_hash != PROXY_API_KEY_HASH:
+        return jsonify({"error": "Unauthorized — invalid API key"}), 401
     return None
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -378,7 +381,7 @@ def proxy_info(model_slug):
         "description": m["desc"],
         "endpoint": f"https://aicookies.elliaa.com/v1/{model_slug}/chat/completions",
         "format": "OpenAI-compatible (POST with messages array)",
-        "auth_required": bool(PROXY_API_KEY),
+        "auth_required": bool(PROXY_API_KEY_HASH),
     })
 
 @app.route("/v1/models", methods=["GET"])

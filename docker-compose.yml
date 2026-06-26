@@ -10,7 +10,7 @@ services:
     environment:
       - AUTH_USERNAME=mahmoud
       - AUTH_PASSWORD=Mmm12011305
-      - PROXY_API_KEY=sk-aicookies-proxy-key-2026
+      - PROXY_API_KEY_HASH=39ed4e7fecce75348ef79a2a2fa89dff3e1971022ae405a82d1e79d7b94215be
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
     networks:
       - dokploy-network

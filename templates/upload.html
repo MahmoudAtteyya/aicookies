@@ -2,17 +2,17 @@
 {% block title %}Upload — AI Cookies{% endblock %}
 {% block content %}
 
-<h2 style="margin-bottom:1.5rem;">⬆️ Upload Cookie File</h2>
+<h2 style="margin-bottom:1.5rem;">⬆️ Upload Claude Cookie File</h2>
 
 <div class="card">
     <form method="POST" enctype="multipart/form-data" id="upload-form">
         <div class="file-upload" id="drop-zone">
             <div class="icon">📁</div>
-            <h3>Drop your cookie file here</h3>
+            <h3>Drop your Claude cookie file here</h3>
             <p>or click to browse</p>
             <p style="margin-top:0.5rem;font-size:0.8rem;">
-                Supports Netscape HTTP Cookie format (.txt)<br>
-                Works with Claude, ChatGPT, Gemini exports
+                Netscape HTTP Cookie format (.txt)<br>
+                Export from browser extension like "cookies.txt"
             </p>
             <input type="file" name="cookie_file" id="cookie_file" accept=".txt,.text,text/plain" required>
         </div>
@@ -37,14 +37,15 @@
     </p>
     <div class="raw-preview">
 # Netscape HTTP Cookie File
-# This is a generated file!
+# Exported from browser
 
-.claude.ai	TRUE	/	TRUE	1812269996	_fbp	fb.1.17777...
-claude.ai	FALSE	/	TRUE	1808409348	anthropic-device-id	12308106-...
 .claude.ai	TRUE	/	TRUE	1784904407	sessionKey	sk-ant-sid02-...
+claude.ai	FALSE	/	TRUE	1808409348	anthropic-device-id	12308106-...
+.claude.ai	TRUE	/	TRUE	1814025349	lastActiveOrg	767566e5-...
     </div>
     <p style="margin-top:1rem;color:var(--text-dim);font-size:0.85rem;">
-        <strong>Supported platforms:</strong> The system auto-detects Claude, ChatGPT, and Gemini from cookie domains.
+        <strong>For Claude.ai:</strong> Export cookies from your browser using any "cookies.txt" extension while logged into claude.ai.
+        The system will extract sessionKey, lastActiveOrg, and Cloudflare tokens automatically.
     </p>
 </div>
 

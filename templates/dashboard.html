@@ -1,30 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — AI Cookies{% endblock %}
+{% block title %}Dashboard — AI Credentials Hub{% endblock %}
 {% block content %}
 
-<h2 style="margin-bottom:1.5rem;">📊 Cookie Dashboard</h2>
+<h2 style="margin-bottom:1.5rem;">📊 Dashboard</h2>
 
-{% set stats = namespace(claude=0, chatgpt=0, gemini=0, other=0) %}
-{% for f in files %}
-    {% if f.platform == 'claude' %}{% set stats.claude = stats.claude + 1 %}
-    {% elif f.platform == 'chatgpt' %}{% set stats.chatgpt = stats.chatgpt + 1 %}
-    {% elif f.platform == 'gemini' %}{% set stats.gemini = stats.gemini + 1 %}
-    {% else %}{% set stats.other = stats.other + 1 %}
+<!-- ═══════════ API PROVIDERS ═══════════ -->
+<h3 style="margin-bottom:1rem;">🔑 API Keys</h3>
+<div class="stats">
+    {% for p in providers %}
+    <div class="stat-card" style="cursor:pointer;" onclick="location.href='/keys'">
+        <div class="number">{{ p.key_count }}</div>
+        <div class="label">{{ p.name }}</div>
+    </div>
+    {% endfor %}
+    {% if not providers %}
+    <div class="stat-card">
+        <div class="number">0</div>
+        <div class="label">No providers loaded</div>
+    </div>
     {% endif %}
-{% endfor %}
+</div>
+
+<a href="/keys" class="btn btn-primary" style="margin-bottom:2rem;">🔑 Manage API Keys</a>
+
+<!-- ═══════════ COOKIES (Claude-focused) ═══════════ -->
+<h3 style="margin-bottom:1rem;">🤖 Claude Cookies</h3>
 
 <div class="stats">
     <div class="stat-card">
-        <div class="number">{{ stats.claude }}</div>
-        <div class="label">🤖 Claude Sets</div>
-    </div>
-    <div class="stat-card">
-        <div class="number">{{ stats.chatgpt }}</div>
-        <div class="label">🧠 ChatGPT Sets</div>
-    </div>
-    <div class="stat-card">
-        <div class="number">{{ stats.gemini }}</div>
-        <div class="label">💎 Gemini Sets</div>
+        <div class="number">{{ claude_count }}</div>
+        <div class="label">🤖 Claude Cookie Sets</div>
     </div>
     <div class="stat-card">
         <div class="number">{{ files|length }}</div>
@@ -36,34 +41,25 @@
 <div class="empty-state">
     <div class="icon">📭</div>
     <h3>No cookies uploaded yet</h3>
-    <p style="margin-bottom:1.5rem;">Upload your browser cookie files to get started</p>
-    <a href="/upload" class="btn btn-primary">⬆️ Upload Cookies</a>
+    <p style="margin-bottom:1.5rem;">Upload your Claude browser cookie file to get started</p>
+    <a href="/upload" class="btn btn-primary">⬆️ Upload Claude Cookies</a>
 </div>
 {% else %}
-
 <div class="card">
     <table>
         <thead>
-            <tr>
-                <th>Platform</th>
-                <th>Filename</th>
-                <th>Cookies</th>
-                <th>Uploaded</th>
-                <th>Actions</th>
-            </tr>
+            <tr><th>Platform</th><th>Filename</th><th>Cookies</th><th>Uploaded</th><th>Actions</th></tr>
         </thead>
         <tbody>
         {% for f in files %}
             <tr>
-                <td>
-                    <span class="badge badge-{{ f.platform }}">{{ f.platform }}</span>
-                </td>
+                <td><span class="badge badge-{{ f.platform }}">{{ f.platform }}</span></td>
                 <td>{{ f.filename }}</td>
                 <td>{{ f.cookie_count }}</td>
                 <td>{{ f.uploaded_at[:16]|replace('T', ' ') }}</td>
                 <td>
                     <a href="/cookies/{{ f.id }}" class="btn" style="padding:0.3rem 0.75rem;font-size:0.8rem;">🔍 View</a>
-                    <form method="POST" action="/delete/{{ f.id }}" style="display:inline;" onsubmit="return confirm('Delete this cookie set?')">
+                    <form method="POST" action="/delete-cookie/{{ f.id }}" style="display:inline;" onsubmit="return confirm('Delete this cookie set?')">
                         <button class="btn btn-danger" style="padding:0.3rem 0.75rem;font-size:0.8rem;">🗑️</button>
                     </form>
                 </td>
@@ -72,7 +68,10 @@
         </tbody>
     </table>
 </div>
-
 {% endif %}
+
+<div style="margin-top:1.5rem;">
+    <a href="/upload" class="btn">⬆️ Upload More Cookies</a>
+</div>
 
 {% endblock %}

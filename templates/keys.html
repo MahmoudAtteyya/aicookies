@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}API Keys — AI Credentials Hub{% endblock %}
+{% block content %}
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+    <h2>🔑 API Keys Manager</h2>
+    <a href="/" class="btn">← Dashboard</a>
+</div>
+
+<!-- ═══════════ ADD KEY FORM ═══════════ -->
+<div class="card" style="margin-bottom:2rem;">
+    <h3 style="margin-bottom:1rem;">➕ Add API Key</h3>
+    <form method="POST">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div class="form-group">
+                <label for="provider_id">Provider</label>
+                <select id="provider_id" name="provider_id" required>
+                    <option value="">-- Select provider --</option>
+                    {% for p in providers %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="label">Label (optional)</label>
+                <input type="text" id="label" name="label" placeholder="e.g. Account 1, Free Tier">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="key_value">API Key</label>
+            <input type="password" id="key_value" name="key_value" 
+                   placeholder="sk-or-v1-... or AIza... or gsk_..." required
+                   style="font-family:monospace;">
+        </div>
+        <button type="submit" class="btn btn-primary">➕ Add Key</button>
+    </form>
+</div>
+
+<!-- ═══════════ PROVIDER INFO ═══════════ -->
+<div class="card" style="margin-bottom:2rem;">
+    <h3 style="margin-bottom:1rem;">📋 Supported Providers & Free Models</h3>
+    {% for p in providers %}
+    <div style="margin-bottom:1.25rem;padding-bottom:1.25rem;border-bottom:1px solid var(--border);">
+        <strong style="color:var(--accent);font-size:1.1rem;">{{ p.name }}</strong>
+        {% if p.api_docs_url %}
+        <a href="{{ p.api_docs_url }}" target="_blank" style="color:var(--blue);margin-left:0.5rem;font-size:0.85rem;">docs ↗</a>
+        {% endif %}
+        <p style="color:var(--text-dim);font-size:0.85rem;margin:0.3rem 0;">{{ p.description }}</p>
+        <div style="margin-top:0.5rem;">
+            {% for m in p.free_models_parsed %}
+            <code style="background:var(--bg-input);padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;margin:0.15rem;display:inline-block;">{{ m }}</code>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- ═══════════ STORED KEYS ═══════════ -->
+<h3 style="margin-bottom:1rem;">🗄️ Stored Keys ({{ keys|length }})</h3>
+
+{% if not keys %}
+<div class="empty-state">
+    <div class="icon">🔒</div>
+    <h3>No API keys stored yet</h3>
+    <p>Add your first API key using the form above</p>
+</div>
+{% else %}
+<div class="card">
+    <table>
+        <thead>
+            <tr><th>Provider</th><th>Label</th><th>Key</th><th>Used</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+        {% for k in keys %}
+            <tr>
+                <td><strong>{{ k.provider_name }}</strong></td>
+                <td>{{ k.label or '—' }}</td>
+                <td>
+                    <code style="font-size:0.75rem;background:var(--bg-input);padding:0.15rem 0.4rem;border-radius:4px;">
+                        {{ k.key_value[:12] }}...{{ k.key_value[-4:] }}
+                    </code>
+                </td>
+                <td>{{ k.usage_count }}×</td>
+                <td>
+                    {% if k.is_active %}
+                    <span style="color:var(--green);">✅ Active</span>
+                    {% else %}
+                    <span style="color:var(--red);">🚫 Paused</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <form method="POST" action="/toggle-key/{{ k.id }}" style="display:inline;">
+                        <button class="btn" style="padding:0.25rem 0.6rem;font-size:0.75rem;">
+                            {{ '⏸ Pause' if k.is_active else '▶ Activate' }}
+                        </button>
+                    </form>
+                    <form method="POST" action="/delete-key/{{ k.id }}" style="display:inline;" 
+                          onsubmit="return confirm('Delete this API key?')">
+                        <button class="btn btn-danger" style="padding:0.25rem 0.6rem;font-size:0.75rem;">🗑️</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% endblock %}

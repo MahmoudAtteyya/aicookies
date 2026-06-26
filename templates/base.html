@@ -223,10 +223,11 @@
 <body>
     {% if session.logged_in %}
     <nav>
-        <a href="/" class="brand">🍪 AI Cookies</a>
+        <a href="/" class="brand">🔐 Credentials Hub</a>
         <div class="links">
             <a href="/">📊 Dashboard</a>
-            <a href="/upload">⬆️ Upload</a>
+            <a href="/keys">🔑 API Keys</a>
+            <a href="/upload">⬆️ Upload Cookies</a>
             <span style="color: var(--text-dim)">👤 {{ session.username }}</span>
             <a href="/logout">🚪 Logout</a>
         </div>

@@ -325,15 +325,76 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
     }), 503
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CLAUDE PROXY — cookie-based, no API key needed
+# CLAUDE PROXY — Smart Token Rotation & State Management
 # ═══════════════════════════════════════════════════════════════════════════
 
+import threading
+
+# In-memory state for Claude cookie sessions (survives between requests, lost on restart)
+_claude_token_lock = threading.RLock()
+_claude_token_state = {}  # cookie_file_id → {usage, cooldown_until, dead, last_error}
+
+COOLDOWN_SECONDS = 300  # 5 minutes cooldown after rate limit
+
+def _get_token_state(cookie_id):
+    """Get or create state entry for a cookie token."""
+    with _claude_token_lock:
+        if cookie_id not in _claude_token_state:
+            _claude_token_state[cookie_id] = {
+                "usage": 0,
+                "cooldown_until": 0,
+                "dead": False,
+                "last_error": None,
+            }
+        return _claude_token_state[cookie_id]
+
+def _mark_token_used(cookie_id):
+    with _claude_token_lock:
+        state = _get_token_state(cookie_id)
+        state["usage"] += 1
+
+def _mark_token_cooldown(cookie_id, reason=""):
+    with _claude_token_lock:
+        state = _get_token_state(cookie_id)
+        state["cooldown_until"] = time.time() + COOLDOWN_SECONDS
+        state["last_error"] = reason
+
+def _mark_token_dead(cookie_id, reason=""):
+    with _claude_token_lock:
+        state = _get_token_state(cookie_id)
+        state["dead"] = True
+        state["last_error"] = reason
+    # Also persist to DB
+    try:
+        conn = get_db()
+        conn.execute("UPDATE cookie_files SET raw_content = 'DEAD:' || raw_content WHERE id = ?", (cookie_id,))
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
+def _get_available_tokens(cookie_sets):
+    """Filter and sort cookie sets: skip dead, skip cooldown, sort by usage (least first)."""
+    now = time.time()
+    available = []
+    with _claude_token_lock:
+        for cs in cookie_sets:
+            state = _get_token_state(cs["id"])
+            if state["dead"]:
+                continue
+            if state["cooldown_until"] > now:
+                continue
+            available.append((state["usage"], cs))
+    available.sort(key=lambda x: x[0])  # Least-used first
+    return [cs for _, cs in available]
+
 def get_claude_cookie_sets():
-    """Get all Claude cookie files as 'keys' for rotation."""
+    """Get all Claude cookie files from DB, excluding dead ones."""
     conn = get_db()
     rows = conn.execute("""
         SELECT id, raw_content, filename, uploaded_at FROM cookie_files
-        WHERE platform = 'claude' ORDER BY uploaded_at DESC
+        WHERE platform = 'claude' AND raw_content NOT LIKE 'DEAD:%'
+        ORDER BY uploaded_at DESC
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -360,13 +421,12 @@ def extract_claude_cookies(cookie_file):
 def proxy_to_claude(real_model, model_slug):
     """Forward request to Claude.ai web API using stored browser cookies.
     
-    Claude's web API takes a plain-text prompt string, NOT an OpenAI messages array.
-    This function converts OpenAI-format messages into a natural prompt for Claude.
-    
-    Handled automatically:
-    - System prompt → prepended as context with <system> tags
-    - Multi-turn history → formatted as conversation transcript
-    - Alternating roles → validated and corrected (skips invalid sequences)
+    Smart rotation features:
+    - Least-Used first (distributes load evenly)
+    - Cooldown timer after 429 (5 min, auto-recovery)
+    - Dead token detection on 401/403 (permanent removal)
+    - Seamless failover: retries next token on failure within same request
+    - Thread-safe with RLock for concurrent requests
     """
     cookie_sets = get_claude_cookie_sets()
     if not cookie_sets:
@@ -381,76 +441,67 @@ def proxy_to_claude(real_model, model_slug):
         return jsonify({"error": "Invalid JSON body"}), 400
     
     if not messages:
-        return jsonify({"error": "messages array is required", "hint": "Send at least one user message"}), 400
+        return jsonify({"error": "messages array is required"}), 400
     
     # ── Build prompt from OpenAI-format messages ──
     prompt_parts = []
-    
-    # Extract system prompt (Claude web API doesn't have a system param)
     system_msgs = [m for m in messages if m.get("role") == "system"]
     if system_msgs:
         system_text = "\n".join(m.get("content", "") for m in system_msgs)
         prompt_parts.append(f"<system>\n{system_text}\n</system>")
     
-    # Build conversation transcript from remaining messages
     for m in messages:
         role = m.get("role", "user")
         content = m.get("content", "")
-        
-        # Skip system messages (already handled)
-        if role == "system":
-            continue
-        
-        # Claude requires: user, assistant alternating starting with user
-        # Map: user → Human, assistant → Assistant
-        if role == "user":
-            prompt_parts.append(f"Human: {content}")
-        elif role == "assistant":
-            prompt_parts.append(f"Assistant: {content}")
-        else:
-            prompt_parts.append(f"{role}: {content}")
+        if role == "system": continue
+        if role == "user": prompt_parts.append(f"Human: {content}")
+        elif role == "assistant": prompt_parts.append(f"Assistant: {content}")
+        else: prompt_parts.append(f"{role}: {content}")
     
-    # Ensure the last message is from user (Claude requirement)
-    # If the last role was assistant, Claude won't respond — add a dummy user prompt
     last_role = messages[-1].get("role") if messages else None
     if last_role != "user":
-        return jsonify({
-            "error": "Bad Request",
-            "message": "Claude requires the last message to be from 'user'. The messages array must end with a user message.",
-            "hint": "Ensure messages alternate: user → assistant → user",
-            "last_role": last_role,
-        }), 400
+        return jsonify({"error": "Bad Request", "message": "Claude requires the last message to be from 'user'.", "last_role": last_role}), 400
     
-    # Claude.ai web UI prepends "Assistant: " automatically, so we send just the prompt
     prompt_text = "\n\n".join(prompt_parts)
-    
     ctx = ssl.create_default_context()
     
-    for cookie_set in cookie_sets:
+    # ── Smart rotation: get available tokens sorted by least-used ──
+    available = _get_available_tokens(cookie_sets)
+    if not available:
+        # Check if ALL are in cooldown
+        with _claude_token_lock:
+            on_cooldown = sum(1 for cs in cookie_sets if _get_token_state(cs["id"])["cooldown_until"] > time.time())
+            dead_count = sum(1 for cs in cookie_sets if _get_token_state(cs["id"])["dead"])
+        return jsonify({
+            "error": "Service Unavailable",
+            "message": "All Claude sessions are busy or expired.",
+            "details": f"{len(cookie_sets)} total: {dead_count} dead, {on_cooldown} cooling down",
+            "retry_after_ms": COOLDOWN_SECONDS * 1000,
+            "model": model_slug,
+        }), 503
+    
+    tried = []
+    
+    for cookie_set in available:
         cookies = extract_claude_cookies(cookie_set)
         cookie_header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
         
-        # Find org UUID
         org_uuid = None
         for c in cookies:
             if c["name"] == "lastActiveOrg":
                 org_uuid = c["value"]
                 break
-        
         if not org_uuid:
-            continue  # Skip incomplete cookie sets
+            continue
         
         start = time.time()
         
         try:
             # Step 1: Create conversation
             conv_data = json.dumps({
-                "name": "API Request",
-                "prompt": "",
-                "timezone": "Africa/Cairo",
-                "model": real_model,
-                "attachments": [], "files": [],
-                "organization_uuid": org_uuid
+                "name": "API Request", "prompt": "",
+                "timezone": "Africa/Cairo", "model": real_model,
+                "attachments": [], "files": [], "organization_uuid": org_uuid
             }).encode()
             
             req1 = urllib.request.Request(
@@ -465,14 +516,12 @@ def proxy_to_claude(real_model, model_slug):
             resp1 = urllib.request.urlopen(req1, timeout=30, context=ctx)
             conv_result = json.loads(resp1.read())
             conv_uuid = conv_result.get("uuid")
-            
             if not conv_uuid:
                 continue
             
-            # Step 2: Send the prompt
+            # Step 2: Send prompt
             comp_data = json.dumps({
-                "prompt": prompt_text,
-                "timezone": "Africa/Cairo",
+                "prompt": prompt_text, "timezone": "Africa/Cairo",
                 "attachments": [], "files": []
             }).encode()
             
@@ -487,12 +536,13 @@ def proxy_to_claude(real_model, model_slug):
             req2.add_header("Accept", "text/event-stream")
             
             resp2 = urllib.request.urlopen(req2, timeout=120, context=ctx)
-            
             latency = int((time.time() - start) * 1000)
+            
+            # ── Success! Mark token as used ──
+            _mark_token_used(cookie_set["id"])
             record_proxy_request(model_slug, "claude", cookie_set["id"], "ok", latency)
             
             if is_streaming:
-                # Return raw SSE from Claude
                 def generate():
                     while True:
                         chunk = resp2.read(8192)
@@ -503,10 +553,9 @@ def proxy_to_claude(real_model, model_slug):
                     "X-Proxy-Provider": "claude",
                     "X-Proxy-Cookie": str(cookie_set["id"]),
                     "X-Proxy-Latency": str(latency),
-                    "X-Proxy-Model": real_model,
+                    "X-Proxy-Rotation": f"token {cookie_set['id']} (used {_get_token_state(cookie_set['id'])['usage']}x)",
                 })
             else:
-                # Parse SSE and return as OpenAI-compatible JSON
                 sse_body = resp2.read().decode(errors="replace")
                 completion_parts = []
                 stop_reason = None
@@ -514,55 +563,54 @@ def proxy_to_claude(real_model, model_slug):
                     if line.startswith("data: "):
                         try:
                             obj = json.loads(line[6:])
-                            if "completion" in obj:
-                                completion_parts.append(obj["completion"])
-                            if "stop_reason" in obj and obj["stop_reason"]:
-                                stop_reason = obj["stop_reason"]
-                        except:
-                            pass
-                
+                            if "completion" in obj: completion_parts.append(obj["completion"])
+                            if "stop_reason" in obj and obj["stop_reason"]: stop_reason = obj["stop_reason"]
+                        except: pass
                 full_text = "".join(completion_parts)
                 return jsonify({
-                    "id": f"claude-{conv_uuid[:8]}",
-                    "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": real_model,
-                    "choices": [{
-                        "index": 0,
-                        "message": {"role": "assistant", "content": full_text},
-                        "finish_reason": stop_reason or "stop"
-                    }],
+                    "id": f"claude-{conv_uuid[:8]}", "object": "chat.completion",
+                    "created": int(time.time()), "model": real_model,
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": full_text}, "finish_reason": stop_reason or "stop"}],
                     "usage": {"completion_tokens": len(full_text.split())},
                 }), 200, {
                     "X-Proxy-Provider": "claude",
                     "X-Proxy-Cookie": str(cookie_set["id"]),
                     "X-Proxy-Latency": str(latency),
+                    "X-Proxy-Rotation": f"token {cookie_set['id']} (used {_get_token_state(cookie_set['id'])['usage']}x)",
                 }
         
         except urllib.error.HTTPError as e:
             latency = int((time.time() - start) * 1000)
-            body_err = e.read().decode(errors="replace")[:300]
+            body_err = e.read().decode(errors="replace")[:500]
             record_proxy_request(model_slug, "claude", cookie_set["id"], "error", latency, body_err[:100])
             
-            if e.code == 403:
-                # Cloudflare challenge — mark cookie set as stale
-                conn = get_db()
-                conn.execute("UPDATE cookie_files SET raw_content = 'STALE:' || raw_content WHERE id = ?", (cookie_set["id"],))
-                conn.commit()
-                conn.close()
-            continue
+            if e.code in (401, 403):
+                # ── Dead token: permanent removal ──
+                _mark_token_dead(cookie_set["id"], f"HTTP {e.code}: {body_err[:200]}")
+                tried.append({"token": cookie_set["id"], "action": "DEAD", "reason": f"HTTP {e.code}"})
+            elif e.code == 429 or "out of" in body_err.lower() or "limit" in body_err.lower() or "exhausted" in body_err.lower():
+                # ── Rate limited: cooldown ──
+                _mark_token_cooldown(cookie_set["id"], f"429: {body_err[:200]}")
+                tried.append({"token": cookie_set["id"], "action": "COOLDOWN", "reason": "Rate limited"})
+            else:
+                _mark_token_cooldown(cookie_set["id"], f"HTTP {e.code}: {body_err[:100]}")
+                tried.append({"token": cookie_set["id"], "action": "COOLDOWN", "reason": f"HTTP {e.code}"})
+            continue  # ← Seamless failover: try next token
         
         except Exception as e:
             latency = int((time.time() - start) * 1000)
             record_proxy_request(model_slug, "claude", cookie_set["id"], "error", latency, str(e)[:100])
-            continue
+            _mark_token_cooldown(cookie_set["id"], str(e)[:200])
+            tried.append({"token": cookie_set["id"], "action": "COOLDOWN", "reason": str(e)[:80]})
+            continue  # ← Seamless failover
     
-    # All cookie sets exhausted
+    # All tokens exhausted in this request
     return jsonify({
         "error": "Service Unavailable",
-        "message": "Claude is currently unavailable. Cookie sessions may have expired. Upload fresh cookies.",
+        "message": "All Claude sessions are currently unavailable.",
+        "tried": tried,
+        "retry_after_ms": COOLDOWN_SECONDS * 1000,
         "model": model_slug,
-        "retry_after_ms": 10000,
     }), 503
 
 
@@ -947,7 +995,25 @@ def api_stats():
     recent = conn.execute("SELECT * FROM proxy_requests ORDER BY created_at DESC LIMIT 20").fetchall()
     dead_keys = conn.execute("SELECT k.*, p.name as provider_name FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE k.dead=1").fetchall()
     conn.close()
-    return jsonify({"total_requests": total, "successful": ok, "recent": [dict(r) for r in recent], "dead_keys": [dict(d) for d in dead_keys]})
+    
+    # Include Claude token state
+    claude_state = {}
+    with _claude_token_lock:
+        for cid, state in _claude_token_state.items():
+            claude_state[str(cid)] = {
+                "usage": state["usage"],
+                "cooldown_until": state["cooldown_until"],
+                "cooldown_remaining_s": max(0, int(state["cooldown_until"] - time.time())),
+                "dead": state["dead"],
+                "last_error": state["last_error"],
+            }
+    
+    return jsonify({
+        "total_requests": total, "successful": ok,
+        "recent": [dict(r) for r in recent],
+        "dead_keys": [dict(d) for d in dead_keys],
+        "claude_tokens": claude_state,
+    })
 
 # ── Main ──────────────────────────────────────────────────────────────────
 if __name__ == "__main__":

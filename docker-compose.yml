@@ -16,10 +16,10 @@ services:
       - PROXY_API_KEY_HASH=39ed4e7fecce75348ef79a2a2fa89dff3e1971022ae405a82d1e79d7b94215be
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       # Bright Data Residential Proxy (optional — set PROXY_ENABLED=true to enable)
-      - PROXY_ENABLED=false
-      - BRD_CUSTOMER_ID=
-      - BRD_ZONE=
-      - BRD_PASSWORD=
+      - PROXY_ENABLED=true
+      - BRD_CUSTOMER_ID=hl_39802a10
+      - BRD_ZONE=claude_sessions
+      - BRD_PASSWORD=fjoiw7270o69
       - BRD_PROXY_HOST=brd.superproxy.io
       - BRD_PROXY_PORT=33335
     networks:

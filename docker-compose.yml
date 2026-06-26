@@ -1,0 +1,29 @@
+services:
+  aicookies:
+    build: .
+    container_name: aicookies
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    volumes:
+      - cookie_data:/data
+    environment:
+      - AUTH_USERNAME=mahmoud
+      - AUTH_PASSWORD=Mmm12011305
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.aicookies.rule=Host(`aicookies.elliaa.com`)"
+      - "traefik.http.routers.aicookies.entrypoints=websecure"
+      - "traefik.http.routers.aicookies.tls.certresolver=letsencrypt"
+      - "traefik.http.services.aicookies.loadbalancer.server.port=5050"
+      - "traefik.docker.network=dokploy-network"
+
+volumes:
+  cookie_data:
+
+networks:
+  dokploy-network:
+    external: true

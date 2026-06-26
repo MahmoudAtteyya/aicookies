@@ -53,7 +53,6 @@ def init_db():
         error_msg TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_provider ON api_keys(provider_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_dead ON api_keys(dead)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_proxy_requests_model ON proxy_requests(model_slug)")
 
     # ── Migration: add columns if they don't exist ──
@@ -64,6 +63,7 @@ def init_db():
     for col, col_type in [("provider_type", "TEXT DEFAULT 'free'")]:
         try: conn.execute(f"ALTER TABLE api_providers ADD COLUMN {col} {col_type}")
         except: pass
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_dead ON api_keys(dead)")
 
     # ── Seed providers ──
     providers = [

@@ -111,16 +111,20 @@ print(response.choices[0].message.content)</code></pre>
 <h2>🔌 Integration Examples</h2>
 <h3>LangChain</h3>
 <pre><code>from langchain_openai import ChatOpenAI
-llm = ChatOpenAI(base_url="https://aicookies.elliaa.com/v1", api_key="x", model="mistral-small")</code></pre>
+llm = ChatOpenAI(
+    base_url="https://aicookies.elliaa.com/v1",
+    api_key="sk-aicookies-proxy-key-2026",
+    model="mistral-small"
+)</code></pre>
 
 <h3>Open WebUI / LibreChat</h3>
 <pre><code>API Base: https://aicookies.elliaa.com/v1
-API Key: any-value
-Models: mistral-small, command-a, llama-3.1-8b, glm-5p2, ...</code></pre>
+API Key: sk-aicookies-proxy-key-2026
+Models: mistral-small, command-a, llama-3.3-70b, glm-5p2, deepseek-v4-pro, ...</code></pre>
 
 <h3>Any OpenAI-compatible tool</h3>
 <pre><code>base_url = "https://aicookies.elliaa.com/v1"
-# No API key needed — auth handled server-side</code></pre>
+api_key = "sk-aicookies-proxy-key-2026"</code></pre>
 
 <h2>📊 Monitoring</h2>
 <div class="endpoint-box">GET https://aicookies.elliaa.com/v1/models</div>

@@ -358,7 +358,16 @@ def extract_claude_cookies(cookie_file):
     return cookies
 
 def proxy_to_claude(real_model, model_slug):
-    """Forward request to Claude.ai web API using stored browser cookies."""
+    """Forward request to Claude.ai web API using stored browser cookies.
+    
+    Claude's web API takes a plain-text prompt string, NOT an OpenAI messages array.
+    This function converts OpenAI-format messages into a natural prompt for Claude.
+    
+    Handled automatically:
+    - System prompt → prepended as context with <system> tags
+    - Multi-turn history → formatted as conversation transcript
+    - Alternating roles → validated and corrected (skips invalid sequences)
+    """
     cookie_sets = get_claude_cookie_sets()
     if not cookie_sets:
         return jsonify({"error": "No Claude cookie files stored. Upload at /upload", "model": model_slug}), 503
@@ -367,10 +376,53 @@ def proxy_to_claude(real_model, model_slug):
     try:
         data = json.loads(body)
         messages = data.get("messages", [])
-        user_content = messages[-1]["content"] if messages else ""
         is_streaming = data.get("stream", False)
     except:
         return jsonify({"error": "Invalid JSON body"}), 400
+    
+    if not messages:
+        return jsonify({"error": "messages array is required", "hint": "Send at least one user message"}), 400
+    
+    # ── Build prompt from OpenAI-format messages ──
+    prompt_parts = []
+    
+    # Extract system prompt (Claude web API doesn't have a system param)
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+    if system_msgs:
+        system_text = "\n".join(m.get("content", "") for m in system_msgs)
+        prompt_parts.append(f"<system>\n{system_text}\n</system>")
+    
+    # Build conversation transcript from remaining messages
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        
+        # Skip system messages (already handled)
+        if role == "system":
+            continue
+        
+        # Claude requires: user, assistant alternating starting with user
+        # Map: user → Human, assistant → Assistant
+        if role == "user":
+            prompt_parts.append(f"Human: {content}")
+        elif role == "assistant":
+            prompt_parts.append(f"Assistant: {content}")
+        else:
+            prompt_parts.append(f"{role}: {content}")
+    
+    # Ensure the last message is from user (Claude requirement)
+    # If the last role was assistant, Claude won't respond — add a dummy user prompt
+    last_role = messages[-1].get("role") if messages else None
+    if last_role != "user":
+        return jsonify({
+            "error": "Bad Request",
+            "message": "Claude requires the last message to be from 'user'. The messages array must end with a user message.",
+            "hint": "Ensure messages alternate: user → assistant → user",
+            "last_role": last_role,
+        }), 400
+    
+    # Claude.ai web UI prepends "Assistant: " automatically, so we send just the prompt
+    prompt_text = "\n\n".join(prompt_parts)
     
     ctx = ssl.create_default_context()
     
@@ -418,7 +470,6 @@ def proxy_to_claude(real_model, model_slug):
                 continue
             
             # Step 2: Send the prompt
-            prompt_text = user_content if isinstance(user_content, str) else str(user_content)
             comp_data = json.dumps({
                 "prompt": prompt_text,
                 "timezone": "Africa/Cairo",

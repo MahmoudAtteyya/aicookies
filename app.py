@@ -56,6 +56,15 @@ def init_db():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_dead ON api_keys(dead)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_proxy_requests_model ON proxy_requests(model_slug)")
 
+    # ── Migration: add columns if they don't exist ──
+    for col, col_type in [("dead", "INTEGER DEFAULT 0"), ("error_count", "INTEGER DEFAULT 0"),
+                           ("last_error_at", "TIMESTAMP"), ("last_error_msg", "TEXT")]:
+        try: conn.execute(f"ALTER TABLE api_keys ADD COLUMN {col} {col_type}")
+        except: pass
+    for col, col_type in [("provider_type", "TEXT DEFAULT 'free'")]:
+        try: conn.execute(f"ALTER TABLE api_providers ADD COLUMN {col} {col_type}")
+        except: pass
+
     # ── Seed providers ──
     providers = [
         ("mistral", "Mistral AI", "https://api.mistral.ai/v1", "free",

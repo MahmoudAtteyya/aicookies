@@ -27,14 +27,28 @@
 <p>All endpoints are <strong>OpenAI-compatible</strong>. Replace your <code>base_url</code> and use any model slug below.</p>
 <div class="endpoint-box">POST https://aicookies.elliaa.com/v1/<strong>{model-slug}</strong>/chat/completions</div>
 
-<h3>cURL</h3>
+## 🔐 Authentication
+
+All proxy endpoints require an API key via Bearer token:
+
+```bash
+Authorization: Bearer sk-aicookies-proxy-key-2026
+```
+
+**No key → 401 Unauthorized.**
+
+<h3>cURL with auth</h3>
 <pre><code>curl -X POST https://aicookies.elliaa.com/v1/mistral-small/chat/completions \
+  -H "Authorization: Bearer sk-aicookies-proxy-key-2026" \
   -H "Content-Type: application/json" \
   -d '{"model":"mistral-small","messages":[{"role":"user","content":"Hello!"}]}'</code></pre>
 
 <h3>Python (OpenAI SDK)</h3>
 <pre><code>from openai import OpenAI
-client = OpenAI(base_url="https://aicookies.elliaa.com/v1", api_key="x")
+client = OpenAI(
+    base_url="https://aicookies.elliaa.com/v1",
+    api_key="sk-aicookies-proxy-key-2026"
+)
 response = client.chat.completions.create(
     model="mistral-small",
     messages=[{"role":"user","content":"Hello!"}])
@@ -42,10 +56,13 @@ print(response.choices[0].message.content)</code></pre>
 
 <h3>Node.js / TypeScript</h3>
 <pre><code>const res = await fetch("https://aicookies.elliaa.com/v1/mistral-small/chat/completions", {
-  method:"POST", headers:{"Content-Type":"application/json"},
+  method:"POST",
+  headers: {
+    "Content-Type":"application/json",
+    "Authorization":"Bearer sk-aicookies-proxy-key-2026"
+  },
   body: JSON.stringify({model:"mistral-small", messages:[{role:"user",content:"Hello!"}]})
-});
-console.log((await res.json()).choices[0].message.content);</code></pre>
+});</code></pre>
 
 <h2>📋 Available Models</h2>
 <p><span class="badge-free">🔄 FREE</span> = recovers after rate limit | <span class="badge-prepaid">💀 PREPAID</span> = dies permanently when $0</p>

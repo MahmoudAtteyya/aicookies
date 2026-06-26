@@ -15,6 +15,7 @@ app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 # ── Auth ──────────────────────────────────────────────────────────────────
 AUTH_USERNAME = os.environ.get("AUTH_USERNAME", "mahmoud")
 AUTH_PASSWORD_HASH = generate_password_hash(os.environ.get("AUTH_PASSWORD", "Mmm12011305"))
+PROXY_API_KEY = os.environ.get("PROXY_API_KEY", "")  # If set, required for /v1/* endpoints
 
 # ── Database ──────────────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "/data/cookies.db")
@@ -329,12 +330,28 @@ def inject_model_into_body(body, real_model, provider_slug):
     return json.dumps(data).encode()
 
 # ═══════════════════════════════════════════════════════════════════════════
+# PROXY AUTH — check API key on /v1/* if configured
+# ═══════════════════════════════════════════════════════════════════════════
+
+def check_proxy_auth():
+    """If PROXY_API_KEY is set, require Bearer token on all /v1/* routes."""
+    if not PROXY_API_KEY:
+        return None  # No auth required
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer ") or auth[7:] != PROXY_API_KEY:
+        return jsonify({"error": "Unauthorized — valid API key required", "hint": "Use Authorization: Bearer <key>"}), 401
+    return None
+
+# ═══════════════════════════════════════════════════════════════════════════
 # PROXY ROUTES — /v1/{model_slug}/chat/completions
 # ═══════════════════════════════════════════════════════════════════════════
 
 @app.route("/v1/<model_slug>/chat/completions", methods=["POST"])
 def proxy_chat(model_slug):
     """OpenAI-compatible proxy endpoint — routes to the best available key."""
+    auth_err = check_proxy_auth()
+    if auth_err: return auth_err
+    
     if model_slug not in MODELS:
         return jsonify({
             "error": f"Unknown model: '{model_slug}'",
@@ -348,6 +365,9 @@ def proxy_chat(model_slug):
 @app.route("/v1/<model_slug>", methods=["GET"])
 def proxy_info(model_slug):
     """Get info about a specific model endpoint."""
+    auth_err = check_proxy_auth()
+    if auth_err: return auth_err
+    
     if model_slug not in MODELS:
         return jsonify({"error": f"Unknown model: '{model_slug}'", "available": list(MODELS.keys())}), 404
     m = MODELS[model_slug]
@@ -358,11 +378,14 @@ def proxy_info(model_slug):
         "description": m["desc"],
         "endpoint": f"https://aicookies.elliaa.com/v1/{model_slug}/chat/completions",
         "format": "OpenAI-compatible (POST with messages array)",
+        "auth_required": bool(PROXY_API_KEY),
     })
 
 @app.route("/v1/models", methods=["GET"])
 def list_models():
     """List all available proxy models."""
+    auth_err = check_proxy_auth()
+    if auth_err: return auth_err
     models = []
     for slug, info in MODELS.items():
         conn = get_db()

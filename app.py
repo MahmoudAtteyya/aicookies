@@ -130,6 +130,8 @@ MODELS = {
     "kimi-k2p7-code":    {"provider": "fireworks", "real_model": "accounts/fireworks/models/kimi-k2p7-code",   "desc": "Kimi K2.7 — code generation", "style": "direct"},
     "qwen3p7-plus":      {"provider": "fireworks", "real_model": "accounts/fireworks/models/qwen3p7-plus",     "desc": "Qwen 3.7 Plus — multimodal reasoning", "style": "reasoning"},
     "deepseek-v4-pro":   {"provider": "fireworks", "real_model": "accounts/fireworks/models/deepseek-v4-pro",  "desc": "DeepSeek V4 Pro — deep reasoning", "style": "reasoning"},
+    # Claude (cookie-based — special handling)
+    "claude-sonnet":     {"provider": "claude",  "real_model": "claude-sonnet-4-6",  "desc": "Claude Sonnet 4 — Anthropic's best", "style": "direct"},
 }
 
 # ── Cookie parser ───────────────────────────────────────────────────────
@@ -206,6 +208,12 @@ def bump_key_usage(key_id):
 
 def proxy_to_provider(provider_slug, real_model, model_slug):
     """Forward the incoming request to the actual provider, trying keys in rotation."""
+    
+    # ── Claude: special cookie-based handling ──
+    if provider_slug == "claude":
+        return proxy_to_claude(real_model, model_slug)
+    
+    # ── Standard API key providers ──
     keys = get_provider_keys(provider_slug)
     if not keys:
         return jsonify({"error": f"No active keys for provider '{provider_slug}'", "model": model_slug}), 503
@@ -315,6 +323,197 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
         "model": model_slug,
         "retry_after_ms": 5000,
     }), 503
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLAUDE PROXY — cookie-based, no API key needed
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_claude_cookie_sets():
+    """Get all Claude cookie files as 'keys' for rotation."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT id, raw_content, filename, uploaded_at FROM cookie_files
+        WHERE platform = 'claude' ORDER BY uploaded_at DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def extract_claude_cookies(cookie_file):
+    """Extract essential cookies from a Netscape cookie file for Claude API."""
+    raw = cookie_file["raw_content"]
+    essential_names = {"sessionKey", "lastActiveOrg", "cf_clearance", "__cf_bm", "routingHint", "sessionKeyLC", "anthropic-device-id"}
+    seen = set()
+    cookies = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        name = parts[5]
+        if name in essential_names and name not in seen:
+            seen.add(name)
+            cookies.append({"name": name, "value": parts[6]})
+    return cookies
+
+def proxy_to_claude(real_model, model_slug):
+    """Forward request to Claude.ai web API using stored browser cookies."""
+    cookie_sets = get_claude_cookie_sets()
+    if not cookie_sets:
+        return jsonify({"error": "No Claude cookie files stored. Upload at /upload", "model": model_slug}), 503
+    
+    body = request.get_data()
+    try:
+        data = json.loads(body)
+        messages = data.get("messages", [])
+        user_content = messages[-1]["content"] if messages else ""
+        is_streaming = data.get("stream", False)
+    except:
+        return jsonify({"error": "Invalid JSON body"}), 400
+    
+    ctx = ssl.create_default_context()
+    
+    for cookie_set in cookie_sets:
+        cookies = extract_claude_cookies(cookie_set)
+        cookie_header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+        
+        # Find org UUID
+        org_uuid = None
+        for c in cookies:
+            if c["name"] == "lastActiveOrg":
+                org_uuid = c["value"]
+                break
+        
+        if not org_uuid:
+            continue  # Skip incomplete cookie sets
+        
+        start = time.time()
+        
+        try:
+            # Step 1: Create conversation
+            conv_data = json.dumps({
+                "name": "API Request",
+                "prompt": "",
+                "timezone": "Africa/Cairo",
+                "model": real_model,
+                "attachments": [], "files": [],
+                "organization_uuid": org_uuid
+            }).encode()
+            
+            req1 = urllib.request.Request(
+                f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations",
+                data=conv_data, method="POST"
+            )
+            req1.add_header("Cookie", cookie_header)
+            req1.add_header("Content-Type", "application/json")
+            req1.add_header("User-Agent", "Mozilla/5.0 AppleWebKit/537.36")
+            req1.add_header("Origin", "https://claude.ai")
+            
+            resp1 = urllib.request.urlopen(req1, timeout=30, context=ctx)
+            conv_result = json.loads(resp1.read())
+            conv_uuid = conv_result.get("uuid")
+            
+            if not conv_uuid:
+                continue
+            
+            # Step 2: Send the prompt
+            prompt_text = user_content if isinstance(user_content, str) else str(user_content)
+            comp_data = json.dumps({
+                "prompt": prompt_text,
+                "timezone": "Africa/Cairo",
+                "attachments": [], "files": []
+            }).encode()
+            
+            req2 = urllib.request.Request(
+                f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}/completion",
+                data=comp_data, method="POST"
+            )
+            req2.add_header("Cookie", cookie_header)
+            req2.add_header("Content-Type", "application/json")
+            req2.add_header("User-Agent", "Mozilla/5.0 AppleWebKit/537.36")
+            req2.add_header("Origin", "https://claude.ai")
+            req2.add_header("Accept", "text/event-stream")
+            
+            resp2 = urllib.request.urlopen(req2, timeout=120, context=ctx)
+            
+            latency = int((time.time() - start) * 1000)
+            record_proxy_request(model_slug, "claude", cookie_set["id"], "ok", latency)
+            
+            if is_streaming:
+                # Return raw SSE from Claude
+                def generate():
+                    while True:
+                        chunk = resp2.read(8192)
+                        if not chunk: break
+                        yield chunk
+                return Response(stream_with_context(generate()), status=200, headers={
+                    "Content-Type": "text/event-stream",
+                    "X-Proxy-Provider": "claude",
+                    "X-Proxy-Cookie": str(cookie_set["id"]),
+                    "X-Proxy-Latency": str(latency),
+                    "X-Proxy-Model": real_model,
+                })
+            else:
+                # Parse SSE and return as OpenAI-compatible JSON
+                sse_body = resp2.read().decode(errors="replace")
+                completion_parts = []
+                stop_reason = None
+                for line in sse_body.split("\n"):
+                    if line.startswith("data: "):
+                        try:
+                            obj = json.loads(line[6:])
+                            if "completion" in obj:
+                                completion_parts.append(obj["completion"])
+                            if "stop_reason" in obj and obj["stop_reason"]:
+                                stop_reason = obj["stop_reason"]
+                        except:
+                            pass
+                
+                full_text = "".join(completion_parts)
+                return jsonify({
+                    "id": f"claude-{conv_uuid[:8]}",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": real_model,
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": full_text},
+                        "finish_reason": stop_reason or "stop"
+                    }],
+                    "usage": {"completion_tokens": len(full_text.split())},
+                }), 200, {
+                    "X-Proxy-Provider": "claude",
+                    "X-Proxy-Cookie": str(cookie_set["id"]),
+                    "X-Proxy-Latency": str(latency),
+                }
+        
+        except urllib.error.HTTPError as e:
+            latency = int((time.time() - start) * 1000)
+            body_err = e.read().decode(errors="replace")[:300]
+            record_proxy_request(model_slug, "claude", cookie_set["id"], "error", latency, body_err[:100])
+            
+            if e.code == 403:
+                # Cloudflare challenge — mark cookie set as stale
+                conn = get_db()
+                conn.execute("UPDATE cookie_files SET raw_content = 'STALE:' || raw_content WHERE id = ?", (cookie_set["id"],))
+                conn.commit()
+                conn.close()
+            continue
+        
+        except Exception as e:
+            latency = int((time.time() - start) * 1000)
+            record_proxy_request(model_slug, "claude", cookie_set["id"], "error", latency, str(e)[:100])
+            continue
+    
+    # All cookie sets exhausted
+    return jsonify({
+        "error": "Service Unavailable",
+        "message": "Claude is currently unavailable. Cookie sessions may have expired. Upload fresh cookies.",
+        "model": model_slug,
+        "retry_after_ms": 10000,
+    }), 503
+
 
 def inject_model_into_body(body, real_model, provider_slug):
     """Replace or inject the model name in the request body."""

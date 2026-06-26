@@ -75,7 +75,7 @@ def init_db():
          '["command-a-03-2025","command-r7b-12-2024","command-r-plus-08-2024"]',
          "Free trial: 1000 req/month. Uses /v2/chat endpoint."),
         ("sambanova", "SambaNova", "https://api.sambanova.ai/v1", "free",
-         '["Meta-Llama-3.3-70B-Instruct","Meta-Llama-4-Scout-17B-16E-Instruct","Qwen2.5-72B-Instruct","DeepSeek-R1-Distill-Llama-70B"]',
+         '["Meta-Llama-3.3-70B-Instruct"]',
          "Free tier: generous rate limits. OpenAI-compatible."),
         ("fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "prepaid",
          '["accounts/fireworks/models/glm-5p2","accounts/fireworks/models/kimi-k2p7-code","accounts/fireworks/models/qwen3p7-plus","accounts/fireworks/models/deepseek-v4-pro"]',
@@ -124,15 +124,12 @@ MODELS = {
     "command-r7b":       {"provider": "cohere",  "real_model": "command-r7b-12-2024",      "desc": "Command R7B — fast & capable"},
     "command-r-plus":    {"provider": "cohere",  "real_model": "command-r-plus-08-2024",   "desc": "Command R+ — most powerful"},
     # SambaNova
-    "llama-3.3-70b":     {"provider": "sambanova", "real_model": "Meta-Llama-3.3-70B-Instruct",          "desc": "Llama 3.3 70B — powerful"},
-    "llama-4-scout":     {"provider": "sambanova", "real_model": "Meta-Llama-4-Scout-17B-16E-Instruct",  "desc": "Llama 4 Scout 17B"},
-    "qwen2.5-72b":       {"provider": "sambanova", "real_model": "Qwen2.5-72B-Instruct",                 "desc": "Qwen 2.5 72B"},
-    "deepseek-r1-70b":   {"provider": "sambanova", "real_model": "DeepSeek-R1-Distill-Llama-70B",        "desc": "DeepSeek R1 Distill 70B"},
+    "llama-3.3-70b":     {"provider": "sambanova", "real_model": "Meta-Llama-3.3-70B-Instruct",          "desc": "Llama 3.3 70B — powerful", "style": "direct"},
     # Fireworks
-    "glm-5p2":           {"provider": "fireworks", "real_model": "accounts/fireworks/models/glm-5p2",          "desc": "GLM 5P2 — reasoning"},
-    "kimi-k2p7-code":    {"provider": "fireworks", "real_model": "accounts/fireworks/models/kimi-k2p7-code",   "desc": "Kimi K2.7 Code"},
-    "qwen3p7-plus":      {"provider": "fireworks", "real_model": "accounts/fireworks/models/qwen3p7-plus",     "desc": "Qwen 3.7 Plus — multimodal"},
-    "deepseek-v4-pro":   {"provider": "fireworks", "real_model": "accounts/fireworks/models/deepseek-v4-pro",  "desc": "DeepSeek V4 Pro — reasoning"},
+    "glm-5p2":           {"provider": "fireworks", "real_model": "accounts/fireworks/models/glm-5p2",          "desc": "GLM 5P2 — general reasoning", "style": "reasoning"},
+    "kimi-k2p7-code":    {"provider": "fireworks", "real_model": "accounts/fireworks/models/kimi-k2p7-code",   "desc": "Kimi K2.7 — code generation", "style": "direct"},
+    "qwen3p7-plus":      {"provider": "fireworks", "real_model": "accounts/fireworks/models/qwen3p7-plus",     "desc": "Qwen 3.7 Plus — multimodal reasoning", "style": "reasoning"},
+    "deepseek-v4-pro":   {"provider": "fireworks", "real_model": "accounts/fireworks/models/deepseek-v4-pro",  "desc": "DeepSeek V4 Pro — deep reasoning", "style": "reasoning"},
 }
 
 # ── Cookie parser ───────────────────────────────────────────────────────
@@ -442,6 +439,34 @@ def dashboard():
 @app.route("/docs")
 def docs_page():
     return render_template("docs.html", models=MODELS)
+
+@app.route("/docs.md")
+def docs_md():
+    """Generate downloadable markdown documentation."""
+    md = []
+    md.append("# AI Proxy Gateway — API Documentation\n")
+    md.append("## Endpoint\n")
+    md.append("```\nPOST https://aicookies.elliaa.com/v1/{model-slug}/chat/completions\n```\n")
+    md.append("## Authentication\n")
+    md.append("All requests require a Bearer token:\n")
+    md.append("```\nAuthorization: Bearer sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5\n```\n")
+    md.append("## Available Models\n")
+    md.append("| Model | Provider | Style |\n|-------|----------|-------|\n")
+    for slug, info in sorted(MODELS.items()):
+        style = "🧠 Reasoning" if info.get("style") == "reasoning" else "⚡ Direct"
+        md.append(f"| `{slug}` | {info['provider']} | {style} |\n")
+    md.append(f"\n**Total:** {len(MODELS)} models\n")
+    md.append("\n## Response Styles\n")
+    md.append("### ⚡ Direct Response\nModels that reply immediately — just the answer. **All** Mistral, Cohere, SambaNova, and `kimi-k2p7-code`.\n")
+    md.append("### 🧠 Reasoning Response\nModels that show thinking process before answering: `glm-5p2`, `qwen3p7-plus`, `deepseek-v4-pro`.\n**Important:** set `max_tokens ≥ 500` or answer may be cut off.\n")
+    md.append("## cURL Example\n")
+    md.append("```bash\ncurl -X POST https://aicookies.elliaa.com/v1/mistral-small/chat/completions \\\n  -H \"Authorization: Bearer sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"mistral-small\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'\n```\n")
+    md.append("## Python (OpenAI SDK)\n")
+    md.append("```python\nfrom openai import OpenAI\nclient = OpenAI(base_url=\"https://aicookies.elliaa.com/v1\", api_key=\"sk-gGpJ6m53XqosM5opVcoHz3-Jh-4Sx6mM1pkZsV-qbpOPgxFfv6NurA6dEaP1HCO5\")\nresponse = client.chat.completions.create(model=\"mistral-small\", messages=[{\"role\":\"user\",\"content\":\"Hello!\"}])\n```\n")
+    md.append("## Smart Key Rotation\n")
+    md.append("- 429 → rotate to next key (free providers recover)\n- 402 → Fireworks: 💀 dead permanently | Others: temporarily disabled\n- Keys ordered by usage count (least-used first)\n")
+    md.append(f"\n*Generated from https://aicookies.elliaa.com/docs*\n")
+    return "".join(md), 200, {"Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": "attachment; filename=aicookies-api-docs.md"}
 
 # ── Cookie routes ───────────────────────────────────────────────────────
 @app.route("/upload", methods=["GET", "POST"])

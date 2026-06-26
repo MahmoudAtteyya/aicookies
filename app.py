@@ -95,23 +95,23 @@ def init_db():
     providers = [
         ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1",
          "https://openrouter.ai/docs", 
-         '["google/gemini-2.0-flash-001","google/gemini-2.0-flash-lite-001","mistralai/mistral-7b-instruct","mistralai/mistral-small-3.1-24b-instruct","meta-llama/llama-3.2-3b-instruct","meta-llama/llama-3.1-8b-instruct","deepseek/deepseek-r1-distill-llama-70b","qwen/qwen-2.5-7b-instruct","microsoft/phi-4-mini-instruct","google/gemma-3-4b-it"]',
-         "Largest router — 200+ free models from all major providers. Use /api/v1/chat/completions with any supported model."),
+         '["google/gemini-2.0-flash-001","google/gemini-2.0-flash-lite-001","mistralai/mistral-7b-instruct","mistralai/mistral-small-3.1-24b-instruct","meta-llama/llama-3.2-3b-instruct","meta-llama/llama-3.1-8b-instruct","deepseek/deepseek-r1-distill-llama-70b","qwen/qwen-2.5-7b-instruct","microsoft/phi-4-mini-instruct"]',
+         "339+ free models from all major providers. Needs $5 min credits even for free models. OpenAI-compatible."),
         
         ("mistral", "Mistral AI", "https://api.mistral.ai/v1",
          "https://docs.mistral.ai/",
-         '["mistral-small-latest","mistral-medium-latest","open-mistral-nemo","codestral-latest","ministral-8b-latest","mistral-embed"]',
-         "Free tier: 1 request/sec, 1M tokens/month. Great for coding & reasoning."),
+         '["mistral-small-latest","mistral-medium-latest","open-mistral-nemo","codestral-latest","ministral-8b-latest"]',
+         "Free tier: 1 req/sec, 1M tokens/month. Great for coding & reasoning. ✅ Tested working."),
         
         ("google", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta",
          "https://ai.google.dev/gemini-api/docs",
-         '["gemini-2.0-flash","gemini-2.0-flash-lite","gemini-1.5-flash","gemini-1.5-pro","gemini-2.5-pro-exp-03-25","gemini-2.5-flash-preview-04-17"]',
-         "Free tier: 1500 req/day. Get key from aistudio.google.com."),
+         '["gemini-2.0-flash","gemini-2.0-flash-lite","gemini-1.5-flash","gemini-1.5-pro"]',
+         "Free tier: 1500 req/day. Key from aistudio.google.com. Uses ?key= in URL."),
         
         ("groq", "Groq", "https://api.groq.com/openai/v1",
          "https://console.groq.com/docs",
          '["llama-3.3-70b-versatile","llama-3.1-8b-instant","mixtral-8x7b-32768","gemma2-9b-it","deepseek-r1-distill-llama-70b","qwen-2.5-32b"]',
-         "Free tier: 30 req/min, very fast inference. OpenAI-compatible API."),
+         "Free tier: 30 req/min, very fast. Keys start with gsk_. OpenAI-compatible."),
         
         ("together", "Together AI", "https://api.together.xyz/v1",
          "https://docs.together.ai/",
@@ -120,23 +120,38 @@ def init_db():
         
         ("cohere", "Cohere", "https://api.cohere.com/v2",
          "https://docs.cohere.com/",
-         '["command-r-plus","command-r","command","command-light"]',
-         "Free trial: 1000 req/month. Strong for enterprise & RAG."),
+         '["command-a-03-2025","command-r7b-12-2024","command-r-plus-08-2024"]',
+         "Free trial: 1000 req/month. Uses /v2/chat endpoint. ✅ Tested working."),
         
         ("deepseek", "DeepSeek", "https://api.deepseek.com/v1",
          "https://platform.deepseek.com/api-docs/",
          '["deepseek-chat","deepseek-reasoner"]',
-         "Very cheap API. OpenAI-compatible. No strict free tier but $2 credit lasts months."),
+         "Very cheap API. OpenAI-compatible. Top up $2 for months of usage."),
         
         ("huggingface", "HuggingFace Inference", "https://api-inference.huggingface.co",
          "https://huggingface.co/docs/api-inference/",
          '["mistralai/Mistral-7B-Instruct-v0.3","meta-llama/Llama-3.1-8B-Instruct","google/gemma-2-2b-it","HuggingFaceH4/zephyr-7b-beta"]',
-         "Free tier: limited rate. Get token from huggingface.co/settings/tokens."),
+         "Free tier: limited rate. Token from huggingface.co/settings/tokens. HF token starts with hf_."),
         
         ("fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1",
          "https://docs.fireworks.ai/",
          '["accounts/fireworks/models/llama-v3p1-8b-instruct","accounts/fireworks/models/mixtral-8x7b-instruct","accounts/fireworks/models/deepseek-r1-basic"]',
-         "Free tier: 10 req/sec. OpenAI-compatible. Great for small models."),
+         "Free tier: 10 req/sec. OpenAI-compatible. Keys start with fw_."),
+        
+        ("xai", "xAI (Grok)", "https://api.x.ai/v1",
+         "https://docs.x.ai/",
+         '["grok-3-beta","grok-2-1212"]',
+         "xAI Grok API. Keys start with xai-. OpenAI-compatible. Free credits on signup."),
+        
+        ("cerebras", "Cerebras", "https://api.cerebras.ai/v1",
+         "https://cloud.cerebras.ai/",
+         '["llama3.1-8b","llama-3.3-70b","llama-4-scout-17b-16e","mistral-7b","mixtral-8x7b"]',
+         "Free tier: very fast inference on Cerebras wafer-scale hardware. OpenAI-compatible. Get key from cloud.cerebras.ai."),
+        
+        ("sambanova", "SambaNova", "https://api.sambanova.ai/v1",
+         "https://cloud.sambanova.ai/",
+         '["Meta-Llama-3.1-8B-Instruct","Meta-Llama-3.3-70B-Instruct","Meta-Llama-4-Scout-17B-16E-Instruct","Qwen2.5-72B-Instruct","DeepSeek-R1-Distill-Llama-70B"]',
+         "Free tier: generous rate limits on SambaNova RDU hardware. OpenAI-compatible. Get key from cloud.sambanova.ai."),
     ]
 
     for slug, name, base_url, docs_url, models, desc in providers:

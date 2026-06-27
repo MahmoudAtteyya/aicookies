@@ -557,7 +557,7 @@ def fetch_fireworks_account_info(api_key):
             body_text = e.read().decode()
             result["raw_response"] = body_text[:2000]
 
-            if e.code == 403 or e.code == 422:
+            if e.code in (403, 422, 412):
                 try:
                     err = _json.loads(body_text)
                     msg = err.get("error", {}).get("message", "")

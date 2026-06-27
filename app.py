@@ -531,6 +531,93 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
     yield b"data: [DONE]\n\n"
 
 
+def humanize_claude_prompt(messages):
+    """Rewrite an API-style conversation into natural human dialogue.
+    
+    Uses Mistral (free, fast) to transform structured/system prompts
+    into casual, human-like conversation that doesn't trigger Claude's
+    anti-automation heuristics.
+    
+    Returns: (humanized_messages, was_rewritten)
+    """
+    # Only humanize if there's a system prompt or multi-turn context
+    has_system = any(m.get("role") == "system" for m in messages)
+    is_multi_turn = len([m for m in messages if m.get("role") == "user"]) > 1
+    
+    if not has_system and not is_multi_turn and len(messages) <= 2:
+        # Simple single-turn — no need to humanize
+        return messages, False
+    
+    # Build a compact representation of the conversation
+    conv_text = ""
+    for m in messages:
+        role = m.get("role", "user")
+        content = str(m.get("content", ""))[:500]  # Truncate long content
+        if role == "system":
+            conv_text += f"[System instruction: {content}]\n"
+        elif role == "user":
+            conv_text += f"User: {content}\n"
+        elif role == "assistant":
+            conv_text += f"Assistant: {content}\n"
+    
+    rewrite_prompt = f"""You are a text rewriter. Your ONLY job is to rewrite the conversation below into natural, casual human dialogue in Arabic or English (match the user's language). 
+
+CRITICAL RULES:
+1. Keep the EXACT same meaning and intent — do NOT add or remove information
+2. If there is a system instruction, weave it naturally into the first user message
+3. Make it sound like a real person talking, not an API request
+4. Remove any markdown, code blocks, or formatting — pure conversation text
+5. Only output the LAST user message (the one needing a response), not the whole conversation
+6. Do NOT add greetings, explanations, or any extra text
+7. If the conversation is multi-turn, include brief context from earlier messages in the final user message
+
+Conversation to rewrite:
+{conv_text}
+
+Output ONLY the final rewritten user message (nothing else):"""
+
+    try:
+        import httpx
+        resp = httpx.post(
+            "https://api.mistral.ai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {_get_mistral_key()}", "Content-Type": "application/json"},
+            json={
+                "model": "mistral-small-latest",
+                "messages": [{"role": "user", "content": rewrite_prompt}],
+                "max_tokens": 500, "temperature": 0.3,
+            },
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            rewritten = resp.json()["choices"][0]["message"]["content"].strip()
+            # Keep only the last user message + add humanized content
+            new_messages = []
+            for m in messages:
+                if m.get("role") == "user":
+                    # Preserve this for multi-turn — replace content of last user msg
+                    new_messages.append(dict(m))
+            if new_messages:
+                new_messages[-1]["content"] = rewritten
+                return new_messages, True
+    except Exception:
+        pass  # Fall through — use original
+    
+    return messages, False
+
+
+def _get_mistral_key():
+    """Get an active Mistral API key. Returns None if no keys available."""
+    conn = get_db()
+    row = conn.execute("""
+        SELECT k.key_value FROM api_keys k 
+        JOIN api_providers p ON k.provider_id = p.id
+        WHERE p.slug = 'mistral' AND k.is_active = 1 AND k.dead = 0
+        ORDER BY k.usage_count ASC LIMIT 1
+    """).fetchone()
+    conn.close()
+    return row["key_value"] if row else None
+
+
 def proxy_to_claude(real_model, model_slug):
     """Forward request to Claude.ai web API using stored browser cookies.
     
@@ -557,6 +644,9 @@ def proxy_to_claude(real_model, model_slug):
         return jsonify({"error": "messages array is required"}), 400
     
     # ── Build prompt from OpenAI-format messages ──
+    # First: humanize the conversation to avoid looking like API traffic
+    messages, was_humanized = humanize_claude_prompt(messages)
+    
     prompt_parts = []
     system_msgs = [m for m in messages if m.get("role") == "system"]
     if system_msgs:

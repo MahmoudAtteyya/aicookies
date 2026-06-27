@@ -1,41 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Upload — AI Cookies{% endblock %}
+{% block title %}Upload — AI Proxy Gateway{% endblock %}
 {% block content %}
 
-<h2 style="margin-bottom:1.5rem;">⬆️ Upload Claude Cookie File</h2>
+<div class="page-header">
+    <h2>⬆️ Upload Claude Cookie File</h2>
+    <a href="/" class="btn">← Dashboard</a>
+</div>
 
-<div class="card">
+<div class="card mb-3">
     <form method="POST" enctype="multipart/form-data" id="upload-form">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="file-upload" id="drop-zone">
             <div class="icon">📁</div>
-            <h3>Drop your Claude cookie file here</h3>
+            <h3 style="margin-bottom:0.25rem;">Drop your Claude cookie file here</h3>
             <p>or click to browse</p>
-            <p style="margin-top:0.5rem;font-size:0.8rem;">
+            <p style="margin-top:0.5rem;font-size:0.75rem;color:var(--text-muted);">
                 Netscape HTTP Cookie format (.txt)<br>
                 Export from browser extension like "cookies.txt"
             </p>
             <input type="file" name="cookie_file" id="cookie_file" accept=".txt,.text,text/plain" required>
         </div>
 
-        <div id="file-info" style="display:none;margin-top:1rem;text-align:center;">
+        <div id="file-info" class="hidden" style="margin-top:1rem;text-align:center;padding:0.75rem;background:var(--bg-input);border-radius:var(--r-md);">
             <span id="file-name" style="color:var(--accent);font-weight:600;"></span>
             <span id="file-size" style="color:var(--text-dim);margin-left:0.5rem;"></span>
         </div>
 
         <div style="margin-top:1.5rem;text-align:center;">
-            <button type="submit" class="btn btn-primary" style="padding:0.85rem 2.5rem;font-size:1rem;">
-                ⬆️ Upload & Parse
-            </button>
+            <button type="submit" class="btn btn-primary btn-lg">⬆️ Upload & Parse</button>
         </div>
     </form>
 </div>
 
-<div class="card" style="margin-top:1.5rem;">
-    <h3 style="margin-bottom:1rem;">📋 Expected Format</h3>
-    <p style="color:var(--text-dim);margin-bottom:1rem;">
-        Your file should be in Netscape HTTP Cookie format — the standard format exported by browser extensions like "cookies.txt".
-    </p>
-    <div class="raw-preview">
+<div class="card">
+    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">📋 Expected Format</h3>
+    <p class="text-dim text-sm mb-2">Your file should be in Netscape HTTP Cookie format — the standard format exported by browser extensions like "cookies.txt".</p>
+    <div class="raw-preview" style="font-size:0.75rem;">
 # Netscape HTTP Cookie File
 # Exported from browser
 
@@ -43,10 +43,10 @@
 claude.ai	FALSE	/	TRUE	1808409348	anthropic-device-id	12308106-...
 .claude.ai	TRUE	/	TRUE	1814025349	lastActiveOrg	767566e5-...
     </div>
-    <p style="margin-top:1rem;color:var(--text-dim);font-size:0.85rem;">
-        <strong>For Claude.ai:</strong> Export cookies from your browser using any "cookies.txt" extension while logged into claude.ai.
-        The system will extract sessionKey, lastActiveOrg, and Cloudflare tokens automatically.
-    </p>
+    <div class="info-box mt-2" style="background:var(--blue-bg);border-left:3px solid var(--blue);border-radius:var(--r-md);padding:0.75rem 1rem;">
+        <strong style="color:var(--blue);">For Claude.ai:</strong>
+        <span class="text-sm text-dim">Export cookies from your browser using any "cookies.txt" extension while logged into claude.ai. The system will extract sessionKey, lastActiveOrg, and Cloudflare tokens automatically.</span>
+    </div>
 </div>
 
 <script>
@@ -68,22 +68,18 @@ dropZone.addEventListener('drop', (e) => {
     dropZone.classList.remove('dragover');
     if (e.dataTransfer.files.length) {
         fileInput.files = e.dataTransfer.files;
-        updateFileInfo(e.dataTransfer.files[0]);
+        showFileInfo(e.dataTransfer.files[0]);
     }
 });
+
 fileInput.addEventListener('change', () => {
-    if (fileInput.files.length) updateFileInfo(fileInput.files[0]);
+    if (fileInput.files.length) showFileInfo(fileInput.files[0]);
 });
 
-function updateFileInfo(file) {
+function showFileInfo(file) {
     fileName.textContent = file.name;
-    fileSize.textContent = formatSize(file.size);
-    fileInfo.style.display = 'block';
-}
-function formatSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
-    return (bytes/(1024*1024)).toFixed(1) + ' MB';
+    fileSize.textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+    fileInfo.classList.remove('hidden');
 }
 </script>
 

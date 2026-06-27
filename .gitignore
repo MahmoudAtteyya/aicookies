@@ -1,4 +1,14 @@
-*.bak-*
 __pycache__/
-CLAUDE_FLOW_ANALYSIS_REPORT.md
-data/cookies.db
+*.pyc
+*.pyo
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+venv/
+.venv/
+.env
+.env.*
+node_modules/
+*.log

@@ -1,31 +1,31 @@
 {% extends "base.html" %}
-{% block title %}{{ file.filename }} — AI Cookies{% endblock %}
+{% block title %}{{ file.filename }} — AI Proxy Gateway{% endblock %}
 {% block content %}
 
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+<div class="page-header">
     <div>
         <h2>
             <span class="badge badge-{{ file.platform }}">{{ file.platform }}</span>
             {{ file.filename }}
         </h2>
-        <p style="color:var(--text-dim);font-size:0.9rem;">
+        <p class="text-sm text-dim" style="margin-top:0.25rem;">
             {{ file.cookie_count }} cookies • Uploaded {{ file.uploaded_at[:16]|replace('T', ' ') }}
         </p>
     </div>
-    <div>
+    <div class="flex gap-1">
         <a href="/" class="btn">← Back</a>
         <a href="/api/cookies/raw/{{ file.id }}" class="btn" target="_blank">📋 Raw Text</a>
         <button class="btn" onclick="copyAll()">📋 Copy All</button>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:1.5rem;">
-    <h3 style="margin-bottom:0.75rem;">📝 Raw Cookie Text</h3>
+<div class="card mb-3">
+    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">📝 Raw Cookie Text</h3>
     <div class="raw-preview" id="raw-content">{{ file.raw_content }}</div>
 </div>
 
 <div class="card">
-    <h3 style="margin-bottom:1rem;">🍪 Parsed Cookies ({{ cookies|length }})</h3>
+    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🍪 Parsed Cookies ({{ cookies|length }})</h3>
     <div style="overflow-x:auto;">
         <table>
             <thead>
@@ -41,16 +41,22 @@
             <tbody>
             {% for c in cookies %}
                 <tr>
-                    <td style="font-size:0.85rem;">{{ c.domain }}</td>
-                    <td><code style="font-size:0.8rem;">{{ c.name }}</code></td>
+                    <td class="text-sm">{{ c.domain }}</td>
+                    <td><code class="text-xs">{{ c.name }}</code></td>
                     <td><div class="cookie-value" title="{{ c.value }}">{{ c.value }}</div></td>
-                    <td>{{ c.path }}</td>
-                    <td>{{ c.secure }}</td>
-                    <td style="font-size:0.8rem;">
+                    <td class="text-sm">{{ c.path }}</td>
+                    <td>
+                        {% if c.secure == 'TRUE' %}
+                        <span class="badge badge-green">🔒</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-xs">
                         {% if c.expiration and c.expiration != '0' %}
                             {{ c.expiration[:10] }}
                         {% else %}
-                            session
+                            <span class="text-muted">session</span>
                         {% endif %}
                     </td>
                 </tr>

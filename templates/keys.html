@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}API Keys — AI Credentials Hub{% endblock %}
+{% block title %}API Keys — AI Proxy Gateway{% endblock %}
 {% block content %}
 
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+<div class="page-header">
     <h2>🔑 API Keys Manager</h2>
     <a href="/" class="btn">← Dashboard</a>
 </div>
 
 <!-- ═══════════ ADD KEY FORM ═══════════ -->
-<div class="card" style="margin-bottom:2rem;">
-    <h3 style="margin-bottom:1rem;">➕ Add API Key</h3>
+<div class="card mb-3">
+    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">➕ Add API Key</h3>
     <form method="POST">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
@@ -29,27 +29,29 @@
         </div>
         <div class="form-group">
             <label for="key_value">API Key</label>
-            <input type="password" id="key_value" name="key_value" 
+            <input type="password" id="key_value" name="key_value"
                    placeholder="sk-or-v1-... or AIza... or gsk_..." required
-                   style="font-family:monospace;">
+                   style="font-family:var(--font-mono);">
         </div>
         <button type="submit" class="btn btn-primary">➕ Add Key</button>
     </form>
 </div>
 
 <!-- ═══════════ PROVIDER INFO ═══════════ -->
-<div class="card" style="margin-bottom:2rem;">
-    <h3 style="margin-bottom:1rem;">📋 Supported Providers & Free Models</h3>
+<div class="card mb-3">
+    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">📋 Supported Providers & Free Models</h3>
     {% for p in providers %}
     <div style="margin-bottom:1.25rem;padding-bottom:1.25rem;border-bottom:1px solid var(--border);">
-        <strong style="color:var(--accent);font-size:1.1rem;">{{ p.name }}</strong>
-        {% if p.api_docs_url %}
-        <a href="{{ p.api_docs_url }}" target="_blank" style="color:var(--blue);margin-left:0.5rem;font-size:0.85rem;">docs ↗</a>
-        {% endif %}
-        <p style="color:var(--text-dim);font-size:0.85rem;margin:0.3rem 0;">{{ p.description }}</p>
+        <div class="flex items-center gap-1">
+            <strong style="color:var(--accent);font-size:1.05rem;">{{ p.name }}</strong>
+            {% if p.api_docs_url %}
+            <a href="{{ p.api_docs_url }}" target="_blank" style="color:var(--blue);font-size:0.8rem;text-decoration:none;">docs ↗</a>
+            {% endif %}
+        </div>
+        <p style="color:var(--text-dim);font-size:0.8rem;margin:0.3rem 0;">{{ p.description }}</p>
         <div style="margin-top:0.5rem;">
             {% for m in p.free_models_parsed %}
-            <code style="background:var(--bg-input);padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;margin:0.15rem;display:inline-block;">{{ m }}</code>
+            <code style="background:var(--bg-input);padding:0.15rem 0.5rem;border-radius:var(--r-sm);font-size:0.72rem;margin:0.15rem;display:inline-block;">{{ m }}</code>
             {% endfor %}
         </div>
     </div>
@@ -57,57 +59,56 @@
 </div>
 
 <!-- ═══════════ STORED KEYS ═══════════ -->
-<h3 style="margin-bottom:1rem;">🗄️ Stored Keys ({{ keys|length }})</h3>
+<h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🗄️ Stored Keys ({{ keys|length }})</h3>
 
 {% if not keys %}
-<div class="empty-state">
-    <div class="icon">🔒</div>
-    <h3>No API keys stored yet</h3>
-    <p>Add your first API key using the form above</p>
+<div class="card">
+    <div class="empty-state">
+        <div class="icon">🔑</div>
+        <h3>No API keys stored</h3>
+        <p>Add keys for your providers above to start using the gateway</p>
+    </div>
 </div>
 {% else %}
-<div class="card">
+<div class="card" style="padding:0;overflow:hidden;">
     <table>
         <thead>
-            <tr><th>Provider</th><th>Label</th><th>Key</th><th>Used</th><th>Status</th><th>Actions</th></tr>
+            <tr>
+                <th>Provider</th>
+                <th>Label</th>
+                <th>Key</th>
+                <th>Usage</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
         </thead>
         <tbody>
         {% for k in keys %}
             <tr>
-                <td><strong>{{ k.provider_name }}</strong></td>
-                <td>{{ k.label or '—' }}</td>
-                <td>
-                    <code style="font-size:0.75rem;background:var(--bg-input);padding:0.15rem 0.4rem;border-radius:4px;">
-                        {{ k.key_value[:12] }}...{{ k.key_value[-4:] }}
-                    </code>
-                </td>
-                <td>{{ k.usage_count }}×</td>
+                <td><span class="badge badge-{{ k.provider_slug }}">{{ k.provider_name }}</span></td>
+                <td class="text-sm">{{ k.label or '—' }}</td>
+                <td><code class="text-xs" style="color:var(--text-muted);">{{ k.key_value[:12] }}…{{ k.key_value[-4:] }}</code></td>
+                <td class="text-sm">{{ k.usage_count }} uses</td>
                 <td>
                     {% if k.dead %}
-                    <span style="color:var(--red);" title="{{ k.last_error_msg or '' }}">💀 Dead</span>
+                        <span class="badge badge-red">💀 Dead</span>
                     {% elif k.is_active %}
-                    <span style="color:var(--green);">✅ Active</span>
+                        <span class="badge badge-green">✅ Active</span>
                     {% else %}
-                    <span style="color:var(--yellow);">⏸ Paused</span>
+                        <span class="badge badge-yellow">⏸ Paused</span>
                     {% endif %}
                 </td>
                 <td>
-                    {% if k.dead %}
-                    <button class="btn" style="padding:0.25rem 0.6rem;font-size:0.75rem;color:var(--green);"
-                            onclick="reviveKey({{ k.id }}, this)">🔄 Revive</button>
-                    {% else %}
-                    <form method="POST" action="/toggle-key/{{ k.id }}" style="display:inline;">
-                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                        <button class="btn" style="padding:0.25rem 0.6rem;font-size:0.75rem;">
-                            {{ '⏸ Pause' if k.is_active else '▶ Activate' }}
-                        </button>
-                    </form>
-                    {% endif %}
-                    <form method="POST" action="/delete-key/{{ k.id }}" style="display:inline;"
-                          onsubmit="return confirm('Delete this API key?')">
-                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                        <button class="btn btn-danger" style="padding:0.25rem 0.6rem;font-size:0.75rem;">🗑️</button>
-                    </form>
+                    <div class="flex gap-1">
+                        <form method="POST" action="/toggle-key/{{ k.id }}" style="display:inline;">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm" title="Toggle active/inactive">{{ '⏸' if k.is_active else '▶' }}</button>
+                        </form>
+                        <form method="POST" action="/delete-key/{{ k.id }}" style="display:inline;" onsubmit="return confirm('Delete this key?')">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-danger" title="Delete">🗑</button>
+                        </form>
+                    </div>
                 </td>
             </tr>
         {% endfor %}
@@ -115,27 +116,5 @@
     </table>
 </div>
 {% endif %}
-
-<script>
-async function reviveKey(keyId, btn) {
-    btn.textContent = '🔄...'; btn.disabled = true;
-    try {
-        const res = await fetch('/api/keys/revive/' + keyId, {
-            method: 'POST',
-            headers: {'X-CSRF-Token': '{{ csrf_token() }}'}
-        });
-        const data = await res.json();
-        if (data.revived) {
-            alert('✅ Key revived! Account is active again.');
-            location.reload();
-        } else {
-            alert('⚠️ Key still dead: ' + (data.error || 'HTTP ' + data.http_code || 'account still suspended'));
-        }
-    } catch(err) {
-        alert('❌ Error: ' + err.message);
-    }
-    btn.textContent = '🔄 Revive'; btn.disabled = false;
-}
-</script>
 
 {% endblock %}

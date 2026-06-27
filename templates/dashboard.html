@@ -1,27 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — AI Credentials Hub{% endblock %}
+{% block title %}Dashboard — AI Proxy Gateway{% endblock %}
 {% block content %}
 
-<h2 style="margin-bottom:1.5rem;">📊 Dashboard</h2>
+<!-- ═══════════ HERO ═══════════ -->
+<div class="card card-accent" style="margin-bottom:2rem;overflow:hidden;position:relative;">
+    <div style="position:absolute;top:-50%;right:-5%;width:400px;height:400px;background:radial-gradient(circle,var(--accent-glow) 0%,transparent 70%);border-radius:50%;pointer-events:none;"></div>
+    <div style="position:relative;">
+        <h2 style="margin:0 0 0.25rem 0;font-size:1.75rem;letter-spacing:-0.02em;">📊 Dashboard</h2>
+        <p style="color:var(--text-dim);margin:0;font-size:0.9rem;">System overview — providers, keys, cookies, and health status</p>
+    </div>
+</div>
+
+<!-- ═══════════ HEALTH BADGE ═══════════ -->
+<div class="flex items-center gap-1 mb-3">
+    <a href="/v1/health" target="_blank" class="btn btn-sm" id="healthBtn">🩺 Health Check</a>
+    <span id="healthStatus" class="badge badge-green">● Checking…</span>
+    <span id="healthDetails" class="text-xs text-dim"></span>
+</div>
 
 <!-- ═══════════ DEAD KEYS ALERT ═══════════ -->
 {% if dead_keys and dead_keys > 0 %}
-<div class="card" style="border-left:4px solid var(--red);margin-bottom:1.5rem;background:rgba(239,68,68,0.08);">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+<div class="card" style="border-left:4px solid var(--red);background:var(--red-bg);">
+    <div class="flex items-center justify-between flex-wrap gap-1">
         <div>
             <strong style="color:var(--red);">⚠️ {{ dead_keys }} Dead Key(s)</strong>
-            <p style="margin:0.3rem 0 0;font-size:0.85rem;color:var(--text-dim);">Suspended or depleted accounts. Revive them after resolving billing.</p>
+            <p class="text-sm text-dim mb-0" style="margin-top:0.25rem;">Suspended or depleted accounts. Revive them after resolving billing.</p>
         </div>
         <form method="POST" action="/api/keys/revive" id="reviveForm">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-primary" onclick="reviveAllKeys(event)">🔄 Revive All Dead Keys</button>
+            <button type="submit" class="btn btn-primary btn-sm">🔄 Revive All Dead Keys</button>
         </form>
     </div>
 </div>
 {% endif %}
 
 <!-- ═══════════ API PROVIDERS ═══════════ -->
-<h3 style="margin-bottom:1rem;">🔑 API Keys</h3>
+<h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🔑 API Keys by Provider</h3>
 <div class="stats">
     {% for p in providers %}
     <div class="stat-card" style="cursor:pointer;" onclick="location.href='/keys'">
@@ -37,13 +51,13 @@
     {% endif %}
 </div>
 
-<a href="/keys" class="btn btn-primary" style="margin-bottom:2rem;">🔑 Manage API Keys</a>
+<a href="/keys" class="btn btn-primary mb-3">🔑 Manage API Keys</a>
 
 <!-- ═══════════ COOKIES (Claude-focused) ═══════════ -->
-<h3 style="margin-bottom:1rem;">🤖 Claude Cookies</h3>
+<h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🤖 Claude Cookie Sessions</h3>
 
 <div class="stats">
-    <div class="stat-card">
+    <div class="stat-card" style="cursor:pointer;" onclick="location.href='/upload'">
         <div class="number">{{ claude_count }}</div>
         <div class="label">🤖 Claude Cookie Sets</div>
     </div>
@@ -54,11 +68,13 @@
 </div>
 
 {% if not files %}
-<div class="empty-state">
-    <div class="icon">📭</div>
-    <h3>No cookies uploaded yet</h3>
-    <p style="margin-bottom:1.5rem;">Upload your Claude browser cookie file to get started</p>
-    <a href="/upload" class="btn btn-primary">⬆️ Upload Claude Cookies</a>
+<div class="card">
+    <div class="empty-state">
+        <div class="icon">📭</div>
+        <h3>No cookies uploaded yet</h3>
+        <p>Upload your Claude browser cookie file to get started</p>
+        <a href="/upload" class="btn btn-primary">⬆️ Upload Claude Cookies</a>
+    </div>
 </div>
 {% else %}
 <div class="card">
@@ -70,14 +86,11 @@
         {% for f in files %}
             <tr>
                 <td><span class="badge badge-{{ f.platform }}">{{ f.platform }}</span></td>
-                <td>{{ f.filename }}</td>
+                <td class="mono text-sm">{{ f.filename }}</td>
                 <td>{{ f.cookie_count }}</td>
-                <td>{{ f.uploaded_at[:16]|replace('T', ' ') }}</td>
+                <td class="text-sm text-dim">{{ f.uploaded_at[:16]|replace('T', ' ') }}</td>
                 <td>
-                    <a href="/cookies/{{ f.id }}" class="btn" style="padding:0.3rem 0.75rem;font-size:0.8rem;">🔍 View</a>
-                    <form method="POST" action="/delete-cookie/{{ f.id }}" style="display:inline;" onsubmit="return confirm('Delete this cookie set?')">
-                        <button class="btn btn-danger" style="padding:0.3rem 0.75rem;font-size:0.8rem;">🗑️</button>
-                    </form>
+                    <a href="/cookies/{{ f.id }}" class="btn btn-sm">View</a>
                 </td>
             </tr>
         {% endfor %}
@@ -86,32 +99,70 @@
 </div>
 {% endif %}
 
-<div style="margin-top:1.5rem;">
-    <a href="/upload" class="btn">⬆️ Upload More Cookies</a>
+<!-- ═══════════ MODELS SUMMARY ═══════════ -->
+<h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🤖 Available Models ({{ models|length }})</h3>
+<div class="card">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.75rem;">
+        {% for slug, info in models.items() %}
+        <div style="padding:0.85rem;border:1px solid var(--border);border-radius:var(--r-md);transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+            <div class="flex items-center justify-between mb-1">
+                <code style="font-size:0.8rem;color:var(--accent);font-weight:600;">{{ slug }}</code>
+                {% if info.style == 'reasoning' %}
+                <span class="badge badge-yellow" style="font-size:0.65rem;">🧠 Reasoning</span>
+                {% else %}
+                <span class="badge badge-green" style="font-size:0.65rem;">⚡ Direct</span>
+                {% endif %}
+            </div>
+            <div class="text-sm text-dim">{{ info.desc }}</div>
+            <div class="text-xs text-muted mt-2" style="display:flex;gap:0.75rem;">
+                <span>🏢 {{ info.provider }}</span>
+                <span>📏 {{ (info.tokens or 0)|int // 1000 }}K ctx</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <hr>
+    <a href="/docs" class="btn btn-sm">📚 Full API Documentation</a>
 </div>
 
 <script>
-async function reviveAllKeys(e) {
-    e.preventDefault();
-    const form = e.target.closest('form');
-    const btn = form.querySelector('button');
-    btn.textContent = '🔄 Checking...'; btn.disabled = true;
+// Health check
+(async () => {
     try {
-        const res = await fetch('/api/keys/revive', {
-            method: 'POST',
-            headers: {'X-CSRF-Token': form.querySelector('[name=_csrf_token]').value}
-        });
-        const data = await res.json();
-        if (data.revived > 0) {
-            alert('✅ Revived ' + data.revived + ' key(s)! They are now active.');
-            location.reload();
+        const r = await fetch('/v1/health');
+        const d = await r.json();
+        const el = document.getElementById('healthStatus');
+        const det = document.getElementById('healthDetails');
+        if (d.status === 'healthy') {
+            el.textContent = '● Healthy';
+            el.className = 'badge badge-green';
+            det.textContent = `${d.models_available} models · ${d.active_api_keys} keys · ${d.claude_sessions} Claude sessions`;
         } else {
-            alert('⚠️ No keys could be revived. Check if billing is resolved.');
+            el.textContent = '● ' + d.status;
+            el.className = 'badge badge-yellow';
         }
-    } catch(err) {
-        alert('❌ Error: ' + err.message);
+    } catch (e) {
+        document.getElementById('healthStatus').textContent = '● Offline';
+        document.getElementById('healthStatus').className = 'badge badge-red';
     }
-    btn.textContent = '🔄 Revive All Dead Keys'; btn.disabled = false;
+})();
+
+// Revive form
+const reviveForm = document.getElementById('reviveForm');
+if (reviveForm) {
+    reviveForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = reviveForm.querySelector('button');
+        btn.textContent = '🔄 Reviving…';
+        btn.disabled = true;
+        try {
+            const r = await fetch('/api/keys/revive', {method:'POST', headers:{'_csrf_token':'{{ csrf_token() }}'}});
+            if (r.ok) { location.reload(); }
+            else { btn.textContent = '❌ Failed'; setTimeout(() => { btn.textContent = '🔄 Revive All Dead Keys'; btn.disabled = false; }, 2000); }
+        } catch (e) {
+            btn.textContent = '❌ Error'; setTimeout(() => { btn.textContent = '🔄 Revive All Dead Keys'; btn.disabled = false; }, 2000);
+        }
+    });
 }
 </script>
 

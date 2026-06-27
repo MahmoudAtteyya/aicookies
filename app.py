@@ -167,7 +167,7 @@ def login_required(f):
 
 MODELS = {
     # Claude (cookie-based — special handling)
-    "claude-sonnet":     {"provider": "claude",  "real_model": "claude-sonnet-4-6",  "desc": "Claude Sonnet 4 — 200K context", "style": "direct", "tokens": 200000},
+    "claude-sonnet-4-6":  {"provider": "claude",  "real_model": "claude-sonnet-4-6",  "desc": "Claude Sonnet 4 — 200K context", "style": "direct", "tokens": 200000},
     # Mistral
     "mistral-small":     {"provider": "mistral", "real_model": "mistral-small-latest",     "desc": "Mistral Small — fast, efficient", "tokens": 32000},
     "mistral-medium":    {"provider": "mistral", "real_model": "mistral-medium-latest",    "desc": "Mistral Medium — balanced", "tokens": 32000},
@@ -531,91 +531,63 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
     yield b"data: [DONE]\n\n"
 
 
-def humanize_claude_prompt(messages):
-    """Rewrite an API-style conversation into natural human dialogue.
-    
-    Uses Mistral (free, fast) to transform structured/system prompts
-    into casual, human-like conversation that doesn't trigger Claude's
-    anti-automation heuristics.
-    
-    Returns: (humanized_messages, was_rewritten)
+def build_natural_prompt(messages):
+    """Convert OpenAI-format API messages into a natural conversation prompt
+    for Claude.ai's web interface.
+
+    This middleware replaces the old Mistral-based humanization. It:
+    - Converts system prompts into natural context notes (not <system> tags)
+    - Preserves full multi-turn context (user + assistant messages)
+    - Removes API artifacts that could trigger Claude's anti-automation heuristics
+    - Keeps the exact meaning and intent of every message
+    - Adds natural conversational framing
+
+    Returns: (prompt_text, was_transformed)
     """
-    # Only humanize if there's a system prompt or multi-turn context
-    has_system = any(m.get("role") == "system" for m in messages)
-    is_multi_turn = len([m for m in messages if m.get("role") == "user"]) > 1
-    
-    if not has_system and not is_multi_turn and len(messages) <= 2:
-        # Simple single-turn — no need to humanize
-        return messages, False
-    
-    # Build a compact representation of the conversation
-    conv_text = ""
+    if not messages:
+        return "", False
+
+    # Separate system messages from conversation
+    system_parts = []
+    conv_parts = []
     for m in messages:
         role = m.get("role", "user")
-        content = str(m.get("content", ""))[:500]  # Truncate long content
+        content = str(m.get("content", ""))
         if role == "system":
-            conv_text += f"[System instruction: {content}]\n"
+            system_parts.append(content)
         elif role == "user":
-            conv_text += f"User: {content}\n"
+            conv_parts.append(("user", content))
         elif role == "assistant":
-            conv_text += f"Assistant: {content}\n"
-    
-    rewrite_prompt = f"""You are a text rewriter. Your ONLY job is to rewrite the conversation below into natural, casual human dialogue in Arabic or English (match the user's language). 
+            conv_parts.append(("assistant", content))
+        else:
+            conv_parts.append((role, content))
 
-CRITICAL RULES:
-1. Keep the EXACT same meaning and intent — do NOT add or remove information
-2. If there is a system instruction, weave it naturally into the first user message
-3. Make it sound like a real person talking, not an API request
-4. Remove any markdown, code blocks, or formatting — pure conversation text
-5. Only output the LAST user message (the one needing a response), not the whole conversation
-6. Do NOT add greetings, explanations, or any extra text
-7. If the conversation is multi-turn, include brief context from earlier messages in the final user message
+    prompt_pieces = []
 
-Conversation to rewrite:
-{conv_text}
+    # ── System prompt → natural context note ──
+    # Instead of <system> tags (which scream "API"), we weave system instructions
+    # into a natural "by the way" or "for context" note at the top
+    if system_parts:
+        system_text = "\n".join(system_parts).strip()
+        if system_text:
+            # Natural framing that doesn't look like an API system tag
+            prompt_pieces.append(system_text)
 
-Output ONLY the final rewritten user message (nothing else):"""
+    # ── Conversation turns → natural dialogue ──
+    for role, content in conv_parts:
+        if role == "user":
+            prompt_pieces.append(f"Human: {content}")
+        elif role == "assistant":
+            prompt_pieces.append(f"Assistant: {content}")
+        else:
+            prompt_pieces.append(f"{role.capitalize()}: {content}")
 
-    try:
-        import httpx
-        resp = httpx.post(
-            "https://api.mistral.ai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {_get_mistral_key()}", "Content-Type": "application/json"},
-            json={
-                "model": "mistral-small-latest",
-                "messages": [{"role": "user", "content": rewrite_prompt}],
-                "max_tokens": 500, "temperature": 0.3,
-            },
-            timeout=15,
-        )
-        if resp.status_code == 200:
-            rewritten = resp.json()["choices"][0]["message"]["content"].strip()
-            # Keep only the last user message + add humanized content
-            new_messages = []
-            for m in messages:
-                if m.get("role") == "user":
-                    # Preserve this for multi-turn — replace content of last user msg
-                    new_messages.append(dict(m))
-            if new_messages:
-                new_messages[-1]["content"] = rewritten
-                return new_messages, True
-    except Exception:
-        pass  # Fall through — use original
-    
-    return messages, False
+    prompt_text = "\n\n".join(prompt_pieces)
 
+    # Transformation happened if we had system messages or multi-turn
+    was_transformed = len(system_parts) > 0 or len(conv_parts) > 2
 
-def _get_mistral_key():
-    """Get an active Mistral API key. Returns None if no keys available."""
-    conn = get_db()
-    row = conn.execute("""
-        SELECT k.key_value FROM api_keys k 
-        JOIN api_providers p ON k.provider_id = p.id
-        WHERE p.slug = 'mistral' AND k.is_active = 1 AND k.dead = 0
-        ORDER BY k.usage_count ASC LIMIT 1
-    """).fetchone()
-    conn.close()
-    return row["key_value"] if row else None
+    return prompt_text, was_transformed
 
 
 def proxy_to_claude(real_model, model_slug):
@@ -642,30 +614,24 @@ def proxy_to_claude(real_model, model_slug):
     
     if not messages:
         return jsonify({"error": "messages array is required"}), 400
-    
-    # ── Build prompt from OpenAI-format messages ──
-    # First: humanize the conversation to avoid looking like API traffic
-    messages, was_humanized = humanize_claude_prompt(messages)
-    
-    prompt_parts = []
-    system_msgs = [m for m in messages if m.get("role") == "system"]
-    if system_msgs:
-        system_text = "\n".join(m.get("content", "") for m in system_msgs)
-        prompt_parts.append(f"<system>\n{system_text}\n</system>")
-    
-    for m in messages:
-        role = m.get("role", "user")
-        content = m.get("content", "")
-        if role == "system": continue
-        if role == "user": prompt_parts.append(f"Human: {content}")
-        elif role == "assistant": prompt_parts.append(f"Assistant: {content}")
-        else: prompt_parts.append(f"{role}: {content}")
-    
+
+    # ── Build natural prompt from OpenAI-format messages ──
+    # build_natural_prompt replaces the old Mistral humanization:
+    # - Converts system prompts to natural context (not <system> tags)
+    # - Preserves full multi-turn context (user + assistant messages)
+    # - No external API call — pure local transformation
+    try:
+        prompt_text, was_transformed = build_natural_prompt(messages)
+    except Exception as e:
+        app.logger.error(f"[claude] build_natural_prompt error: {e}")
+        return jsonify({"error": "Prompt construction failed", "detail": str(e)}), 500
+
+    if not prompt_text.strip():
+        return jsonify({"error": "Empty prompt — no user content found"}), 400
+
     last_role = messages[-1].get("role") if messages else None
     if last_role != "user":
         return jsonify({"error": "Bad Request", "message": "Claude requires the last message to be from 'user'.", "last_role": last_role}), 400
-    
-    prompt_text = "\n\n".join(prompt_parts)
     
     # ── Smart rotation: get available tokens sorted by least-used ──
     available = _get_available_tokens(cookie_sets)
@@ -753,10 +719,17 @@ def proxy_to_claude(real_model, model_slug):
             latency = int((time.time() - start) * 1000)
             
             _mark_token_used(cookie_set["id"])
-            # Get current proxy IP for tracking
-            proxy_ip, proxy_country = get_current_proxy_ip()
-            record_proxy_request(model_slug, "claude", cookie_set["id"], "ok", latency, 
-                               proxy_ip=proxy_ip, proxy_country=proxy_country)
+            # Get proxy IP from response headers (no extra HTTP call)
+            proxy_ip = "unknown"
+            proxy_country = "unknown"
+            try:
+                # curl_cffi may expose the remote IP — try to extract it
+                proxy_ip = getattr(resp2, "remote_addr", None) or "unknown"
+            except Exception:
+                pass
+            record_proxy_request(model_slug, "claude", cookie_set["id"], "ok", latency,
+                               proxy_ip=proxy_ip if proxy_ip != "unknown" else None,
+                               proxy_country=proxy_country if proxy_country != "unknown" else None)
             
             if is_streaming:
                 def generate():
@@ -775,21 +748,49 @@ def proxy_to_claude(real_model, model_slug):
                     if line.startswith("data: "):
                         try:
                             obj = json.loads(line[6:])
-                            if "completion" in obj: completion_parts.append(obj["completion"])
+                            # Skip empty completion chunks (trailing \n\n fix)
+                            if obj.get("completion"):
+                                completion_parts.append(obj["completion"])
                             if "stop_reason" in obj and obj["stop_reason"]: stop_reason = obj["stop_reason"]
                         except: pass
-                full_text = "".join(completion_parts)
+                full_text = "".join(completion_parts).rstrip('\n')
                 # Map Anthropic stop_reason to OpenAI finish_reason
                 finish = stop_reason or "stop"
                 stop_lower = str(finish).lower()
                 if stop_lower in ("stop_sequence",): finish = "stop"
                 elif "max_token" in stop_lower or "length" in stop_lower: finish = "length"
                 elif "tool_use" in stop_lower: finish = "tool_calls"
+
+                # ── Cleanup: delete conversation from Claude.ai ──
+                # Prevents accumulation of "API Request" conversations
+                try:
+                    cleanup_headers = {
+                        "Cookie": cookie_header,
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                        "Origin": "https://claude.ai",
+                    }
+                    cleanup_kwargs = {"impersonate": "chrome131", "timeout": 30, "verify": False}
+                    if proxy_url:
+                        cleanup_kwargs["proxy"] = proxy_url
+                    curl_requests.delete(
+                        f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}",
+                        headers=cleanup_headers, **cleanup_kwargs,
+                    )
+                except Exception:
+                    pass  # Cleanup failure should not affect the response
+
+                # Token estimation (~4 chars/token for English, ~2 for CJK)
+                prompt_chars = len(prompt_text)
+                completion_chars = len(full_text)
+                est_prompt_tokens = max(1, prompt_chars // 4)
+                est_completion_tokens = max(1, completion_chars // 4)
+
                 return jsonify({
                     "id": f"claude-{conv_uuid[:8]}", "object": "chat.completion",
                     "created": int(time.time()), "model": real_model,
                     "choices": [{"index": 0, "message": {"role": "assistant", "content": full_text}, "finish_reason": finish}],
-                    "usage": {"completion_tokens": len(full_text.split())},
+                    "usage": {"prompt_tokens": est_prompt_tokens, "completion_tokens": est_completion_tokens, "total_tokens": est_prompt_tokens + est_completion_tokens},
                 }), 200, {
                     "X-Proxy-Provider": "claude", "X-Proxy-Cookie": str(cookie_set["id"]),
                     "X-Proxy-Latency": str(latency),
@@ -800,36 +801,48 @@ def proxy_to_claude(real_model, model_slug):
         
         except (httpx.HTTPStatusError, httpx.ProxyError, Exception) as e:
             latency = int((time.time() - start) * 1000)
-            
+
+            # ── Robust error classification ──
             if isinstance(e, httpx.HTTPStatusError):
                 code = e.response.status_code
                 body_err = e.response.text[:500]
             elif isinstance(e, httpx.ProxyError):
                 code = 502
                 body_err = f"Proxy error: {str(e)}"
+            elif isinstance(e, httpx.ConnectTimeout):
+                code = 504
+                body_err = f"Connection timeout: {str(e)}"
+            elif isinstance(e, httpx.ReadTimeout):
+                code = 504
+                body_err = f"Read timeout: {str(e)}"
+            elif isinstance(e, ConnectionError):
+                code = 503
+                body_err = f"Connection error: {str(e)}"
             else:
-                code = 0
+                # curl_cffi raises its own exceptions — try to extract status
+                resp = getattr(e, 'response', None)
+                code = getattr(resp, 'status_code', 0) if resp else 0
                 body_err = str(e)[:500]
-            
+                if resp:
+                    try:
+                        body_err = resp.text[:500]
+                    except Exception:
+                        pass
+
+            app.logger.warning(f"[claude] token {cookie_set['id']} error: code={code} err={body_err[:80]}")
             record_proxy_request(model_slug, "claude", cookie_set["id"], "error", latency, body_err[:100])
-            
-            if code in (401, 403):
+
+            # Check for Cloudflare challenge FIRST (before generic 403 handling)
+            if code == 403 and ("challenge" in body_err.lower() or "just a moment" in body_err.lower()):
+                # Cloudflare challenge — cooldown, don't kill the token
+                _mark_token_cooldown(cookie_set["id"], f"403 CF: {body_err[:100]}")
+                tried.append({"token": cookie_set["id"], "action": "COOLDOWN", "reason": "Cloudflare challenge"})
+            elif code in (401, 403):
                 _mark_token_dead(cookie_set["id"], f"HTTP {code}: {body_err[:200]}")
                 tried.append({"token": cookie_set["id"], "action": "DEAD", "reason": f"HTTP {code}"})
             elif code == 429 or "out of" in body_err.lower() or "limit" in body_err.lower() or "exhausted" in body_err.lower():
                 _mark_token_cooldown(cookie_set["id"], f"429: {body_err[:200]}")
                 tried.append({"token": cookie_set["id"], "action": "COOLDOWN", "reason": "Rate limited"})
-            elif code == 403 and "challenge" in body_err.lower():
-                # Cloudflare challenge — try Playwright fallback if proxy is configured
-                if proxy_enabled and proxy_session_id:
-                    try:
-                        result = _playwright_fallback(cookie_set, prompt_text, real_model, is_streaming, proxy_session_id)
-                        if result:
-                            return result
-                    except Exception as pw_err:
-                        tried.append({"token": cookie_set["id"], "action": "PLAYWRIGHT_FAILED", "reason": str(pw_err)[:80]})
-                _mark_token_cooldown(cookie_set["id"], f"403 CF: {body_err[:100]}")
-                tried.append({"token": cookie_set["id"], "action": "COOLDOWN", "reason": "Cloudflare challenge"})
             else:
                 _mark_token_cooldown(cookie_set["id"], f"HTTP {code}: {body_err[:100]}")
                 tried.append({"token": cookie_set["id"], "action": "COOLDOWN", "reason": f"HTTP {code}"})
@@ -1394,6 +1407,59 @@ def api_stats():
         "dead_keys": [dict(d) for d in dead_keys],
         "claude_tokens": claude_state,
     })
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GLOBAL ERROR HANDLERS — catch unhandled exceptions and return clean JSON
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({"error": "Bad Request", "message": str(e)}), 400
+
+@app.errorhandler(401)
+def unauthorized(e):
+    return jsonify({"error": "Unauthorized", "message": "Invalid or missing API key"}), 401
+
+@app.errorhandler(403)
+def forbidden(e):
+    return jsonify({"error": "Forbidden", "message": "Access denied"}), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Not Found", "message": "The requested endpoint does not exist"}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(e):
+    return jsonify({"error": "Method Not Allowed", "message": "This endpoint does not support the requested method"}), 405
+
+@app.errorhandler(429)
+def rate_limited(e):
+    return jsonify({"error": "Too Many Requests", "message": "Rate limit exceeded. Please retry later.", "retry_after_ms": 5000}), 429
+
+@app.errorhandler(500)
+def internal_error(e):
+    app.logger.error(f"[gateway] 500 error: {e}")
+    return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred"}), 500
+
+@app.errorhandler(502)
+def bad_gateway(e):
+    return jsonify({"error": "Bad Gateway", "message": "Upstream provider error"}), 502
+
+@app.errorhandler(503)
+def service_unavailable(e):
+    return jsonify({"error": "Service Unavailable", "message": "All provider sessions are busy or expired"}), 503
+
+@app.errorhandler(504)
+def gateway_timeout(e):
+    return jsonify({"error": "Gateway Timeout", "message": "Provider did not respond in time"}), 504
+
+@app.errorhandler(Exception)
+def unhandled_exception(e):
+    """Catch-all for any unhandled exception — prevents Flask from returning HTML."""
+    app.logger.error(f"[gateway] Unhandled exception: {type(e).__name__}: {e}")
+    if isinstance(e, httpx.HTTPStatusError):
+        return jsonify({"error": "Upstream HTTP Error", "message": str(e)[:200]}), 502
+    return jsonify({"error": "Internal Server Error", "message": str(e)[:200], "type": type(e).__name__}), 500
 
 # ── Main ──────────────────────────────────────────────────────────────────
 if __name__ == "__main__":

@@ -152,21 +152,50 @@ curl ... -d '{"model":"glm-5p2","max_tokens":500,
 <p><strong>Reasoning models:</strong> <code>glm-5p2</code>, <code>qwen3p7-plus</code>, <code>deepseek-v4-pro</code></p>
 
 <h3>🍪 Claude Response (Cookie-based)</h3>
-<p>Claude uses browser cookies instead of API keys. Its response format differs slightly:</p>
+<p>Claude uses browser cookies instead of API keys. The gateway includes a <strong>natural prompt middleware</strong> that converts OpenAI-format API requests into natural conversation prompts — preserving system instructions, multi-turn context, and all message details without any external API calls.</p>
 <pre><code># Non-streaming response — standard OpenAI format
 {
   "model": "claude-sonnet-4-6",
-  "choices": [{"message": {"content": "مرحباً بك! 😊"}, "finish_reason": "stop_sequence"}]
+  "choices": [{"message": {"content": "مرحباً بك! 😊"}, "finish_reason": "stop"}],
+  "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20}
 }
 
-# Streaming response — raw Claude SSE passthrough
-event: completion
-data: {"completion":" مرحباً","stop_reason":null}
-event: completion
-data: {"completion":" بك! كيف حالك؟","stop_reason":null}
-event: completion
-data: {"completion":"","stop_reason":"stop_sequence"}</code></pre>
-<p><strong>Rate limits:</strong> Claude uses session-based limits (per 5 hours / 7 days). The proxy automatically rotates between uploaded cookie sets when one hits the limit.</p>
+# Streaming response — OpenAI-compatible SSE
+data: {"choices":[{"delta":{"content":" مرحباً"}}]}
+data: {"choices":[{"delta":{"content":" بك! كيف حالك؟"}}]}
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+data: [DONE]</code></pre>
+
+<h4>🔧 Natural Prompt Middleware (replaces Mistral humanization)</h4>
+<p>The gateway converts API requests into natural conversation without external calls:</p>
+<ul>
+    <li><strong>System prompts</strong> → included as natural context at the top (no <code>&lt;system&gt;</code> tags)</li>
+    <li><strong>Multi-turn conversations</strong> → full context preserved (all user + assistant messages)</li>
+    <li><strong>No API artifacts</strong> → no JSON structures, no <code>role:</code> markers, no formatting that reveals automation</li>
+    <li><strong>Zero latency overhead</strong> → pure local transformation (previously added 200-800ms via Mistral API call)</li>
+    <li><strong>Meaning preservation</strong> → exact text passed through, no rewriting or paraphrasing</li>
+</ul>
+
+<h4>🛡️ Error Handling</h4>
+<p>All errors return clean JSON (never HTML):</p>
+<pre><code>// 400 — Bad Request (invalid JSON, missing messages, last message not from user)
+{"error": "Bad Request", "message": "..."}
+
+// 401 — Unauthorized (invalid API key)
+{"error": "Unauthorized", "message": "Invalid or missing API key"}
+
+// 503 — All sessions busy (all cookies in cooldown or dead)
+{"error": "Service Unavailable", "message": "All Claude sessions are currently unavailable.",
+ "tried": [{"token": 7, "action": "COOLDOWN", "reason": "Rate limited"}],
+ "retry_after_ms": 300000}
+
+// 504 — Gateway Timeout (Claude didn't respond in 120s)
+{"error": "Gateway Timeout", "message": "Provider did not respond in time"}</code></pre>
+
+<h4>🧹 Auto-Cleanup</h4>
+<p>After each successful request, the gateway automatically deletes the conversation from Claude.ai to prevent accumulation of "API Request" conversations that could trigger spam detection.</p>
+
+<p><strong>Rate limits:</strong> Claude uses session-based limits (per 5 hours / 7 days). The proxy automatically rotates between uploaded cookie sets when one hits the limit. Cloudflare challenges trigger a cooldown (not permanent death) — the token auto-recovers after 5 minutes.</p>
 
 <!-- ═══════════════════════════════════════════ -->
 <h2>🔄 Smart Key Rotation</h2>
@@ -183,13 +212,14 @@ data: {"completion":"","stop_reason":"stop_sequence"}</code></pre>
 llm = ChatOpenAI(
     base_url="https://aicookies.elliaa.com/v1",
     api_key="YOUR_AICOOKIES_API_KEY",
-    model="mistral-small"
+    model="mistral-small",
+    # or: model="claude-sonnet-4-6"
 )</code></pre>
 
 <h3>Open WebUI / LibreChat</h3>
 <pre><code>API Base: https://aicookies.elliaa.com/v1
 API Key: YOUR_AICOOKIES_API_KEY
-Models: mistral-small, command-a, llama-3.3-70b, glm-5p2, deepseek-v4-pro, ...</code></pre>
+Models: claude-sonnet-4-6, mistral-small, command-a, llama-3.3-70b, glm-5p2, deepseek-v4-pro, ...</code></pre>
 
 <h2>📊 Monitoring</h2>
 <div class="endpoint-box">GET https://aicookies.elliaa.com/v1/models</div>

@@ -28,6 +28,8 @@
 - [API Reference](#-api-reference)
 - [Authentication](#-authentication)
 - [Quick Start](#-quick-start)
+- [Production Resilience Layer](#-production-resilience-layer)
+- [Configuration](#️-configuration-environment-variables)
 - [Streaming (SSE)](#-streaming-sse)
 - [Function Calling](#-function-calling-path-b-emulation)
 - [Native Web Search](#-native-web-search)
@@ -87,6 +89,10 @@ Commercial AI API providers each have their own SDKs, authentication schemes, ra
 | **Management Dashboard** | Web UI for managing API keys, Claude cookies, proxy tokens, and viewing request stats |
 | **CORS Support** | Permissive CORS headers — works from any frontend |
 | **Health Endpoint** | `/v1/health` returns status, model count, active keys, Claude orchestration state |
+| **Cross-Provider Fallback** | When ALL keys for a provider are exhausted, automatically tries a similar model from another provider (e.g. Fireworks→SambaNova→Mistral). Claude falls back to GLM-5.2 reasoning model |
+| **Mid-Stream Continuation** | If a Claude session fails mid-response (timeout, 429), partial text is captured and the next session continues from exactly where it left off — no repetition, seamless to the client |
+| **User-Friendly Errors** | 9 typed error responses (RATE_LIMITED, ALL_KEYS_EXHAUSTED, CLAUDE_ALL_SESSIONS_BUSY, TIMEOUT, etc.) with title, message, suggestion, and retry_after_ms. Streaming errors sent as SSE events |
+| **180s Claude Timeout** | Extended timeout for reasoning models that take longer to think before responding |
 
 ---
 
@@ -808,6 +814,131 @@ CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "2", "--timeout", "120",
 - [x] Global error handlers (400-504 + catch-all)
 - [x] Reverse proxy with SSL (Traefik)
 - [x] Container restart policy (`unless-stopped`)
+- [x] Cross-provider fallback chain (5 providers)
+- [x] Mid-stream continuation for Claude (partial text capture + continuation prompt)
+- [x] User-friendly typed error responses (9 error types)
+- [x] SSE error events for streaming clients
+- [x] 180s Claude timeout for reasoning models
+
+---
+
+## 🛡 Production Resilience Layer
+
+The gateway includes a multi-layered resilience system designed to make the API behave like a premium official API — transparently handling failures so the client never sees a broken response.
+
+### Layer 1: Smart Key Rotation (Per-Provider)
+
+```
+Client Request → Provider A → Key #1 (429 Rate Limited) → Key #2 (Success) → Response
+```
+
+- **Least-used-first** key selection distributes load evenly across all keys
+- **429 Rate Limit** → Key enters 5-minute cooldown, next key tried immediately
+- **401/403 Auth Error** → Key marked permanently dead (for prepaid providers)
+- **412/402 Account Suspended** → Key marked permanently dead
+- Thread-safe with `RLock` for concurrent requests
+- Works for all API providers: Mistral, Fireworks, SambaNova, Cohere
+
+### Layer 2: Cross-Provider Fallback
+
+```
+Client Request → Fireworks (all keys exhausted) → SambaNova fallback → Llama 3.3 70B → Response
+```
+
+When **ALL keys** for a provider are exhausted (rate-limited, suspended, or dead), the gateway automatically tries a similar model from another provider:
+
+| Primary Provider | Fallback 1 | Fallback 2 |
+|-----------------|------------|------------|
+| Fireworks | SambaNova (Llama 3.3 70B) | Mistral (Medium) |
+| SambaNova | Mistral (Small) | Fireworks (GLM-5.2) |
+| Mistral | SambaNova (Llama 3.3 70B) | Cohere (Command-A) |
+| Cohere | Mistral (Small) | SambaNova (Llama 3.3 70B) |
+| Claude | Fireworks (GLM-5.2 Reasoning) | — |
+
+The client receives a `X-Proxy-Fallback: fireworks→sambanova` header indicating which provider was used as fallback. The response body is identical in format — the client doesn't need to handle anything differently.
+
+### Layer 3: Mid-Stream Continuation (Claude)
+
+```
+Client Request → Claude Session #1 (timeout during thinking)
+  ↓ captures partial text "The answer to your question is..."
+  ↓
+Claude Session #2 (continuation prompt with partial text)
+  ↓ continues: "...that the capital of France is Paris."
+  ↓
+Client receives: "The answer to your question is that the capital of France is Paris."
+```
+
+When a Claude cookie session fails **mid-response** (timeout, 429, Cloudflare challenge):
+
+1. **Partial text is captured** from the failed response using `_capture_stream_partial()`
+2. The partial text is accumulated in `accumulated_partial`
+3. The **next cookie session** receives a continuation prompt:
+   - Original prompt + the partial text in quotes
+   - Instruction: *"Continue from exactly where it left off. Do not repeat."*
+4. Claude continues naturally from where the previous session stopped
+5. The client receives a `X-Proxy-Continuation: true` header
+
+**Key design decisions:**
+- Claude timeout extended from 120s → **180s** to accommodate reasoning models
+- Partial text capture works with both `httpx` (iter_lines) and `curl_cffi` (.text)
+- Supports both OpenAI delta format and Claude completion SSE format
+- If no partial text was captured (e.g. failed before any output), the next session starts fresh
+
+### Layer 4: User-Friendly Error System
+
+All errors are formatted as structured JSON with clear explanations:
+
+```json
+{
+  "error": {
+    "type": "rate_limited",
+    "title": "Rate Limit Reached",
+    "message": "The AI provider is temporarily limiting requests...",
+    "suggestion": "Wait 5s and retry, or try a different model.",
+    "model": "mistral-small",
+    "provider": "mistral",
+    "retry_after_ms": 5000
+  },
+  "error_code": "RATE_LIMITED"
+}
+```
+
+**9 Error Types:**
+
+| Type | HTTP Status | When |
+|------|-------------|------|
+| `RATE_LIMITED` | 503 | Provider returned 429, all keys in cooldown |
+| `ALL_KEYS_EXHAUSTED` | 503 | All provider keys dead/suspended + fallbacks failed |
+| `CLAUDE_ALL_SESSIONS_BUSY` | 503 | All Claude cookie sessions in cooldown/expired |
+| `TIMEOUT` | 504 | Request exceeded maximum response time |
+| `CLOUDFLARE_CHALLENGE` | 503 | Cloudflare blocked the Claude request |
+| `PROXY_ERROR` | 502 | Residential proxy connection failed |
+| `INTERNAL_ERROR` | 500 | Unexpected server error |
+| `MODEL_NOT_FOUND` | 400 | Requested model not in models list |
+| `INVALID_REQUEST` | 400 | Malformed JSON or missing required fields |
+
+**Streaming errors** are sent as SSE events (not raw JSON), so streaming clients receive them gracefully:
+```
+data: {"error":{"type":"claude_all_sessions_busy","title":"All Claude Sessions Busy",...}}
+
+data: [DONE]
+```
+
+### Response Headers
+
+The gateway adds informative headers to every response:
+
+| Header | Description |
+|--------|-------------|
+| `X-Proxy-Provider` | Which provider served the request (mistral, fireworks, claude, etc.) |
+| `X-Proxy-Key` | Which API key ID was used |
+| `X-Proxy-Latency` | Response time in milliseconds |
+| `X-Proxy-Fallback` | `primary→fallback` if cross-provider fallback was used |
+| `X-Proxy-Continuation` | `true` if mid-stream continuation was used (Claude) |
+| `X-Proxy-Rotation` | Token ID and usage count (Claude) |
+| `X-Cache-Hit` | `true` if response was served from cache |
+| `X-RateLimit-Remaining` | Remaining requests in current window |
 
 ---
 

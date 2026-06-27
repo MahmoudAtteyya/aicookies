@@ -1,1148 +1,1332 @@
 {% extends "base.html" %}
-{% block title %}API Documentation — AI Proxy Gateway v3.0{% endblock %}
+
+{% block title %}API Documentation — AI Proxy Gateway{% endblock %}
+
 {% block content %}
-
 <style>
-    /* ── Docs-specific styles ── */
-    pre { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
-    code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; background: var(--bg-input); padding: 0.1rem 0.4rem; border-radius: 4px; }
-    pre code { background: none; padding: 0; }
-    h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-top: 2.5rem; }
-    h3 { margin-top: 1.5rem; color: var(--accent); }
-    h4 { margin-top: 1rem; color: var(--text); }
+/* ============================================================
+   Docs page scoped styles
+   ============================================================ */
+.docs-wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 20px 80px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.7;
+}
 
-    /* ── Badges ── */
-    .badge-free { background: #1a3a2a; color: #7ee787; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; }
-    .badge-prepaid { background: #3a2e1a; color: #d2991d; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; }
-    .badge-cookie { background: #2a1a3a; color: #d2a8ff; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; }
-    .badge-direct { background: #1a3a2a; color: #7ee787; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.7rem; }
-    .badge-reasoning { background: #3a1a2a; color: #f0883e; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.7rem; }
-    .badge-v3 { background: var(--accent); color: #fff; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.65rem; }
+/* ---------- Hero ---------- */
+.docs-hero {
+  position: relative;
+  margin: -20px -20px 40px;
+  padding: 64px 32px 52px;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  background:
+    radial-gradient(900px 360px at 12% -10%, rgba(var(--accent-rgb, 99,102,241), .28), transparent 60%),
+    radial-gradient(700px 300px at 88% 8%, rgba(56,189,248,.18), transparent 60%),
+    linear-gradient(135deg, #0b0f1a 0%, #0e1322 55%, #0a0e16 100%);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.docs-hero::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent 70%, var(--bg) 100%);
+  pointer-events: none;
+}
+.docs-hero h1 {
+  font-size: 38px;
+  font-weight: 800;
+  margin: 0 0 10px;
+  letter-spacing: -.5px;
+  background: linear-gradient(120deg, #fff 0%, #c7d2fe 55%, #a5b4fc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.docs-hero p.lead {
+  font-size: 17px;
+  color: var(--text-dim);
+  max-width: 640px;
+  margin: 0 0 22px;
+}
+.badge-v3 {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  color: #fff; font-weight: 700; font-size: 13px;
+  letter-spacing: .3px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 8px 24px -8px var(--accent);
+}
+.badge-v3::before { content: "◆"; font-size: 10px; opacity: .85; }
+.hero-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 26px; }
+.hero-cta a {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 18px; border-radius: var(--r-md);
+  font-weight: 600; font-size: 14px; text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  transition: .18s;
+}
+.hero-cta a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.hero-cta a.primary {
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  border-color: transparent; color: #fff;
+}
+.hero-cta a.primary:hover { box-shadow: 0 10px 30px -10px var(--accent); }
 
-    /* ── Layout ── */
-    .endpoint-box { background: var(--bg-card); border: 1px solid var(--accent); border-radius: 8px; padding: 0.75rem 1rem; margin: 0.5rem 0; font-family: monospace; font-size: 0.85rem; }
-    .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
-    .model-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
-    .model-card h4 { margin: 0 0 0.25rem 0; color: var(--accent); }
-    .model-card p { color: var(--text-dim); font-size: 0.8rem; margin: 0.25rem 0; }
-    .btn-download { background: #1a2a3a; color: #79c0ff; border: 1px solid #1f6feb; }
-    .btn-download:hover { background: #1f6feb; color: #fff; }
+/* ---------- Quick start inline ---------- */
+.quick-start {
+  position: relative; z-index: 1;
+  max-width: 720px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 60px -24px rgba(0,0,0,.6);
+}
+.quick-start .code-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  background: #0a0e14;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+}
+.quick-start .code-head .dot { width: 11px; height: 11px; border-radius: 50%; }
+.quick-start .code-head .dot.r { background: #ff5f57; }
+.quick-start .code-head .dot.y { background: #febc2e; }
+.quick-start .code-head .dot.g { background: #28c840; }
+.quick-start .code-head .file { margin-left: 8px; }
 
-    /* ── TOC ── */
-    .toc { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; }
-    .toc h3 { margin-top: 0; }
-    .toc ul { list-style: none; padding-left: 1rem; }
-    .toc li { padding: 0.2rem 0; }
-    .toc a { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; }
-    .toc a:hover { color: var(--accent); }
+/* ---------- Layout ---------- */
+.docs-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 36px;
+  align-items: start;
+}
+.docs-toc {
+  position: sticky; top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
+}
+.docs-toc h4 {
+  margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: .12em; color: var(--text-dim);
+}
+.docs-toc ul { list-style: none; margin: 0; padding: 0; }
+.docs-toc li { margin: 1px 0; }
+.docs-toc a {
+  display: block; padding: 6px 10px; border-radius: 6px;
+  font-size: 13.5px; color: var(--text-dim); text-decoration: none;
+  transition: .15s; border-left: 2px solid transparent;
+}
+.docs-toc a:hover { color: var(--text); background: rgba(255,255,255,.04); border-left-color: var(--accent); }
+.docs-toc a.sub { padding-left: 22px; font-size: 12.5px; }
+.docs-main { min-width: 0; }
 
-    /* ── Info boxes ── */
-    .info-box { background: #1a2a3a; border-left: 3px solid var(--blue); border-radius: 4px; padding: 1rem 1.5rem; margin: 1rem 0; }
-    .info-box strong { color: var(--blue); }
-    .warn-box { background: #3a2e1a; border-left: 3px solid var(--yellow); border-radius: 4px; padding: 1rem 1.5rem; margin: 1rem 0; }
-    .warn-box strong { color: var(--yellow); }
-    .danger-box { background: #3a1a1a; border-left: 3px solid var(--red); border-radius: 4px; padding: 1rem 1.5rem; margin: 1rem 0; }
-    .danger-box strong { color: var(--red); }
+/* ---------- Section ---------- */
+.section { margin-bottom: 56px; scroll-margin-top: 24px; }
+.section-head {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 18px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.section-head .num {
+  flex: 0 0 auto; width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: 8px; font-weight: 800; font-size: 14px;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb,99,102,241),.18), rgba(124,58,237,.18));
+  color: #c7d2fe; border: 1px solid rgba(var(--accent-rgb,99,102,241),.35);
+  font-family: var(--font-mono);
+}
+.section-head h2 { margin: 0; font-size: 24px; font-weight: 750; letter-spacing: -.3px; }
+.section-head .anchor { margin-left: auto; font-size: 13px; color: var(--text-dim); text-decoration: none; font-family: var(--font-mono); }
+.section-head .anchor:hover { color: var(--accent); }
+.section > p { color: var(--text-dim); margin: 0 0 14px; }
+.section h3 { margin: 26px 0 10px; font-size: 17px; font-weight: 700; color: var(--text); }
+.section h4 { margin: 18px 0 8px; font-size: 14.5px; font-weight: 700; color: var(--text); letter-spacing: .02em; }
+.section ul, .section ol { color: var(--text-dim); padding-left: 22px; }
+.section ul li, .section ol li { margin: 5px 0; }
+.section strong { color: var(--text); font-weight: 700; }
+.section code.inline {
+  font-family: var(--font-mono); font-size: .86em;
+  padding: 2px 6px; border-radius: 5px;
+  background: rgba(var(--accent-rgb,99,102,241),.12);
+  color: #c7d2fe; border: 1px solid rgba(var(--accent-rgb,99,102,241),.2);
+}
 
-    /* ── Table styling ── */
-    .api-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-    .api-table th { background: var(--bg-card); color: var(--accent); padding: 0.75rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid var(--accent); }
-    .api-table td { padding: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
-    .api-table tr:hover { background: var(--bg-card); }
+/* ---------- Code blocks ---------- */
+.code-block {
+  margin: 14px 0;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0a0e14;
+  position: relative;
+}
+.code-block .code-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: rgba(255,255,255,.02);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+}
+.code-block .code-head .lang {
+  margin-left: auto;
+  text-transform: uppercase; letter-spacing: .1em; font-size: 11px;
+  color: #7c89a8;
+}
+.code-block pre {
+  margin: 0; padding: 16px 18px;
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.65;
+  color: #d4d8e3; overflow-x: auto;
+  tab-size: 2;
+}
+.code-block .copy-btn {
+  position: absolute; top: 6px; right: 8px;
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(255,255,255,.06); color: var(--text-dim);
+  border: 1px solid var(--border); font-size: 11px; cursor: pointer;
+  font-family: var(--font-mono);
+  opacity: 0; transition: .15s;
+}
+.code-block:hover .copy-btn { opacity: 1; }
+.code-block .copy-btn:hover { color: #fff; border-color: var(--accent); }
 
-    /* ── Flow diagram ── */
-    .flow-diagram { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; font-family: monospace; font-size: 0.8rem; overflow-x: auto; }
-    .flow-step { display: inline-block; padding: 0.5rem 1rem; border-radius: 8px; margin: 0.25rem; }
-    .flow-client { background: #1a2a3a; color: var(--blue); border: 1px solid #1f6feb; }
-    .flow-gateway { background: #2a1a3a; color: #d2a8ff; border: 1px solid var(--accent); }
-    .flow-provider { background: #1a3a2a; color: var(--green); border: 1px solid #238636; }
-    .flow-arrow { color: var(--text-dim); margin: 0 0.5rem; }
+/* Syntax highlight classes */
+.k { color: #c792ea; }            /* keyword */
+.s { color: #c3e88d; }            /* string */
+.n { color: #f78c6c; }            /* number */
+.c { color: #5c6a85; font-style: italic; } /* comment */
+.p { color: #89ddff; }            /* punctuation / property */
+.f { color: #82aaff; }            /* function */
+.t { color: #ffcb6b; }            /* type / tag */
+.v { color: #f07178; }            /* variable */
+.op { color: #89ddff; }           /* operator */
+.bool { color: #ff5874; }
 
-    /* ── Code tab buttons ── */
-    .code-tabs { display: flex; gap: 0.5rem; margin-bottom: 0; }
-    .code-tab { padding: 0.4rem 1rem; background: var(--bg-input); border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 0.8rem; color: var(--text-dim); }
-    .code-tab.active { background: #0d1117; color: var(--accent); border-color: var(--accent); }
-    .code-content { display: none; }
-    .code-content.active { display: block; }
+/* ---------- Callouts ---------- */
+.callout {
+  display: flex; gap: 12px;
+  padding: 14px 16px; margin: 16px 0;
+  border-radius: var(--r-md);
+  border-left: 4px solid;
+  background: var(--bg-card);
+}
+.callout.info { border-left-color: var(--blue); }
+.callout.info .ico { color: var(--blue); }
+.callout.warn { border-left-color: var(--yellow); }
+.callout.warn .ico { color: var(--yellow); }
+.callout.danger { border-left-color: var(--red); }
+.callout.danger .ico { color: var(--red); }
+.callout.success { border-left-color: var(--green); }
+.callout.success .ico { color: var(--green); }
+.callout .ico { flex: 0 0 auto; font-size: 18px; font-weight: 800; }
+.callout .body { color: var(--text-dim); }
+.callout .body strong { color: var(--text); }
+.callout .body code { font-family: var(--font-mono); font-size: .85em; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,.06); }
 
-    /* ── Status indicators ── */
-    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.3rem; }
-    .status-active { background: var(--green); }
-    .status-parked { background: var(--yellow); }
-    .status-quarantined { background: var(--red); }
+/* ---------- Endpoint box ---------- */
+.endpoint {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 16px; margin: 12px 0;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-card);
+  font-family: var(--font-mono);
+}
+.endpoint .method {
+  padding: 3px 10px; border-radius: 6px;
+  font-weight: 800; font-size: 12px; letter-spacing: .06em;
+}
+.endpoint .method.GET { background: rgba(34,197,94,.15); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+.endpoint .method.POST { background: rgba(59,130,246,.15); color: #60a5fa; border: 1px solid rgba(59,130,246,.3); }
+.endpoint .method.DELETE { background: rgba(239,68,68,.15); color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+.endpoint .method.PUT { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.3); }
+.endpoint .path { font-size: 14px; color: var(--text); }
+.endpoint .auth-tag { margin-left: auto; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .08em; }
+
+/* ---------- Tables ---------- */
+.tbl-wrap { overflow-x: auto; margin: 14px 0; border: 1px solid var(--border); border-radius: var(--r-md); }
+table.api {
+  width: 100%; border-collapse: collapse; font-size: 13.5px;
+  background: var(--bg-card);
+}
+table.api thead th {
+  text-align: left; padding: 12px 14px;
+  font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+  color: #a5b4fc; font-weight: 700;
+  background: rgba(var(--accent-rgb,99,102,241),.08);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.api tbody td {
+  padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,.04);
+  color: var(--text-dim); vertical-align: top;
+}
+table.api tbody tr:hover { background: rgba(255,255,255,.02); }
+table.api tbody td strong { color: var(--text); }
+table.api tbody td code { font-family: var(--font-mono); font-size: .88em; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,.06); color: #c7d2fe; }
+table.api tbody tr:last-child td { border-bottom: none; }
+
+/* ---------- Badges ---------- */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .03em;
+  font-family: var(--font-mono);
+}
+.badge-direct { background: rgba(34,197,94,.14); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+.badge-reasoning { background: rgba(249,115,22,.14); color: #fb923c; border: 1px solid rgba(249,115,22,.3); }
+.badge-provider { background: rgba(99,102,241,.12); color: #a5b4fc; border: 1px solid rgba(99,102,241,.25); }
+.badge-ctx { background: rgba(56,189,248,.1); color: #38bdf8; border: 1px solid rgba(56,189,248,.22); }
+
+/* ---------- Model cards ---------- */
+.models-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  margin-top: 18px;
+}
+.model-card {
+  padding: 16px; border-radius: var(--r-md);
+  border: 1px solid var(--border); background: var(--bg-card);
+  transition: .18s; display: flex; flex-direction: column; gap: 8px;
+}
+.model-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 14px 36px -16px rgba(0,0,0,.5); }
+.model-card .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.model-card .slug { font-family: var(--font-mono); font-weight: 700; font-size: 15px; color: var(--text); }
+.model-card .desc { font-size: 13px; color: var(--text-dim); margin: 0; flex: 1; }
+.model-card .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.model-card .real { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); border-top: 1px dashed var(--border); padding-top: 8px; }
+.model-card .real span { color: #a5b4fc; }
+
+/* ---------- Flow diagram ---------- */
+.flow-box {
+  margin: 16px 0; padding: 22px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: #070b12;
+  overflow-x: auto;
+}
+.flow-box pre {
+  margin: 0; font-family: var(--font-mono); font-size: 13px; line-height: 1.55;
+  color: #8b98b8;
+}
+.flow-box pre .hi { color: #82aaff; }
+.flow-box pre .ok { color: #c3e88d; }
+.flow-box pre .warn { color: #ffcb6b; }
+.flow-box pre .err { color: #f07178; }
+.flow-box pre .accent { color: #c792ea; }
+
+/* ---------- Misc ---------- */
+.kv { display: grid; grid-template-columns: 180px 1fr; gap: 6px 16px; margin: 12px 0; }
+.kv dt { color: var(--text-dim); font-family: var(--font-mono); font-size: 13px; }
+.kv dd { margin: 0; color: var(--text); font-size: 13.5px; }
+.kv dd code { font-family: var(--font-mono); }
+
+.divider { height: 1px; background: var(--border); margin: 40px 0; }
+
+@media (max-width: 880px) {
+  .docs-grid { grid-template-columns: 1fr; }
+  .docs-toc { position: static; max-height: none; margin-bottom: 24px; }
+  .docs-hero { padding: 44px 22px 40px; margin-left: -20px; margin-right: -20px; }
+  .docs-hero h1 { font-size: 28px; }
+}
 </style>
 
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
-    <div>
-        <h1 style="margin:0;">📚 API Documentation</h1>
-        <p style="color:var(--text-dim);margin:0.3rem 0 0 0;font-size:0.9rem;">
-            AI Proxy Gateway <span class="badge-v3">v3.0.0</span> — 15 models · 5 providers · OpenAI-compatible
-        </p>
-    </div>
-    <div style="display:flex;gap:0.5rem;">
-        <a href="/docs.md" class="btn btn-download" download>⬇️ Download .md</a>
-        <a href="/" class="btn">← Dashboard</a>
-    </div>
-</div>
+<div class="docs-wrap">
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- TABLE OF CONTENTS -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="toc">
-    <h3 style="margin-top:0;">📋 Table of Contents</h3>
-    <ul style="columns: 2; -webkit-columns: 2;">
-        <li><a href="#overview">1. Project Overview & Architecture</a></li>
-        <li><a href="#quick-start">2. Quick Start</a></li>
-        <li><a href="#auth">3. Authentication & API Keys</a></li>
-        <li><a href="#models">4. Available Models (15)</a></li>
-        <li><a href="#endpoints">5. API Endpoints Reference</a></li>
-        <li><a href="#request-format">6. Request Format & Parameters</a></li>
-        <li><a href="#response-format">7. Response Format</a></li>
-        <li><a href="#streaming">8. Streaming (SSE)</a></li>
-        <li><a href="#tool-calling">9. Function Calling (Tools)</a></li>
-        <li><a href="#multimodal">10. Multimodal Content</a></li>
-        <li><a href="#claude-internals">11. Claude Cookie Engine</a></li>
-        <li><a href="#security">12. Security Features</a></li>
-        <li><a href="#reliability">13. Reliability Features</a></li>
-        <li><a href="#orchestration">14. Orchestration Features</a></li>
-        <li><a href="#conversation">15. Conversation Features</a></li>
-        <li><a href="#key-rotation">16. Smart Key Rotation</a></li>
-        <li><a href="#errors">17. Error Codes Reference</a></li>
-        <li><a href="#integration">18. Integration Examples</a></li>
-        <li><a href="#admin">19. Admin Panel & Token Management</a></li>
-        <li><a href="#deployment">20. Deployment & Configuration</a></li>
-        <li><a href="#frontend-plan">21. Frontend Improvement Plan</a></li>
-    </ul>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 1. PROJECT OVERVIEW -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="overview">1. 🏗️ Project Overview & Architecture</h2>
-
-<p><strong>AI Proxy Gateway (AICookies)</strong> is a self-hosted, OpenAI-compatible API gateway that aggregates multiple AI providers behind a single endpoint. It proxies requests to 5 providers (Claude, Mistral, Cohere, SambaNova, Fireworks) with automatic key rotation, TLS fingerprinting, conversation affinity, and enterprise-grade reliability features.</p>
-
-<h3>Technology Stack</h3>
-<table class="api-table">
-    <tr><th>Component</th><th>Technology</th><th>Purpose</th></tr>
-    <tr><td>Backend</td><td>Python 3.13 + Flask 3.1</td><td>Web framework, API routing, SSE streaming</td></tr>
-    <tr><td>HTTP Client</td><td>curl_cffi (Chrome 131 TLS)</td><td>Bypasses Cloudflare via TLS fingerprint impersonation</td></tr>
-    <tr><td>Database</td><td>SQLite 3 (WAL mode)</td><td>Cookies, API keys, providers, request logs</td></tr>
-    <tr><td>Encryption</td><td>Fernet (AES-128-CBC + HMAC-SHA256)</td><td>Cookie encryption at rest</td></tr>
-    <tr><td>Proxy</td><td>IPRoyal Residential</td><td>IP rotation for Claude requests</td></tr>
-    <tr><td>Frontend</td><td>Jinja2 templates + Vanilla JS</td><td>Admin dashboard, cookie upload, key management</td></tr>
-    <tr><td>Deployment</td><td>Docker + Traefik</td><td>Containerized reverse proxy with TLS</td></tr>
-</table>
-
-<h3>Request Flow Diagram</h3>
-<div class="flow-diagram">
-<span class="flow-step flow-client">Client Request</span>
-<span class="flow-arrow">→</span>
-<span class="flow-step flow-gateway">Auth Check</span>
-<span class="flow-arrow">→</span>
-<span class="flow-step flow-gateway">Rate Limit</span>
-<span class="flow-arrow">→</span>
-<span class="flow-step flow-gateway">Cache Check</span>
-<span class="flow-arrow">→</span>
-<span class="flow-step flow-gateway">Model Router</span>
-<span class="flow-arrow">→</span>
-<span class="flow-step flow-gateway">Key/Cookie Selection</span>
-<span class="flow-arrow">→</span>
-<span class="flow-step flow-provider">Provider API</span>
-<span class="flow-arrow">→</span>
-<span class="flow-step flow-gateway">Response Transform</span>
-<span class="flow-arrow">→</span>
-<span class="flow-step flow-client">Client Response</span>
-</div>
-
-<h3>Architecture Layers</h3>
-<table class="api-table">
-    <tr><th>Layer</th><th>Module</th><th>Responsibility</th></tr>
-    <tr><td><strong>Security</strong></td><td>Fernet, HMAC, API key minting</td><td>Encrypt cookies at rest, constant-time auth, key generation</td></tr>
-    <tr><td><strong>Reliability</strong></td><td>Retry, Rate limiter, Proxy blacklist</td><td>Exponential backoff, token bucket, proxy failover</td></tr>
-    <tr><td><strong>Orchestration</strong></td><td>Affinity, Tiers, Availability states</td><td>Session pinning, priority routing, lifecycle management</td></tr>
-    <tr><td><strong>Prompt</strong></td><td>Natural prompt, Tool rendering</td><td>OpenAI → Claude format, function calling emulation</td></tr>
-    <tr><td><strong>Conversation</strong></td><td>Title gen, Cache</td><td>Auto-titling, response caching (5 min TTL)</td></tr>
-    <tr><td><strong>Transform</strong></td><td>Artifact, SSE, Tool filter</td><td>antArtifact → Markdown, SSE conversion, XML stripping</td></tr>
-</table>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 2. QUICK START -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="quick-start">2. 🚀 Quick Start</h2>
-
-<p>Fully <strong>OpenAI-compatible</strong>. Point any OpenAI SDK client at the gateway — that's it.</p>
-<div class="endpoint-box">POST https://aicookies.elliaa.com/v1/chat/completions</div>
-
-<div class="code-tabs">
-    <div class="code-tab active" onclick="switchCode(event,'qs-curl')">cURL</div>
-    <div class="code-tab" onclick="switchCode(event,'qs-python')">Python</div>
-    <div class="code-tab" onclick="switchCode(event,'qs-node')">Node.js</div>
-    <div class="code-tab" onclick="switchCode(event,'qs-langchain')">LangChain</div>
-</div>
-<div id="qs-curl" class="code-content active">
-<pre><code>curl -X POST https://aicookies.elliaa.com/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_AICOOKIES_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"Hello!"}]}'</code></pre>
-</div>
-<div id="qs-python" class="code-content">
-<pre><code>from openai import OpenAI
-
-client = OpenAI(
-    base_url="https://aicookies.elliaa.com/v1",
-    api_key="YOUR_AICOOKIES_API_KEY"
-)
-response = client.chat.completions.create(
-    model="claude-sonnet-4-6",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-print(response.choices[0].message.content)</code></pre>
-</div>
-<div id="qs-node" class="code-content">
-<pre><code>const res = await fetch("https://aicookies.elliaa.com/v1/chat/completions", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer YOUR_AICOOKIES_API_KEY"
-  },
-  body: JSON.stringify({
-    model: "claude-sonnet-4-6",
-    messages: [{role: "user", content: "Hello!"}]
-  })
-});
-const data = await res.json();
-console.log(data.choices[0].message.content);</code></pre>
-</div>
-<div id="qs-langchain" class="code-content">
-<pre><code>from langchain_openai import ChatOpenAI
-
-llm = ChatOpenAI(
-    base_url="https://aicookies.elliaa.com/v1",
-    api_key="YOUR_AICOOKIES_API_KEY",
-    model="claude-sonnet-4-6"
-)
-response = llm.invoke("Hello!")
-print(response.content)</code></pre>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 3. AUTHENTICATION -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="auth">3. 🔐 Authentication & API Keys</h2>
-
-<p>All API requests require a Bearer token in the <code>Authorization</code> header:</p>
-<pre><code>Authorization: Bearer sk-aic-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
-
-<h3>API Key Format</h3>
-<ul>
-    <li><strong>Prefix:</strong> <code>sk-aic-</code> (generated keys) or legacy keys set via <code>PROXY_API_KEY_HASH</code></li>
-    <li><strong>Generation:</strong> <code>secrets.token_urlsafe(32)</code> → 43 chars of cryptographic randomness</li>
-    <li><strong>Storage:</strong> SHA-256 hash only (plaintext never stored)</li>
-    <li><strong>Verification:</strong> <code>hmac.compare_digest()</code> — constant-time comparison (prevents timing attacks)</li>
-</ul>
-
-<div class="info-box">
-    <strong>Multiple API Keys:</strong> The gateway supports unlimited API keys. Generate new keys from the admin panel → <a href="/generate-key">/generate-key</a>. Each key works with all 15 models.
-</div>
-
-<h3>Generating a New API Key</h3>
-<pre><code># Via admin panel (browser)
-# Navigate to: https://aicookies.elliaa.com/generate-key
-# Click "Generate" → key is shown once (save it!)
-
-# Via API (requires admin session)
-curl -X POST https://aicookies.elliaa.com/generate-key \
-  -H "Cookie: session=YOUR_ADMIN_SESSION" \
-  -d "label=my-app-key"
-
-# Response:
-# {"api_key": "sk-aic-a1b2c3d4e5f6...", "key_hash": "e5f6..."}</code></pre>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 4. AVAILABLE MODELS -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="models">4. 📋 Available Models <span style="font-size:0.7rem;color:var(--text-dim);">(15 models — 5 providers)</span></h2>
-
-<div style="margin-bottom:1rem;">
-    <span class="badge-direct">⚡ Direct</span> = replies immediately |
-    <span class="badge-reasoning">🧠 Reasoning</span> = shows thinking first (use <code>max_tokens ≥ 500</code>) |
-    <span class="badge-free">🔄 FREE</span> = recovers after rate limit |
-    <span class="badge-prepaid">💀 PREPAID</span> = dies permanently when $0 |
-    <span class="badge-cookie">🍪 Cookie</span> = uses browser session
-</div>
-
-<h3>🤖 Claude <span class="badge-cookie">🍪 Cookie-based</span></h3>
-<div class="model-grid">
-{% for slug, info in models|dictsort if info.provider == 'claude' %}
-<div class="model-card">
-    <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4>
-    <p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">Max context: {{ info.tokens|default('200K') }} tokens. Cookie-based auth with TLS impersonation.</p>
-</div>{% endfor %}</div>
-
-<h3>Mistral AI <span class="badge-free">FREE</span> — all ⚡ Direct</h3>
-<div class="model-grid">
-{% for slug, info in models|dictsort if info.provider == 'mistral' %}
-<div class="model-card">
-    <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4>
-    <p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">Max context: {{ info.tokens|default('32K') }} tokens | ~400-800ms</p>
-</div>{% endfor %}</div>
-
-<h3>Cohere <span class="badge-free">FREE</span> — all ⚡ Direct</h3>
-<div class="model-grid">
-{% for slug, info in models|dictsort if info.provider == 'cohere' %}
-<div class="model-card">
-    <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4>
-    <p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">Max context: {{ info.tokens|default('128K') }} tokens | ~400-500ms</p>
-</div>{% endfor %}</div>
-
-<h3>SambaNova <span class="badge-free">FREE</span> — ⚡ Direct</h3>
-<div class="model-grid">
-{% for slug, info in models|dictsort if info.provider == 'sambanova' %}
-<div class="model-card">
-    <h4>{{ slug }} <span class="badge-direct">⚡ Direct</span></h4>
-    <p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">Max context: {{ info.tokens|default('131K') }} tokens | ~800ms</p>
-</div>{% endfor %}</div>
-
-<h3>Fireworks AI <span class="badge-prepaid">💀 PREPAID ($6/account)</span></h3>
-<div class="model-grid">
-{% for slug, info in models|dictsort if info.provider == 'fireworks' %}
-<div class="model-card">
-    <h4>{{ slug }}
-        {% if info.style == 'reasoning' %}
-        <span class="badge-reasoning">🧠 Reasoning</span>
-        {% else %}
-        <span class="badge-direct">⚡ Direct</span>
-        {% endif %}
-    </h4><p>{{ info.desc }}</p>
-    <p style="font-size:0.7rem;color:var(--text-dim);">
-        Max context: {{ info.tokens|default('128K') }} tokens |
-        {% if info.style == 'reasoning' %}Shows thinking. Use high max_tokens.{% else %}Replies directly. Fast.{% endif %}
+  <!-- ================= HERO ================= -->
+  <section class="docs-hero">
+    <span class="badge-v3">v3.0.0</span>
+    <h1>AI Proxy Gateway</h1>
+    <p class="lead">
+      A unified OpenAI-compatible API gateway that fronts 15 models across Anthropic,
+      OpenAI, Google, xAI and DeepSeek — with smart key rotation, rate limiting,
+      function calling, native web search, and a Claude cookie proxy. One endpoint, every model.
     </p>
-</div>{% endfor %}</div>
+    <div class="hero-cta">
+      <a class="primary" href="#quick-start">Quick Start →</a>
+      <a href="#models">View Models</a>
+      <a href="/docs.md" download>📄 Download Markdown</a>
+    </div>
+    <div class="quick-start" id="quick-start">
+      <div class="code-head">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="file">quick-start.sh</span>
+      </div>
+      <pre><span class="c"># 1. Set your base URL &amp; key</span>
+<span class="k">export</span> <span class="v">OPENAI_API_BASE</span>=<span class="s">"https://aicookies.elliaa.com/v1"</span>
+<span class="k">export</span> <span class="v">OPENAI_API_KEY</span>=<span class="s">"sk-your-gateway-key"</span>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 5. API ENDPOINTS REFERENCE -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="endpoints">5. 🔌 API Endpoints Reference</h2>
+<span class="c"># 2. Send your first request</span>
+<span class="f">curl</span> <span class="op">$</span>OPENAI_API_BASE/chat/completions <span class="op">\</span>
+  -H <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> <span class="op">\</span>
+  -H <span class="s">"Content-Type: application/json"</span> <span class="op">\</span>
+  -d <span class="s">'{"model":"gpt-5","messages":[{"role":"user","content":"Hello!"}]}'</span></pre>
+    </div>
+  </section>
 
-<h3>Public API Endpoints (require API key)</h3>
-<table class="api-table">
-    <tr><th>Method</th><th>Endpoint</th><th>Description</th><th>Auth</th></tr>
-    <tr><td><code>POST</code></td><td><code>/v1/chat/completions</code></td><td>Main chat endpoint — model in JSON body</td><td>API Key</td></tr>
-    <tr><td><code>POST</code></td><td><code>/v1/{model}/chat/completions</code></td><td>Legacy endpoint — model in URL path</td><td>API Key</td></tr>
-    <tr><td><code>GET</code></td><td><code>/v1/models</code></td><td>List all available models + active key counts</td><td>API Key</td></tr>
-    <tr><td><code>GET</code></td><td><code>/v1/{model}</code></td><td>Get info about a specific model</td><td>API Key</td></tr>
-    <tr><td><code>GET</code></td><td><code>/v1/health</code></td><td>Health check — orchestration status, version, session counts</td><td>None</td></tr>
-    <tr><td><code>OPTIONS</code></td><td><code>/v1/*</code></td><td>CORS preflight — returns 204</td><td>None</td></tr>
-</table>
+  <div class="docs-grid">
 
-<h3>Admin Panel Endpoints (require session login)</h3>
-<table class="api-table">
-    <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
-    <tr><td><code>GET/POST</code></td><td><code>/login</code></td><td>Admin login page</td></tr>
-    <tr><td><code>GET</code></td><td><code>/</code></td><td>Dashboard — overview of cookies, keys, stats</td></tr>
-    <tr><td><code>GET/POST</code></td><td><code>/generate-key</code></td><td>Generate new API key (admin only)</td></tr>
-    <tr><td><code>GET/POST</code></td><td><code>/upload</code></td><td>Upload Claude cookie file (Netscape format)</td></tr>
-    <tr><td><code>GET</code></td><td><code>/cookies/{id}</code></td><td>View parsed cookies for a file</td></tr>
-    <tr><td><code>POST</code></td><td><code>/delete-cookie/{id}</code></td><td>Delete a cookie file</td></tr>
-    <tr><td><code>GET/POST</code></td><td><code>/keys</code></td><td>Manage provider API keys</td></tr>
-    <tr><td><code>POST</code></td><td><code>/delete-key/{id}</code></td><td>Delete an API key</td></tr>
-    <tr><td><code>POST</code></td><td><code>/toggle-key/{id}</code></td><td>Activate/pause an API key</td></tr>
-    <tr><td><code>GET</code></td><td><code>/docs</code></td><td>This documentation page</td></tr>
-    <tr><td><code>GET</code></td><td><code>/docs.md</code></td><td>Download docs as markdown</td></tr>
-</table>
+    <!-- ================= TOC ================= -->
+    <aside class="docs-toc">
+      <h4>Contents</h4>
+      <ul>
+        <li><a href="#authentication">1. Authentication</a></li>
+        <li><a href="#models">2. Models</a></li>
+        <li><a href="#chat-completions">3. Chat Completions</a></li>
+        <li><a href="#streaming">4. Streaming (SSE)</a></li>
+        <li><a href="#function-calling">5. Function Calling</a></li>
+        <li><a href="#web-search">6. Native Web Search</a></li>
+        <li><a href="#claude-proxy">7. Claude Cookie Proxy</a></li>
+        <li><a href="#key-rotation">8. Smart Key Rotation</a></li>
+        <li><a href="#rate-limiting">9. Rate Limiting</a></li>
+        <li><a href="#errors">10. Error Codes</a></li>
+        <li><a href="#management-api">11. Management API</a></li>
+        <li><a href="#sdk-examples">12. SDK Examples</a></li>
+        <li><a href="#health">13. Health Check</a></li>
+        <li><a href="#flow">14. Request Flow</a></li>
+      </ul>
+    </aside>
 
-<h3>Internal API Endpoints (require session login)</h3>
-<table class="api-table">
-    <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
-    <tr><td><code>POST</code></td><td><code>/api/login</code></td><td>JSON login for programmatic access</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/cookies</code></td><td>List cookie files (JSON)</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/cookies/raw/{id}</code></td><td>Get raw cookie text</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/cookies/latest</code></td><td>Get latest cookie file for a platform</td></tr>
-    <tr><td><code>GET/POST</code></td><td><code>/api/keys</code></td><td>List/add API keys (JSON)</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/keys/next/{provider}</code></td><td>Get next available key for a provider</td></tr>
-    <tr><td><code>POST</code></td><td><code>/api/keys/mark-rate-limited/{id}</code></td><td>Mark a key as rate-limited</td></tr>
-    <tr><td><code>POST</code></td><td><code>/api/keys/reset-usage/{provider}</code></td><td>Reset usage counts for a provider</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/providers</code></td><td>List all providers with key counts</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/models</code></td><td>List models with key/dead counts</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/stats</code></td><td>Request stats + Claude token states</td></tr>
-</table>
+    <!-- ================= MAIN ================= -->
+    <main class="docs-main">
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 6. REQUEST FORMAT -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="request-format">6. 📮 Request Format & Parameters</h2>
+      <!-- ============ AUTHENTICATION ============ -->
+      <section class="section" id="authentication">
+        <div class="section-head">
+          <span class="num">01</span>
+          <h2>Authentication</h2>
+          <a class="anchor" href="#authentication">#</a>
+        </div>
+        <p>
+          Every request to the gateway must include a valid API key passed as a
+          <strong>Bearer token</strong> in the <code class="inline">Authorization</code> header.
+          Keys are prefixed with <code class="inline">sk-</code> and are issued per-account.
+        </p>
 
-<pre><code>{
-  "model": "claude-sonnet-4-6",       // Required — see /v1/models for list
-  "messages": [                        // Required — conversation history
-    {"role": "system", "content": "You are helpful."},
-    {"role": "user", "content": "Hello!"},
-    {"role": "assistant", "content": "Hi there!"},
-    {"role": "user", "content": "How are you?"}
-  ],
-  "stream": false,                     // Optional — true for SSE streaming
-  "max_tokens": 4096,                  // Optional — max response tokens
-  "temperature": 0.7,                  // Optional — 0.0 to 1.0 (Claude ignores this)
-  "tools": [...],                      // Optional — function definitions (see §9)
-  "tool_choice": "auto"                // Optional — "none"|"auto"|"required"|{...}
-}</code></pre>
+        <div class="callout info">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            <strong>Header format:</strong>
+            <code>Authorization: Bearer sk-xxxxxxxxxxxxxxxx</code>
+          </div>
+        </div>
 
-<h3>Parameters Reference</h3>
-<table class="api-table">
-    <tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr>
-    <tr><td><code>model</code></td><td>string</td><td>✅ Yes</td><td>Model slug from the models list (e.g. <code>claude-sonnet-4-6</code>)</td></tr>
-    <tr><td><code>messages</code></td><td>array</td><td>✅ Yes</td><td>Array of message objects with <code>role</code> and <code>content</code></td></tr>
-    <tr><td><code>stream</code></td><td>boolean</td><td>❌ No</td><td>If true, returns SSE stream instead of JSON</td></tr>
-    <tr><td><code>max_tokens</code></td><td>integer</td><td>❌ No</td><td>Max tokens in response. For reasoning models, use ≥ 500</td></tr>
-    <tr><td><code>temperature</code></td><td>float</td><td>❌ No</td><td>0.0–1.0. Passed to provider. Claude.ai ignores this</td></tr>
-    <tr><td><code>tools</code></td><td>array</td><td>❌ No</td><td>Function definitions for tool calling (see §9)</td></tr>
-    <tr><td><code>tool_choice</code></td><td>string/object</td><td>❌ No</td><td>Controls tool usage: <code>"none"</code>, <code>"auto"</code>, <code>"required"</code>, or <code>{"function":{"name":"..."}}</code></td></tr>
-</table>
+        <h3>Getting a Key</h3>
+        <ul>
+          <li>Request a key from the gateway administrator or via the <code class="inline">/api/keys</code> management endpoint.</li>
+          <li>Keys are scoped to a provider pool and rotated automatically when rate-limited.</li>
+          <li>Treat your key like a password — never expose it in client-side code.</li>
+        </ul>
 
-<h3>Message Roles</h3>
-<table class="api-table">
-    <tr><th>Role</th><th>Description</th><th>Content Type</th></tr>
-    <tr><td><code>system</code></td><td>System prompt — injected as context prefix</td><td>String or content blocks</td></tr>
-    <tr><td><code>user</code></td><td>User message</td><td>String or content blocks (multimodal)</td></tr>
-    <tr><td><code>assistant</code></td><td>Previous assistant response</td><td>String, may include <code>tool_calls</code></td></tr>
-    <tr><td><code>tool</code></td><td>Tool execution result (for multi-turn tool calls)</td><td>String, requires <code>tool_call_id</code></td></tr>
-</table>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">bash</span></div>
+          <pre><span class="c"># Correct — Bearer token in header</span>
+<span class="f">curl</span> https://aicookies.elliaa.com/v1/chat/completions <span class="op">\</span>
+  -H <span class="s">"Authorization: Bearer sk-your-key"</span> <span class="op">\</span>
+  -H <span class="s">"Content-Type: application/json"</span> <span class="op">\</span>
+  -d <span class="s">'{"model":"claude-4-opus","messages":[{"role":"user","content":"Hi"}]}'</span>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 7. RESPONSE FORMAT -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="response-format">7. 📤 Response Format</h2>
+<span class="c"># ❌ Wrong — key in body or query string will be rejected</span>
+<span class="c"># curl ...?api_key=sk-xxx        # 401 Unauthorized</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-<h3>Non-Streaming Response</h3>
-<pre><code>{
-  "id": "claude-a1b2c3d4",
-  "object": "chat.completion",
-  "created": 1719500000,
-  "model": "claude-sonnet-4-6",
-  "title": "Python Programming Basics",
-  "choices": [{
-    "index": 0,
-    "message": {
-      "role": "assistant",
-      "content": "مرحباً بك! 😊"
+        <div class="callout warn">
+          <span class="ico">⚠</span>
+          <div class="body">
+            <strong>Missing or malformed</strong> Authorization headers return
+            <code>401 Unauthorized</code>. Keys with invalid characters or incorrect
+            prefix are rejected before any upstream call is made.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ MODELS ============ -->
+      <section class="section" id="models">
+        <div class="section-head">
+          <span class="num">02</span>
+          <h2>Models</h2>
+          <a class="anchor" href="#models">#</a>
+        </div>
+        <p>
+          The gateway exposes <strong>15 models</strong> across five providers.
+          Use the <em>slug</em> as the <code class="inline">model</code> field in your
+          requests — the gateway maps it to the real upstream model automatically.
+          Models are tagged as <span class="badge badge-direct">direct</span> (fast, single-pass)
+          or <span class="badge badge-reasoning">reasoning</span> (extended thinking chain).
+        </p>
+
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead>
+              <tr>
+                <th>Slug</th>
+                <th>Style</th>
+                <th>Provider</th>
+                <th>Real Model</th>
+                <th>Context</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for slug, info in models.items() %}
+              <tr>
+                <td><strong><code>{{ slug }}</code></strong></td>
+                <td>
+                  {% if info.style == 'reasoning' %}
+                  <span class="badge badge-reasoning">reasoning</span>
+                  {% else %}
+                  <span class="badge badge-direct">direct</span>
+                  {% endif %}
+                </td>
+                <td><span class="badge badge-provider">{{ info.provider }}</span></td>
+                <td><code>{{ info.real_model }}</code></td>
+                <td><span class="badge badge-ctx">{{ info.tokens }}</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Model Cards</h3>
+        <div class="models-grid">
+          {% for slug, info in models.items() %}
+          <div class="model-card">
+            <div class="top">
+              <span class="slug">{{ slug }}</span>
+              {% if info.style == 'reasoning' %}
+              <span class="badge badge-reasoning">reasoning</span>
+              {% else %}
+              <span class="badge badge-direct">direct</span>
+              {% endif %}
+            </div>
+            <p class="desc">{{ info.desc }}</p>
+            <div class="meta">
+              <span class="badge badge-provider">{{ info.provider }}</span>
+              <span class="badge badge-ctx">{{ info.tokens }} ctx</span>
+            </div>
+            <div class="real">→ <span>{{ info.real_model }}</span></div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="callout info">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            <strong>Model aliases:</strong> Unknown slugs return <code>404 model_not_found</code>.
+            Check <code class="inline">GET /v1/models</code> for the live, authoritative list at runtime.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ CHAT COMPLETIONS ============ -->
+      <section class="section" id="chat-completions">
+        <div class="section-head">
+          <span class="num">03</span>
+          <h2>Chat Completions</h2>
+          <a class="anchor" href="#chat-completions">#</a>
+        </div>
+        <p>
+          The core endpoint. Fully OpenAI-compatible — point any OpenAI SDK at the
+          gateway base URL and it just works.
+        </p>
+
+        <div class="endpoint">
+          <span class="method POST">POST</span>
+          <span class="path">/v1/chat/completions</span>
+          <span class="auth-tag">🔒 Bearer auth</span>
+        </div>
+
+        <h3>Request Body</h3>
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>model</code></td><td>string</td><td><strong>Yes</strong></td><td>Model slug from the table above.</td></tr>
+              <tr><td><code>messages</code></td><td>array</td><td><strong>Yes</strong></td><td>Conversation messages (<code>role</code>, <code>content</code>).</td></tr>
+              <tr><td><code>temperature</code></td><td>float</td><td>No</td><td>0.0–2.0 sampling temperature. Default <code>1.0</code>.</td></tr>
+              <tr><td><code>max_tokens</code></td><td>int</td><td>No</td><td>Max output tokens. Provider limits apply.</td></tr>
+              <tr><td><code>stream</code></td><td>bool</td><td>No</td><td>Enable SSE streaming. Default <code>false</code>.</td></tr>
+              <tr><td><code>tools</code></td><td>array</td><td>No</td><td>Function/tool definitions (see §5).</td></tr>
+              <tr><td><code>tool_choice</code></td><td>string/object</td><td>No</td><td><code>auto</code>, <code>none</code>, or specific tool.</td></tr>
+              <tr><td><code>top_p</code></td><td>float</td><td>No</td><td>Nucleus sampling. Default <code>1.0</code>.</td></tr>
+              <tr><td><code>stop</code></td><td>string/array</td><td>No</td><td>Up to 4 stop sequences.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Example Request</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">{</span>
+  <span class="t">"model"</span><span class="op">:</span> <span class="s">"gpt-5"</span><span class="op">,</span>
+  <span class="t">"messages"</span><span class="op">:</span> <span class="p">[</span>
+    <span class="p">{</span> <span class="t">"role"</span><span class="op">:</span> <span class="s">"system"</span><span class="op">,</span> <span class="t">"content"</span><span class="op">:</span> <span class="s">"You are a helpful assistant."</span> <span class="p">},</span>
+    <span class="p">{</span> <span class="t">"role"</span><span class="op">:</span> <span class="s">"user"</span><span class="op">,</span> <span class="t">"content"</span><span class="op">:</span> <span class="s">"Explain async/await in Python."</span> <span class="p">}</span>
+  <span class="p">]</span><span class="op">,</span>
+  <span class="t">"temperature"</span><span class="op">:</span> <span class="n">0.7</span><span class="op">,</span>
+  <span class="t">"max_tokens"</span><span class="op">:</span> <span class="n">1024</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <h3>Example Response</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">{</span>
+  <span class="t">"id"</span><span class="op">:</span> <span class="s">"chatcmpl-9f8a7b6c5d4e3f2a1"</span><span class="op">,</span>
+  <span class="t">"object"</span><span class="op">:</span> <span class="s">"chat.completion"</span><span class="op">,</span>
+  <span class="t">"created"</span><span class="op">:</span> <span class="n">1719500400</span><span class="op">,</span>
+  <span class="t">"model"</span><span class="op">:</span> <span class="s">"gpt-5"</span><span class="op">,</span>
+  <span class="t">"choices"</span><span class="op">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="t">"index"</span><span class="op">:</span> <span class="n">0</span><span class="op">,</span>
+      <span class="t">"message"</span><span class="op">:</span> <span class="p">{</span>
+        <span class="t">"role"</span><span class="op">:</span> <span class="s">"assistant"</span><span class="op">,</span>
+        <span class="t">"content"</span><span class="op">:</span> <span class="s">"async/await lets you write asynchronous code that reads top-to-bottom..."</span>
+      <span class="p">},</span>
+      <span class="t">"finish_reason"</span><span class="op">:</span> <span class="s">"stop"</span>
+    <span class="p">}</span>
+  <span class="p">]</span><span class="op">,</span>
+  <span class="t">"usage"</span><span class="op">:</span> <span class="p">{</span>
+    <span class="t">"prompt_tokens"</span><span class="op">:</span> <span class="n">28</span><span class="op">,</span>
+    <span class="t">"completion_tokens"</span><span class="op">:</span> <span class="n">156</span><span class="op">,</span>
+    <span class="t">"total_tokens"</span><span class="op">:</span> <span class="n">184</span>
+  <span class="p">}</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <div class="callout success">
+          <span class="ico">✓</span>
+          <div class="body">
+            <strong>Drop-in compatible.</strong> The response schema matches the OpenAI
+            Chat Completions API exactly. Any library expecting <code>choices[].message.content</code>
+            works without modification.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STREAMING ============ -->
+      <section class="section" id="streaming">
+        <div class="section-head">
+          <span class="num">04</span>
+          <h2>Streaming (SSE)</h2>
+          <a class="anchor" href="#streaming">#</a>
+        </div>
+        <p>
+          Set <code class="inline">"stream": true</code> to receive tokens as
+          <strong>Server-Sent Events</strong> as they are generated. Each event is a
+          <code class="inline">data:</code> line containing a JSON chunk; the stream
+          terminates with <code class="inline">data: [DONE]</code>.
+        </p>
+
+        <div class="endpoint">
+          <span class="method POST">POST</span>
+          <span class="path">/v1/chat/completions</span>
+          <span class="auth-tag">stream: true</span>
+        </div>
+
+        <h3>Request</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">{</span>
+  <span class="t">"model"</span><span class="op">:</span> <span class="s">"claude-4-opus"</span><span class="op">,</span>
+  <span class="t">"messages"</span><span class="op">:</span> <span class="p">[{</span> <span class="t">"role"</span><span class="op">:</span> <span class="s">"user"</span><span class="op">,</span> <span class="t">"content"</span><span class="op">:</span> <span class="s">"Count to 5 slowly."</span> <span class="p">}],</span>
+  <span class="t">"stream"</span><span class="op">:</span> <span class="bool">true</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <h3>SSE Response</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">text/event-stream</span></div>
+          <pre><span class="c">data:</span> <span class="p">{</span><span class="t">"id"</span><span class="op">:</span><span class="s">"chatcmpl-1"</span><span class="op">,</span><span class="t">"choices"</span><span class="op">:</span><span class="p">[{</span><span class="t">"delta"</span><span class="op">:</span><span class="p">{</span><span class="t">"role"</span><span class="op">:</span><span class="s">"assistant"</span><span class="p">}}]}</span>
+
+<span class="c">data:</span> <span class="p">{</span><span class="t">"id"</span><span class="op">:</span><span class="s">"chatcmpl-1"</span><span class="op">,</span><span class="t">"choices"</span><span class="op">:</span><span class="p">[{</span><span class="t">"delta"</span><span class="op">:</span><span class="p">{</span><span class="t">"content"</span><span class="op">:</span><span class="s">"1"</span><span class="p">}}]}</span>
+
+<span class="c">data:</span> <span class="p">{</span><span class="t">"id"</span><span class="op">:</span><span class="s">"chatcmpl-1"</span><span class="op">,</span><span class="t">"choices"</span><span class="op">:</span><span class="p">[{</span><span class="t">"delta"</span><span class="op">:</span><span class="p">{</span><span class="t">"content"</span><span class="op">:</span><span class="s">", 2"</span><span class="p">}}]}</span>
+
+<span class="c">data:</span> <span class="p">{</span><span class="t">"id"</span><span class="op">:</span><span class="s">"chatcmpl-1"</span><span class="op">,</span><span class="t">"choices"</span><span class="op">:</span><span class="p">[{</span><span class="t">"delta"</span><span class="op">:</span><span class="p">{</span><span class="t">"content"</span><span class="op">:</span><span class="s">", 3"</span><span class="p">},</span><span class="t">"finish_reason"</span><span class="op">:</span><span class="bool">null</span><span class="p">}]}</span>
+
+<span class="c">data:</span> <span class="p">{</span><span class="t">"id"</span><span class="op">:</span><span class="s">"chatcmpl-1"</span><span class="op">,</span><span class="t">"choices"</span><span class="op">:</span><span class="p">[{</span><span class="t">"delta"</span><span class="op">:</span><span class="p">{},</span><span class="t">"finish_reason"</span><span class="op">:</span><span class="s">"stop"</span><span class="p">}]}</span>
+
+<span class="c">data:</span> <span class="s">[DONE]</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <div class="callout info">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            <strong>Consuming SSE:</strong> Parse lines prefixed with <code>data: </code>,
+            strip the prefix, JSON-decode the remainder. Stop when you receive the literal
+            string <code>[DONE]</code>. Empty lines are keep-alive separators.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ FUNCTION CALLING ============ -->
+      <section class="section" id="function-calling">
+        <div class="section-head">
+          <span class="num">05</span>
+          <h2>Function Calling</h2>
+          <a class="anchor" href="#function-calling">#</a>
+        </div>
+        <p>
+          Pass a <code class="inline">tools</code> array of function definitions and the model
+          can choose to emit a structured <code class="inline">tool_calls</code> response instead
+          of (or alongside) text. Supported on all models — the gateway normalizes tool-call
+          schemas across providers.
+        </p>
+
+        <h3>Tool Definition Format</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">{</span>
+  <span class="t">"model"</span><span class="op">:</span> <span class="s">"gpt-5"</span><span class="op">,</span>
+  <span class="t">"messages"</span><span class="op">:</span> <span class="p">[</span>
+    <span class="p">{</span> <span class="t">"role"</span><span class="op">:</span> <span class="s">"user"</span><span class="op">,</span> <span class="t">"content"</span><span class="op">:</span> <span class="s">"What's the weather in Tokyo?"</span> <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="t">"tools"</span><span class="op">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="t">"type"</span><span class="op">:</span> <span class="s">"function"</span><span class="op">,</span>
+      <span class="t">"function"</span><span class="op">:</span> <span class="p">{</span>
+        <span class="t">"name"</span><span class="op">:</span> <span class="s">"get_weather"</span><span class="op">,</span>
+        <span class="t">"description"</span><span class="op">:</span> <span class="s">"Get current weather for a city."</span><span class="op">,</span>
+        <span class="t">"parameters"</span><span class="op">:</span> <span class="p">{</span>
+          <span class="t">"type"</span><span class="op">:</span> <span class="s">"object"</span><span class="op">,</span>
+          <span class="t">"properties"</span><span class="op">:</span> <span class="p">{</span>
+            <span class="t">"city"</span><span class="op">:</span> <span class="p">{</span> <span class="t">"type"</span><span class="op">:</span> <span class="s">"string"</span><span class="op">,</span> <span class="t">"description"</span><span class="op">:</span> <span class="s">"City name"</span> <span class="p">}</span>
+          <span class="p">},</span>
+          <span class="t">"required"</span><span class="op">:</span> <span class="p">[</span><span class="s">"city"</span><span class="p">]</span>
+        <span class="p">}</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="t">"tool_choice"</span><span class="op">:</span> <span class="s">"auto"</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <h3>tool_choice Values</h3>
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead><tr><th>Value</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td><code>"auto"</code></td><td>Model decides whether to call a tool. <strong>Default.</strong></td></tr>
+              <tr><td><code>"none"</code></td><td>Never call tools; force a text response.</td></tr>
+              <tr><td><code>"required"</code></td><td>Force the model to call at least one tool.</td></tr>
+              <tr><td><code>{"type":"function","function":{"name":"get_weather"}}</code></td><td>Force a specific function.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Response with tool_calls</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">{</span>
+  <span class="t">"choices"</span><span class="op">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="t">"message"</span><span class="op">:</span> <span class="p">{</span>
+        <span class="t">"role"</span><span class="op">:</span> <span class="s">"assistant"</span><span class="op">,</span>
+        <span class="t">"content"</span><span class="op">:</span> <span class="bool">null</span><span class="op">,</span>
+        <span class="t">"tool_calls"</span><span class="op">:</span> <span class="p">[</span>
+          <span class="p">{</span>
+            <span class="t">"id"</span><span class="op">:</span> <span class="s">"call_abc123"</span><span class="op">,</span>
+            <span class="t">"type"</span><span class="op">:</span> <span class="s">"function"</span><span class="op">,</span>
+            <span class="t">"function"</span><span class="op">:</span> <span class="p">{</span>
+              <span class="t">"name"</span><span class="op">:</span> <span class="s">"get_weather"</span><span class="op">,</span>
+              <span class="t">"arguments"</span><span class="op">:</span> <span class="s">"{\"city\":\"Tokyo\"}"</span>
+            <span class="p">}</span>
+          <span class="p">}</span>
+        <span class="p">]</span>
+      <span class="p">},</span>
+      <span class="t">"finish_reason"</span><span class="op">:</span> <span class="s">"tool_calls"</span>
+    <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+      </section>
+
+      <!-- ============ WEB SEARCH ============ -->
+      <section class="section" id="web-search">
+        <div class="section-head">
+          <span class="num">06</span>
+          <h2>Native Web Search</h2>
+          <a class="anchor" href="#web-search">#</a>
+        </div>
+        <p>
+          Some models (notably <strong>xAI Grok</strong> and select Anthropic models) support
+          a built-in web search tool. Enable it by passing a <code class="inline">web_search_v0</code>
+          entry in the <code class="inline">tools</code> array — no function schema required.
+          The gateway passes the request to the provider's native search backend.
+        </p>
+
+        <div class="callout info">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            <strong>Supported on:</strong> Models whose provider exposes a native search tool.
+            If the upstream provider doesn't support search, the tool is silently ignored and
+            the model answers from its training data.
+          </div>
+        </div>
+
+        <h3>Example Request</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">{</span>
+  <span class="t">"model"</span><span class="op">:</span> <span class="s">"grok-4"</span><span class="op">,</span>
+  <span class="t">"messages"</span><span class="op">:</span> <span class="p">[</span>
+    <span class="p">{</span> <span class="t">"role"</span><span class="op">:</span> <span class="s">"user"</span><span class="op">,</span> <span class="t">"content"</span><span class="op">:</span> <span class="s">"What are today's top AI news stories?"</span> <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="t">"tools"</span><span class="op">:</span> <span class="p">[</span>
+    <span class="p">{</span> <span class="t">"type"</span><span class="op">:</span> <span class="s">"web_search_v0"</span> <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="t">"tool_choice"</span><span class="op">:</span> <span class="s">"auto"</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <h3>Response (with citations)</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">{</span>
+  <span class="t">"choices"</span><span class="op">:</span> <span class="p">[</span>
+    <span class="p">{</span>
+      <span class="t">"message"</span><span class="op">:</span> <span class="p">{</span>
+        <span class="t">"role"</span><span class="op">:</span> <span class="s">"assistant"</span><span class="op">,</span>
+        <span class="t">"content"</span><span class="op">:</span> <span class="s">"Here are today's top AI stories:\n1. OpenAI released..."</span><span class="op">,</span>
+        <span class="t">"annotations"</span><span class="op">:</span> <span class="p">[</span>
+          <span class="p">{</span> <span class="t">"type"</span><span class="op">:</span> <span class="s">"url_citation"</span><span class="op">,</span> <span class="t">"url"</span><span class="op">:</span> <span class="s">"https://example.com/news1"</span> <span class="p">}</span>
+        <span class="p">]</span>
+      <span class="p">},</span>
+      <span class="t">"finish_reason"</span><span class="op">:</span> <span class="s">"stop"</span>
+    <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+      </section>
+
+      <!-- ============ CLAUDE COOKIE PROXY ============ -->
+      <section class="section" id="claude-proxy">
+        <div class="section-head">
+          <span class="num">07</span>
+          <h2>Claude Cookie Proxy</h2>
+          <a class="anchor" href="#claude-proxy">#</a>
+        </div>
+        <p>
+          For Claude models, the gateway can proxy requests through the
+          <strong>claude.ai web session</strong> using authenticated cookies rather than
+          the official API. This unlocks Claude access when API keys are exhausted or
+          unavailable. Requests are sent using <code class="inline">curl_cffi</code> with a
+          spoofed <strong>TLS fingerprint</strong> to bypass bot detection.
+        </p>
+
+        <div class="callout warn">
+          <span class="ico">⚠</span>
+          <div class="body">
+            <strong>Cookies are session-scoped</strong> and expire. The gateway's key
+            rotation automatically refreshes and falls back between API keys and cookie
+            pools — you don't need to manage this manually.
+          </div>
+        </div>
+
+        <h3>How It Works</h3>
+        <ol>
+          <li>The gateway holds a pool of Claude session cookies (per-account <code class="inline">sessionKey</code> from claude.ai).</li>
+          <li>When a Claude model is requested, the gateway builds a web-style request body.</li>
+          <li>The request is sent via <code class="inline">curl_cffi</code> using the <strong>Chrome 120</strong> TLS JA3 fingerprint and matching HTTP/2 headers.</li>
+          <li>The streaming response is parsed and re-emitted in OpenAI-compatible SSE chunks.</li>
+        </ol>
+
+        <h3>Under the hood</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">python</span></div>
+          <pre><span class="k">from</span> curl_cffi <span class="k">import</span> requests
+
+<span class="c"># TLS fingerprint impersonation — looks like a real Chrome browser</span>
+resp = requests.<span class="f">post</span>(
+    <span class="s">"https://claude.ai/api/organizations/{}/chat_conversations"</span>,
+    json=payload,
+    cookies={<span class="s">"sessionKey"</span>: cookie},
+    impersonate=<span class="s">"chrome120"</span>,   <span class="c"># JA3 + HTTP/2 fingerprint</span>
+    headers={
+        <span class="s">"User-Agent"</span>: <span class="s">"Mozilla/5.0 ... Chrome/120.0.0.0 ..."</span>,
+        <span class="s">"anthropic-client-sha"</span>: <span class="s">"..."</span>,
     },
-    "finish_reason": "stop"
-  }],
-  "usage": {
-    "prompt_tokens": 12,
-    "completion_tokens": 8,
-    "total_tokens": 20
-  }
-}</code></pre>
+    stream=<span class="bool">True</span>,
+)</pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-<h3>finish_reason Values</h3>
-<table class="api-table">
-    <tr><th>Value</th><th>Meaning</th></tr>
-    <tr><td><code>stop</code></td><td>Normal completion (end_turn / stop_sequence)</td></tr>
-    <tr><td><code>length</code></td><td>Hit max_tokens limit</td></tr>
-    <tr><td><code>tool_calls</code></td><td>Model wants to call a function (see §9)</td></tr>
-</table>
+        <div class="callout danger">
+          <span class="ico">!</span>
+          <div class="body">
+            <strong>Best-effort fallback.</strong> Cookie-based proxying is not guaranteed —
+            claude.ai may rate-limit or invalidate sessions. The gateway treats cookie 429/403
+            responses the same as key failures and rotates to the next available credential.
+          </div>
+        </div>
+      </section>
 
-<h3>Response Headers</h3>
-<table class="api-table">
-    <tr><th>Header</th><th>Description</th></tr>
-    <tr><td><code>X-RateLimit-Limit</code></td><td>Max requests per minute (60)</td></tr>
-    <tr><td><code>X-RateLimit-Remaining</code></td><td>Remaining requests in current window</td></tr>
-    <tr><td><code>X-Proxy-Provider</code></td><td>Which provider served the request</td></tr>
-    <tr><td><code>X-Proxy-Key</code></td><td>Which API key was used (for direct providers)</td></tr>
-    <tr><td><code>X-Proxy-Latency</code></td><td>Upstream response time in ms</td></tr>
-    <tr><td><code>X-Cache-Hit</code></td><td><code>true</code> if served from cache</td></tr>
-    <tr><td><code>Access-Control-Allow-Origin</code></td><td><code>*</code> — permissive CORS</td></tr>
-</table>
+      <!-- ============ KEY ROTATION ============ -->
+      <section class="section" id="key-rotation">
+        <div class="section-head">
+          <span class="num">08</span>
+          <h2>Smart Key Rotation</h2>
+          <a class="anchor" href="#key-rotation">#</a>
+        </div>
+        <p>
+          The gateway maintains a pool of API keys (and Claude cookies) per provider.
+          On each request it selects the best-available key using a state machine that
+          tracks health, cooldown timers, and dead-key quarantines.
+        </p>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 8. STREAMING -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="streaming">8. 📡 Streaming (SSE)</h2>
-<p>Add <code>"stream": true</code> for real-time token-by-token streaming:</p>
-<pre><code>curl -X POST https://aicookies.elliaa.com/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_AICOOKIES_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"claude-sonnet-4-6","stream":true,"messages":[{"role":"user","content":"Hello!"}]}'
+        <h3>Rotation Rules</h3>
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead><tr><th>Upstream Status</th><th>Action</th><th>Key State</th><th>Cooldown</th></tr></thead>
+            <tbody>
+              <tr><td><strong>200 OK</strong></td><td>Continue using key</td><td><span class="badge badge-direct">healthy</span></td><td>—</td></tr>
+              <tr><td><strong>429 Too Many Requests</strong></td><td>Rotate to next key; mark current as cooling</td><td><span class="badge badge-reasoning">cooldown</span></td><td>60s</td></tr>
+              <tr><td><strong>401 / 403</strong></td><td>Mark key as dead; rotate immediately</td><td><span class="badge" style="background:rgba(239,68,68,.14);color:#f87171;border:1px solid rgba(239,68,68,.3)">dead</span></td><td>permanent</td></tr>
+              <tr><td><strong>500 / 502 / 503</strong></td><td>Retry once on same key, then rotate</td><td><span class="badge badge-reasoning">cooldown</span></td><td>30s</td></tr>
+              <tr><td><strong>504 Timeout</strong></td><td>Rotate to next key immediately</td><td><span class="badge badge-reasoning">cooldown</span></td><td>15s</td></tr>
+              <tr><td><strong>Network error</strong></td><td>Rotate; mark key as unstable</td><td><span class="badge badge-reasoning">cooldown</span></td><td>20s</td></tr>
+              <tr><td><strong>Cookie 403 (Claude)</strong></td><td>Drop cookie; pick fresh one</td><td><span class="badge" style="background:rgba(239,68,68,.14);color:#f87171;border:1px solid rgba(239,68,68,.3)">dead</span></td><td>permanent</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-# SSE Response:
-data: {"choices":[{"delta":{"content":" مرحباً"}}]}
-data: {"choices":[{"delta":{"content":" بك! كيف"}}]}
-data: {"choices":[{"delta":{"content":" حالك؟"}}]}
-data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
-data: [DONE]</code></pre>
+        <h3>Selection Algorithm</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">pseudo</span></div>
+          <pre><span class="c"># Pseudocode — key selection per provider</span>
+<span class="k">def</span> <span class="f">pick_key</span>(provider):
+    keys = pool[provider].<span class="f">filter</span>(state=<span class="s">"healthy"</span>)
+    <span class="k">if</span> keys:
+        <span class="k">return</span> <span class="f">round_robin</span>(keys)      <span class="c"># load balance</span>
 
-<div class="info-box">
-    <strong>SSE Format Details:</strong> Claude uses two internal formats — legacy <code>{"completion":"text"}</code> and <code>content_block_delta</code> events. The gateway handles <strong>both</strong> transparently. API consumers always receive standard OpenAI-compatible chunks.
-</div>
+    <span class="c"># No healthy keys — try any whose cooldown has elapsed</span>
+    cooled = pool[provider].<span class="f">filter</span>(cooldown_elapsed=<span class="bool">True</span>)
+    <span class="k">if</span> cooled:
+        <span class="k">return</span> <span class="f">round_robin</span>(cooled)
 
-<h3>Streaming + Artifacts</h3>
-<p>The streaming transformer buffers the full response, applies <code>antArtifact</code> → Markdown transformation and tool XML filtering, then re-chunks into SSE events. Chunks that would be entirely tool XML are silently dropped.</p>
+    <span class="k">raise</span> <span class="t">AllKeysExhausted</span>(<span class="s">"503 no available keys for {provider}"</span>)</pre>
+          <button class="copy-btn">copy</button>
+        </div>
+      </section>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 9. TOOL CALLING -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="tool-calling">9. 🛠️ Function Calling (Tools) <span class="badge-v3">v3.0</span></h2>
+      <!-- ============ RATE LIMITING ============ -->
+      <section class="section" id="rate-limiting">
+        <div class="section-head">
+          <span class="num">09</span>
+          <h2>Rate Limiting</h2>
+          <a class="anchor" href="#rate-limiting">#</a>
+        </div>
+        <p>
+          The gateway enforces a per-client <strong>token-bucket</strong> rate limit to
+          protect upstream providers and ensure fair usage. Limits are applied per API key.
+        </p>
 
-<p>The gateway supports OpenAI-compatible <code>tools</code> and <code>tool_choice</code> parameters. When you send function definitions, the gateway injects them as a natural preamble — Claude knows what tools are available and calls them using <code>&lt;function_calls&gt;</code> XML format. The gateway parses the XML and returns standard OpenAI <code>tool_calls</code> in the response.</p>
+        <dl class="kv">
+          <dt>Algorithm</dt><dd>Token bucket</dd>
+          <dt>Capacity</dt><dd>60 tokens</dd>
+          <dt>Refill rate</dt><dd>1 token / second (60 req/min)</dd>
+          <dt>Scope</dt><dd>Per API key (client)</dd>
+          <dt>Burst</dt><dd>Up to 60 requests in a single second (bucket full)</dd>
+        </dl>
 
-<pre><code>curl -X POST https://aicookies.elliaa.com/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_AICOOKIES_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "claude-sonnet-4-6",
-    "messages": [{"role": "user", "content": "What is the weather in Cairo?"}],
-    "tools": [{
-      "type": "function",
-      "function": {
-        "name": "get_weather",
-        "description": "Get current weather for a city",
-        "parameters": {
-          "type": "object",
-          "properties": {"city": {"type": "string", "description": "City name"}},
-          "required": ["city"]
-        }
-      }
-    }],
-    "tool_choice": "auto"
-  }'
+        <div class="callout info">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            Rate-limit responses include <code>Retry-After</code> and
+            <code>X-RateLimit-Remaining</code> headers so clients can back off intelligently.
+          </div>
+        </div>
 
-# Response — standard OpenAI tool_calls format
-{
-  "choices": [{
-    "message": {
-      "role": "assistant",
-      "content": "",
-      "tool_calls": [{
-        "id": "call_abc123",
-        "type": "function",
-        "function": {"name": "get_weather", "arguments": "{\"city\": \"Cairo\"}"}
-      }]
-    },
-    "finish_reason": "tool_calls"
-  }]
-}</code></pre>
+        <h3>Rate-Limited Response</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">http</span></div>
+          <pre>HTTP/1.1 <span class="n">429</span> Too Many Requests
+<span class="p">Retry-After</span>: 3
+<span class="p">X-RateLimit-Limit</span>: 60
+<span class="p">X-RateLimit-Remaining</span>: 0
+<span class="p">Content-Type</span>: application/json
 
-<h3>Multi-Turn Tool Calls</h3>
-<p>After executing the tool, send the result back with <code>role: "tool"</code>:</p>
-<pre><code>{"messages": [
-  {"role": "user", "content": "Weather in Cairo?"},
-  {"role": "assistant", "content": null, "tool_calls": [{
-    "id": "call_abc", "type": "function",
-    "function": {"name": "get_weather", "arguments": "{\"city\": \"Cairo\"}"}
-  }]},
-  {"role": "tool", "tool_call_id": "call_abc", "content": "Sunny, 32°C"},
-  {"role": "user", "content": "What about tomorrow?"}
-]}</code></pre>
+<span class="p">{</span>
+  <span class="t">"error"</span><span class="op">:</span> <span class="p">{</span>
+    <span class="t">"message"</span><span class="op">:</span> <span class="s">"Rate limit exceeded. Retry after 3s."</span><span class="op">,</span>
+    <span class="t">"type"</span><span class="op">:</span> <span class="s">"rate_limit_error"</span><span class="op">,</span>
+    <span class="t">"code"</span><span class="op">:</span> <span class="s">"rate_limit_exceeded"</span>
+  <span class="p">}</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+      </section>
 
-<h3>tool_choice Options</h3>
-<table class="api-table">
-    <tr><th>Value</th><th>Behavior</th></tr>
-    <tr><td><code>"none"</code></td><td>Don't use any tools — just respond normally</td></tr>
-    <tr><td><code>"auto"</code></td><td>Claude decides whether to call a tool (default)</td></tr>
-    <tr><td><code>"required"</code></td><td>Must call at least one tool</td></tr>
-    <tr><td><code>{"function": {"name": "..."}}</code></td><td>Must call the specified function</td></tr>
-</table>
+      <!-- ============ ERROR CODES ============ -->
+      <section class="section" id="errors">
+        <div class="section-head">
+          <span class="num">10</span>
+          <h2>Error Codes</h2>
+          <a class="anchor" href="#errors">#</a>
+        </div>
+        <p>
+          All errors are returned as JSON in the OpenAI error envelope:
+          <code class="inline">{"error":{"message":...,"type":...,"code":...}}</code>.
+        </p>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 10. MULTIMODAL -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="multimodal">10. 🖼️ Multimodal Content <span class="badge-v3">v3.0</span></h2>
-<p>Messages with content as a list of blocks (text + image URLs) are handled natively:</p>
-<pre><code>{"messages": [{
-  "role": "user",
-  "content": [
-    {"type": "text", "text": "Describe this image"},
-    {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}}
-  ]
-}]}</code></pre>
-<div class="info-box">
-    <strong>Note:</strong> Image URLs are described as <code>[Image: URL]</code> placeholders since Claude.ai's web interface doesn't accept image URLs in prompt text. The text content is fully preserved.
-</div>
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead><tr><th>HTTP</th><th>Type</th><th>Message</th><th>Cause</th></tr></thead>
+            <tbody>
+              <tr><td><strong>400</strong></td><td><code>invalid_request_error</code></td><td>Malformed JSON or missing required field.</td><td>Bad request body.</td></tr>
+              <tr><td><strong>401</strong></td><td><code>authentication_error</code></td><td>Missing or invalid API key.</td><td>No/invalid Bearer token.</td></tr>
+              <tr><td><strong>403</strong></td><td><code>permission_error</code></td><td>Key lacks access to this model/provider.</td><td>Key not provisioned for model.</td></tr>
+              <tr><td><strong>404</strong></td><td><code>not_found_error</code></td><td>Unknown model slug or endpoint.</td><td>Invalid <code>model</code> or path.</td></tr>
+              <tr><td><strong>405</strong></td><td><code>method_not_allowed</code></td><td>HTTP method not supported on this path.</td><td>e.g. GET on a POST-only route.</td></tr>
+              <tr><td><strong>429</strong></td><td><code>rate_limit_error</code></td><td>Rate limit exceeded. Retry after Ns.</td><td>Token bucket empty.</td></tr>
+              <tr><td><strong>500</strong></td><td><code>internal_error</code></td><td>Internal gateway error.</td><td>Unexpected server fault.</td></tr>
+              <tr><td><strong>502</strong></td><td><code>upstream_error</code></td><td>Upstream provider returned an error.</td><td>Bad gateway response.</td></tr>
+              <tr><td><strong>503</strong></td><td><code>service_unavailable</code></td><td>No available keys for the requested provider.</td><td>All keys in cooldown/dead.</td></tr>
+              <tr><td><strong>504</strong></td><td><code>timeout_error</code></td><td>Upstream request timed out.</td><td>Provider exceeded timeout.</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 11. CLAUDE COOKIE ENGINE -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="claude-internals">11. 🍪 Claude Cookie Engine</h2>
+        <div class="callout danger">
+          <span class="ico">!</span>
+          <div class="body">
+            <strong>5xx errors are transient.</strong> Implement exponential backoff with
+            jitter on <code>429</code>, <code>502</code>, <code>503</code>, and <code>504</code>.
+            Do <em>not</em> retry on <code>400</code>, <code>401</code>, <code>403</code>, or <code>404</code>.
+          </div>
+        </div>
+      </section>
 
-<p>Claude models use <strong>browser session cookies</strong> instead of API keys. The gateway manages the entire lifecycle:</p>
+      <!-- ============ MANAGEMENT API ============ -->
+      <section class="section" id="management-api">
+        <div class="section-head">
+          <span class="num">11</span>
+          <h2>Management API</h2>
+          <a class="anchor" href="#management-api">#</a>
+        </div>
+        <p>
+          Administrative endpoints under <code class="inline">/api/*</code> let you manage keys,
+          inspect pool health, and view metrics. These require a management token (separate
+          from user API keys).
+        </p>
 
-<h3>How It Works</h3>
-<ol>
-    <li><strong>Upload:</strong> Admin uploads a Netscape cookie file via <code>/upload</code></li>
-    <li><strong>Parse:</strong> Gateway extracts <code>sessionKey</code>, <code>lastActiveOrg</code>, <code>anthropic-device-id</code>, and Cloudflare tokens</li>
-    <li><strong>Encrypt:</strong> If <code>COOKIE_ENCRYPTION_KEY</code> is set, cookies are encrypted at rest with Fernet</li>
-    <li><strong>Request:</strong> When a Claude request arrives, gateway selects a cookie set (affinity-aware) and sends to <code>claude.ai/api/organizations/{org}/chat_conversations/{conv}/completion</code></li>
-    <li><strong>Transform:</strong> Gateway converts OpenAI messages → natural conversation prompt, sends via <code>curl_cffi</code> with <code>impersonate=chrome131</code> to bypass Cloudflare</li>
-    <li><strong>Stream:</strong> Anthropic SSE → OpenAI SSE format in real-time</li>
-    <li><strong>Cleanup:</strong> Conversation is deleted from Claude.ai after each request</li>
-</ol>
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th><th>Auth</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge badge-direct">GET</span></td><td><code>/api/keys</code></td><td>List all API keys with status (healthy/cooldown/dead).</td><td>mgmt</td></tr>
+              <tr><td><span class="badge badge-direct">GET</span></td><td><code>/api/keys/&lt;id&gt;</code></td><td>Details for a single key.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge badge-direct">GET</span></td><td><code>/api/keys/&lt;id&gt;/status</code></td><td>Current state + cooldown expiry.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge" style="background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.3)">POST</span></td><td><code>/api/keys</code></td><td>Add a new key to the pool.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge" style="background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.3)">POST</span></td><td><code>/api/keys/&lt;id&gt;/reset</code></td><td>Manually reset a key to healthy.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge" style="background:rgba(239,68,68,.14);color:#f87171;border:1px solid rgba(239,68,68,.3)">DELETE</span></td><td><code>/api/keys/&lt;id&gt;</code></td><td>Remove a key from the pool.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge badge-direct">GET</span></td><td><code>/api/models</code></td><td>List models + live availability per provider.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge badge-direct">GET</span></td><td><code>/api/cookies</code></td><td>List Claude cookie sessions + health.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge" style="background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.3)">POST</span></td><td><code>/api/cookies</code></td><td>Add a Claude session cookie.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge" style="background:rgba(239,68,68,.14);color:#f87171;border:1px solid rgba(239,68,68,.3)">DELETE</span></td><td><code>/api/cookies/&lt;id&gt;</code></td><td>Remove a cookie.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge badge-direct">GET</span></td><td><code>/api/stats</code></td><td>Aggregate request counts, errors, latency.</td><td>mgmt</td></tr>
+              <tr><td><span class="badge badge-direct">GET</span></td><td><code>/api/health</code></td><td>Gateway + all upstream provider health.</td><td>mgmt</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-<h3>Natural Prompt Middleware</h3>
-<p>The gateway converts API requests into natural conversation without external calls:</p>
-<ul>
-    <li><strong>System prompts</strong> → included as natural context at the top (no <code>&lt;system&gt;</code> tags)</li>
-    <li><strong>Multi-turn conversations</strong> → full context preserved (all user + assistant messages)</li>
-    <li><strong>No API artifacts</strong> → no JSON structures, no <code>role:</code> markers, no formatting that reveals automation</li>
-    <li><strong>Zero latency overhead</strong> → pure local transformation</li>
-    <li><strong>Meaning preservation</strong> → exact text passed through, no rewriting or paraphrasing</li>
-</ul>
+        <h3>Example — List Keys</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">bash</span></div>
+          <pre><span class="f">curl</span> https://aicookies.elliaa.com/api/keys <span class="op">\</span>
+  -H <span class="s">"Authorization: Bearer mgmt-xxxxx"</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-<h3>Tool Artifact Filtering (Anti-Leak Protection)</h3>
-<p>Claude.ai's web interface has tools (web search, MCP) enabled. When the model decides to use a tool, it emits XML tags as plain text. Since our gateway doesn't execute these internal tools, artifacts would leak to the API consumer.</p>
-<p><strong>The gateway handles this in two layers:</strong></p>
-<ul>
-    <li><strong>Layer 1 — Automatic Retry:</strong> If Claude's response contains tool artifacts or stops with <code>tool_use</code> reason, the gateway retries with an anti-tool instruction appended. This usually makes Claude answer directly.</li>
-    <li><strong>Layer 2 — Regex Filtering:</strong> Any remaining tool XML is stripped from the response. Patterns: <code>&lt;function_calls&gt;</code>, <code>&lt;invoke&gt;</code>, <code>&lt;function_results&gt;</code>, <code>&lt;antml:function_calls&gt;</code>, <code>&lt;web_search&gt;</code> tags, and all variants.</li>
-</ul>
-<div class="info-box">
-    <strong>Filter safety:</strong> The regex patterns match <em>only</em> Claude's internal tool XML tags. They do <strong>NOT</strong> affect legitimate HTML/SVG/JSX code that Claude writes as part of the answer. Tags like <code>&lt;div&gt;</code>, <code>&lt;svg&gt;</code>, <code>&lt;script&gt;</code> pass through untouched.
-</div>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">[</span>
+  <span class="p">{</span> <span class="t">"id"</span><span class="op">:</span> <span class="s">"k_01"</span><span class="op">,</span> <span class="t">"provider"</span><span class="op">:</span> <span class="s">"openai"</span><span class="op">,</span> <span class="t">"state"</span><span class="op">:</span> <span class="s">"healthy"</span><span class="op">,</span> <span class="t">"requests"</span><span class="op">:</span> <span class="n">1240</span> <span class="p">},</span>
+  <span class="p">{</span> <span class="t">"id"</span><span class="op">:</span> <span class="s">"k_02"</span><span class="op">,</span> <span class="t">"provider"</span><span class="op">:</span> <span class="s">"anthropic"</span><span class="op">,</span> <span class="t">"state"</span><span class="op">:</span> <span class="s">"cooldown"</span><span class="op">,</span> <span class="t">"retry_after"</span><span class="op">:</span> <span class="n">37</span> <span class="p">},</span>
+  <span class="p">{</span> <span class="t">"id"</span><span class="op">:</span> <span class="s">"k_03"</span><span class="op">,</span> <span class="t">"provider"</span><span class="op">:</span> <span class="s">"anthropic"</span><span class="op">,</span> <span class="t">"state"</span><span class="op">:</span> <span class="s">"dead"</span><span class="op">,</span> <span class="t">"reason"</span><span class="op">:</span> <span class="s">"401 invalid_key"</span> <span class="p">}</span>
+<span class="p">]</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+      </section>
 
-<h3>Artifact Compatibility (Standard Markdown Output)</h3>
-<p>Claude.ai uses proprietary <code>&lt;antArtifact&gt;</code> XML tags. The gateway converts them to standard Markdown code blocks:</p>
-<pre><code>text/html              → ```html
-application/vnd.ant.react → ```tsx
-text/python            → ```python
-text/javascript        → ```javascript
-image/svg+xml          → ```svg
-application/json       → ```json
-text/markdown          → ```markdown
-text/sql               → ```sql
-text/yaml              → ```yaml
-...and more</code></pre>
-<p>Also strips <code>&lt;antThinking&gt;</code> reasoning blocks — users see only the final answer.</p>
+      <!-- ============ SDK EXAMPLES ============ -->
+      <section class="section" id="sdk-examples">
+        <div class="section-head">
+          <span class="num">12</span>
+          <h2>SDK Examples</h2>
+          <a class="anchor" href="#sdk-examples">#</a>
+        </div>
+        <p>Copy-paste ready snippets for common clients. All use the same base URL and key.</p>
 
-<h3>Web Search (Native, Server-Side)</h3>
-<p>The gateway enables Claude's <strong>native web search</strong>. When a user asks about current events, prices, news, or time-sensitive information, Claude automatically searches the web and returns factual, up-to-date answers — no external API required.</p>
-<pre><code>curl -X POST https://aicookies.elliaa.com/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_AICOOKIES_API_KEY" \
-  -d '{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"What is the current price of gold?"}]}'
+        <h3>cURL</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">bash</span></div>
+          <pre><span class="f">curl</span> https://aicookies.elliaa.com/v1/chat/completions <span class="op">\</span>
+  -H <span class="s">"Authorization: Bearer sk-your-key"</span> <span class="op">\</span>
+  -H <span class="s">"Content-Type: application/json"</span> <span class="op">\</span>
+  -d <span class="s">'{"model":"gpt-5","messages":[{"role":"user","content":"Hello"}]}'</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-# Response — Claude searched the web and returned real data
-{"choices":[{"message":{"content":"The current price of gold is $4,085 per troy ounce..."}}]}</code></pre>
+        <h3>Python — OpenAI SDK</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">python</span></div>
+          <pre><span class="k">from</span> openai <span class="k">import</span> OpenAI
 
-<h3>TLS Fingerprint Impersonation</h3>
-<div class="info-box">
-    <strong>curl_cffi + Chrome 131:</strong> The gateway uses <code>curl_cffi</code> with <code>impersonate="chrome131"</code> for all Claude API calls. This replicates Chrome's TLS fingerprint (JA3/JA4), HTTP/2 settings, and header ordering — making the traffic indistinguishable from a real Chrome browser. This is critical for bypassing Cloudflare's bot detection.
-</div>
-
-<h3>Rate Limits & Cooldown</h3>
-<p>Claude uses session-based limits (per 5 hours / 7 days). The proxy automatically rotates between uploaded cookie sets when one hits the limit. Cloudflare challenges trigger a cooldown (not permanent death) — the token auto-recovers after 5 minutes.</p>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 12. SECURITY -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="security">12. 🔒 Security Features <span class="badge-v3">v3.0</span></h2>
-
-<h3>Fernet Cookie Encryption</h3>
-<p>Uploaded Claude cookies are encrypted at rest using <strong>Fernet symmetric encryption</strong> (AES-128-CBC + HMAC-SHA256). Set <code>COOKIE_ENCRYPTION_KEY</code> environment variable to enable. If not set, gracefully falls back to plaintext storage.</p>
-<pre><code># Generate a Fernet key for your deployment
-python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-# Set in docker-compose.yml:
-COOKIE_ENCRYPTION_KEY=your-generated-key-here</code></pre>
-
-<h3>API Key Minting</h3>
-<ul>
-    <li><strong>Prefix:</strong> <code>sk-aic-</code> + 43 chars of <code>secrets.token_urlsafe(32)</code></li>
-    <li><strong>Storage:</strong> SHA-256 hash only (plaintext never persisted)</li>
-    <li><strong>Verification:</strong> <code>hmac.compare_digest()</code> — constant-time comparison (prevents timing attacks)</li>
-    <li><strong>Multiple keys:</strong> Unlimited keys supported — generate from <a href="/generate-key">admin panel</a></li>
-</ul>
-
-<h3>Additional Security Measures</h3>
-<ul>
-    <li><strong>Cookie name validation</strong> — only safe characters (<code>[\w\-\.]+</code>) accepted in cookie names</li>
-    <li><strong>XSRF auto-extraction</strong> — XSRF-TOKEN extracted from cookies and set as <code>x-xsrf-token</code> header automatically</li>
-    <li><strong>Admin session auth</strong> — dashboard protected by <code>werkzeug.security</code> password hashing</li>
-    <li><strong>Proxy credentials</strong> — IPRoyal proxy credentials stored in environment variables, not in code</li>
-</ul>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 13. RELIABILITY -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="reliability">13. ♻️ Reliability Features <span class="badge-v3">v3.0</span></h2>
-
-<h3>Retry Middleware</h3>
-<p>Failed requests to Claude automatically retry with <strong>exponential backoff + jitter</strong>. Respects <code>Retry-After</code> headers. Max delay: 60 seconds.</p>
-<pre><code>Attempt 1: ~2s delay (if failed)
-Attempt 2: ~4s delay + jitter
-Attempt 3: ~8s delay + jitter
-→ Max 3 attempts, then return error to client</code></pre>
-
-<h3>Rate Limiting (Token Bucket)</h3>
-<p>Per-client-IP rate limiting using a token bucket algorithm (60 requests/minute with burst capacity).</p>
-<pre><code>// 429 — Rate limit exceeded
-{"error": "Rate limit exceeded", "retry_after_seconds": 15}
-// Headers: X-RateLimit-Remaining: 0, Retry-After: 15</code></pre>
-
-<h3>Proxy Blacklist</h3>
-<p>Proxy IPs that fail repeatedly are auto-blacklisted for 5 minutes after 3 consecutive failures. Subsequent requests skip blacklisted proxies automatically.</p>
-<pre><code># Check proxy blacklist status
-curl https://aicookies.elliaa.com/v1/health
-# → "proxy_blacklist": {"blacklisted_count": 0, "entries": []}</code></pre>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 14. ORCHESTRATION -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="orchestration">14. 🧠 Orchestration Features <span class="badge-v3">v3.0</span></h2>
-
-<h3>Conversation Affinity</h3>
-<p>Multi-turn conversations are <strong>pinned to the same Claude cookie</strong> using a SHA-256 fingerprint of the first user message. This preserves conversation context across turns.</p>
-<pre><code># Turn 1 → cookie #5 is selected → affinity pin set
-{"messages": [{"role": "user", "content": "What is Python?"}]}
-# X-Proxy-Rotation: token 5 (used 1x)
-
-# Turn 2 → SAME cookie #5 is used (affinity pin)
-{"messages": [
-  {"role": "user", "content": "What is Python?"},
-  {"role": "assistant", "content": "Python is..."},
-  {"role": "user", "content": "Show me an example"}
-]}
-# X-Proxy-Rotation: token 5 (used 2x) ← same cookie!</code></pre>
-
-<h3>Session Tier System</h3>
-<ul>
-    <li><strong>Max tier</strong> — highest priority, most capacity</li>
-    <li><strong>Pro tier</strong> — medium priority</li>
-    <li><strong>Free tier</strong> — lowest priority, rate-limited</li>
-</ul>
-<p>Tokens are sorted: affinity-pinned first → highest tier → least-used.</p>
-
-<h3>Availability State Tracking</h3>
-<table class="api-table">
-    <tr><th>State</th><th>Indicator</th><th>Description</th></tr>
-    <tr><td><span class="status-dot status-active"></span>Active</td><td><code>STATE_ACTIVE</code></td><td>Ready to serve requests</td></tr>
-    <tr><td><span class="status-dot status-parked"></span>Parked</td><td><code>STATE_PARKED</code></td><td>Temporarily rate-limited (auto-recovers after cooldown)</td></tr>
-    <tr><td><span class="status-dot status-quarantined"></span>Quarantined</td><td><code>STATE_QUARANTINED</code></td><td>Dead/expired (needs manual intervention)</td></tr>
-</table>
-<pre><code># Check orchestration status
-curl https://aicookies.elliaa.com/v1/health
-# → "claude_orchestration": {
-#     "active": 3, "parked": 1, "quarantined": 0,
-#     "affinity_pins": 12
-#   }</code></pre>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 15. CONVERSATION -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="conversation">15. 💬 Conversation Features <span class="badge-v3">v3.0</span></h2>
-
-<h3>Title Generation</h3>
-<p>After each non-streaming Claude response, the gateway generates a <strong>conversation title</strong> via Claude's title API. The title is included in the response as a <code>title</code> field when available.</p>
-<pre><code>{"id": "claude-a1b2c3d4", "title": "Python Programming Basics", "choices": [...]}</code></pre>
-
-<h3>Response Caching</h3>
-<p>Identical requests (same affinity key + prompt hash) are cached for 5 minutes. Cached responses include <code>"cached": true</code> and the <code>X-Cache-Hit: true</code> header — zero latency, zero Claude API calls.</p>
-<pre><code># First request — hits Claude, caches response
-# X-Cache-Hit: false
-
-# Identical request within 5 min — served from cache
-# X-Cache-Hit: true
-# {"cached": true, "choices": [...]}</code></pre>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 16. KEY ROTATION -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="key-rotation">16. 🔄 Smart Key Rotation</h2>
-<ol>
-    <li>Request → least-used active key → real provider API</li>
-    <li><strong>429/402</strong> → rotate to next key (free providers recover; Fireworks dies permanently)</li>
-    <li><strong>10 errors</strong> → key auto-paused</li>
-    <li><strong>All keys busy</strong> → returns <code>503 Service Unavailable</code> with <code>retry_after_ms: 5000</code></li>
-    <li>Response includes <code>X-Proxy-Provider</code>, <code>X-Proxy-Key</code>, <code>X-Proxy-Latency</code> headers</li>
-</ol>
-
-<h3>Adding API Keys for Providers</h3>
-<ol>
-    <li>Login to admin panel at <a href="/">Dashboard</a></li>
-    <li>Navigate to <a href="/keys">🔑 Keys</a></li>
-    <li>Select provider (Mistral, Cohere, SambaNova, Fireworks)</li>
-    <li>Paste your API key and optional label</li>
-    <li>Click "Add Key" — done!</li>
-</ol>
-<p>Get free API keys from:</p>
-<ul>
-    <li><strong>Mistral:</strong> <a href="https://console.mistral.ai" target="_blank">console.mistral.ai</a> — free tier: 1 req/sec, 1M tokens/month</li>
-    <li><strong>Cohere:</strong> <a href="https://dashboard.cohere.com" target="_blank">dashboard.cohere.com</a> — free trial: 1000 req/month</li>
-    <li><strong>SambaNova:</strong> <a href="https://cloud.sambanova.ai" target="_blank">cloud.sambanova.ai</a> — generous free tier</li>
-    <li><strong>Fireworks:</strong> <a href="https://fireworks.ai" target="_blank">fireworks.ai</a> — prepaid $6/account</li>
-</ul>
-
-<h3>Adding Claude Cookies</h3>
-<ol>
-    <li>Install a "cookies.txt" browser extension (e.g. "cookies.txt" for Chrome/Firefox)</li>
-    <li>Log into <a href="https://claude.ai" target="_blank">claude.ai</a> in your browser</li>
-    <li>Export cookies using the extension (Netscape HTTP Cookie format)</li>
-    <li>Login to admin panel → <a href="/upload">⬆️ Upload</a></li>
-    <li>Drop the .txt file → gateway parses and stores cookies (encrypted if key set)</li>
-</ol>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 17. ERRORS -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="errors">17. ⚠️ Error Codes Reference</h2>
-<p>All errors return clean JSON (never HTML):</p>
-<table class="api-table">
-    <tr><th>Code</th><th>Error</th><th>Cause</th><th>Example</th></tr>
-    <tr><td><code>400</code></td><td>Bad Request</td><td>Invalid JSON, missing messages, last message not from user</td><td><code>{"error":"Bad Request","message":"..."}</code></td></tr>
-    <tr><td><code>401</code></td><td>Unauthorized</td><td>Invalid or missing API key</td><td><code>{"error":"Unauthorized","message":"Invalid or missing API key"}</code></td></tr>
-    <tr><td><code>404</code></td><td>Not Found</td><td>Unknown model slug</td><td><code>{"error":"Unknown model: 'xyz'","available_models":[...]}</code></td></tr>
-    <tr><td><code>429</code></td><td>Rate Limit</td><td>Too many requests per minute</td><td><code>{"error":"Rate limit exceeded","retry_after_seconds":15}</code></td></tr>
-    <tr><td><code>500</code></td><td>Internal Error</td><td>Unexpected exception</td><td><code>{"error":"Internal Server Error","type":"..."}</code></td></tr>
-    <tr><td><code>502</code></td><td>Bad Gateway</td><td>Upstream provider error</td><td><code>{"error":"Upstream HTTP Error","message":"..."}</code></td></tr>
-    <tr><td><code>503</code></td><td>Service Unavailable</td><td>All sessions busy (all cookies in cooldown or dead)</td><td><code>{"error":"Service Unavailable","tried":[...],"retry_after_ms":300000}</code></td></tr>
-    <tr><td><code>504</code></td><td>Gateway Timeout</td><td>Claude didn't respond in 120s</td><td><code>{"error":"Gateway Timeout"}</code></td></tr>
-</table>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 18. INTEGRATION -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="integration">18. 🔗 Integration Examples</h2>
-
-<h3>Open WebUI / LibreChat</h3>
-<pre><code>API Base: https://aicookies.elliaa.com/v1
-API Key: YOUR_AICOOKIES_API_KEY
-Models: claude-sonnet-4-6, mistral-small, command-a, llama-3.3-70b, glm-5p2, ...</code></pre>
-
-<h3>Python Streaming</h3>
-<pre><code>from openai import OpenAI
-client = OpenAI(base_url="https://aicookies.elliaa.com/v1", api_key="YOUR_KEY")
-stream = client.chat.completions.create(
-    model="claude-sonnet-4-6",
-    messages=[{"role": "user", "content": "Tell me a story"}],
-    stream=True
+client = <span class="f">OpenAI</span>(
+    base_url=<span class="s">"https://aicookies.elliaa.com/v1"</span><span class="op">,</span>
+    api_key=<span class="s">"sk-your-key"</span><span class="op">,</span>
 )
-for chunk in stream:
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end="")</code></pre>
 
-<h3>Node.js with EventSource (SSE)</h3>
-<pre><code>const response = await fetch("https://aicookies.elliaa.com/v1/chat/completions", {
-  method: "POST",
-  headers: {"Content-Type": "application/json", "Authorization": "Bearer YOUR_KEY"},
-  body: JSON.stringify({model: "claude-sonnet-4-6", stream: true, messages: [...]})
-});
-const reader = response.body.getReader();
-const decoder = new TextDecoder();
-while (true) {
-  const {done, value} = await reader.read();
-  if (done) break;
-  console.log(decoder.decode(value));
-}</code></pre>
+resp = client.chat.completions.<span class="f">create</span>(
+    model=<span class="s">"claude-4-opus"</span><span class="op">,</span>
+    messages=[<span class="p">{</span><span class="s">"role"</span>: <span class="s">"user"</span><span class="op">,</span> <span class="s">"content"</span>: <span class="s">"Hello!"</span><span class="p">}</span>]<span class="op">,</span>
+)
+<span class="f">print</span>(resp.choices[<span class="n">0</span>].message.content)</pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 19. ADMIN PANEL -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="admin">19. 🎛️ Admin Panel & Token Management</h2>
+        <h3>Python — Streaming</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">python</span></div>
+          <pre><span class="k">from</span> openai <span class="k">import</span> OpenAI
 
-<p>The admin panel is accessible at <a href="/">https://aicookies.elliaa.com/</a> after login. It provides:</p>
+client = <span class="f">OpenAI</span>(base_url=<span class="s">"https://aicookies.elliaa.com/v1"</span><span class="op">,</span> api_key=<span class="s">"sk-your-key"</span>)
 
-<table class="api-table">
-    <tr><th>Page</th><th>URL</th><th>Functionality</th></tr>
-    <tr><td>📊 Dashboard</td><td><code>/</code></td><td>Overview: cookie count, key count per provider, dead keys</td></tr>
-    <tr><td>🔑 API Keys</td><td><code>/keys</code></td><td>Add/delete/pause provider API keys, view free models per provider</td></tr>
-    <tr><td>🍪 Cookies</td><td><code>/upload</code></td><td>Upload Claude cookie files (drag-and-drop, Netscape format)</td></tr>
-    <tr><td>🔍 View Cookies</td><td><code>/cookies/{id}</code></td><td>Inspect parsed cookies (domain, name, value, expiry)</td></tr>
-    <tr><td>🔑 Generate Token</td><td><code>/generate-key</code></td><td>Mint new <code>sk-aic-*</code> API keys for clients</td></tr>
-    <tr><td>📚 Docs</td><td><code>/docs</code></td><td>This documentation page</td></tr>
-</table>
+stream = client.chat.completions.<span class="f">create</span>(
+    model=<span class="s">"gpt-5"</span><span class="op">,</span>
+    messages=[<span class="p">{</span><span class="s">"role"</span>: <span class="s">"user"</span><span class="op">,</span> <span class="s">"content"</span>: <span class="s">"Tell me a story"</span><span class="p">}</span>]<span class="op">,</span>
+    stream=<span class="bool">True</span><span class="op">,</span>
+)
+<span class="k">for</span> chunk <span class="k">in</span> stream:
+    delta = chunk.choices[<span class="n">0</span>].delta.content
+    <span class="k">if</span> delta:
+        <span class="f">print</span>(delta<span class="op">,</span> end=<span class="s">""</span><span class="op">,</span> flush=<span class="bool">True</span>)</pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-<h3>Token Management Flow</h3>
-<ol>
-    <li><strong>Admin logs in</strong> → <code>/login</code> with username + password</li>
-    <li><strong>Navigates to</strong> <code>/generate-key</code></li>
-    <li><strong>Clicks "Generate"</strong> → new <code>sk-aic-...</code> key created</li>
-    <li><strong>Key is shown once</strong> → admin saves it securely</li>
-    <li><strong>Key works immediately</strong> → usable with all 15 models</li>
-    <li><strong>Key hash stored in DB</strong> → <code>proxy_api_keys</code> table (SHA-256 only)</li>
-</ol>
+        <h3>Python — httpx</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">python</span></div>
+          <pre><span class="k">import</span> httpx<span class="op">,</span> json
 
-<div class="warn-box">
-    <strong>Important:</strong> Generated API keys are shown <strong>only once</strong>. There is no way to retrieve the plaintext key after generation — only the hash is stored. If lost, generate a new one.
-</div>
+<span class="k">with</span> httpx.<span class="f">Client</span>(timeout=<span class="n">60</span>) <span class="k">as</span> c:
+    r = c.<span class="f">post</span>(
+        <span class="s">"https://aicookies.elliaa.com/v1/chat/completions"</span><span class="op">,</span>
+        headers={<span class="s">"Authorization"</span>: <span class="s">"Bearer sk-your-key"</span>}<span class="op">,</span>
+        json={<span class="s">"model"</span>: <span class="s">"deepseek-v3"</span><span class="op">,</span>
+              <span class="s">"messages"</span>: [<span class="p">{</span><span class="s">"role"</span>: <span class="s">"user"</span><span class="op">,</span> <span class="s">"content"</span>: <span class="s">"Hi"</span><span class="p">}</span>]}<span class="op">,</span>
+    )
+    <span class="f">print</span>(r.<span class="f">json</span>()[<span class="s">"choices"</span>][<span class="n">0</span>][<span class="s">"message"</span>][<span class="s">"content"</span>])</pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 20. DEPLOYMENT -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="deployment">20. 🚢 Deployment & Configuration</h2>
+        <h3>JavaScript — fetch</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">javascript</span></div>
+          <pre><span class="k">const</span> res = <span class="k">await</span> <span class="f">fetch</span>(<span class="s">"https://aicookies.elliaa.com/v1/chat/completions"</span><span class="op">,</span> <span class="p">{</span>
+  method<span class="op">:</span> <span class="s">"POST"</span><span class="op">,</span>
+  headers<span class="op">:</span> <span class="p">{</span>
+    <span class="s">"Authorization"</span><span class="op">:</span> <span class="s">"Bearer sk-your-key"</span><span class="op">,</span>
+    <span class="s">"Content-Type"</span><span class="op">:</span> <span class="s">"application/json"</span><span class="op">,</span>
+  <span class="p">}</span><span class="op">,</span>
+  body<span class="op">:</span> JSON.<span class="f">stringify</span>(<span class="p">{</span>
+    model<span class="op">:</span> <span class="s">"gemini-2.5-pro"</span><span class="op">,</span>
+    messages<span class="op">:</span> [<span class="p">{</span> role<span class="op">:</span> <span class="s">"user"</span><span class="op">,</span> content<span class="op">:</span> <span class="s">"Hello!"</span> <span class="p">}</span>]<span class="op">,</span>
+  <span class="p">})</span><span class="op">,</span>
+<span class="p">})</span><span class="op">;</span>
+<span class="k">const</span> data = <span class="k">await</span> res.<span class="f">json</span>()<span class="op">;</span>
+console.<span class="f">log</span>(data.choices[<span class="n">0</span>].message.content)<span class="op">;</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-<h3>Environment Variables</h3>
-<table class="api-table">
-    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
-    <tr><td><code>SECRET_KEY</code></td><td>random</td><td>Flask session secret key</td></tr>
-    <tr><td><code>COOKIE_ENCRYPTION_KEY</code></td><td>(none)</td><td>Fernet key for encrypting cookies at rest</td></tr>
-    <tr><td><code>AUTH_USERNAME</code></td><td><code>mahmoud</code></td><td>Admin panel username</td></tr>
-    <tr><td><code>AUTH_PASSWORD</code></td><td>(set in env)</td><td>Admin panel password</td></tr>
-    <tr><td><code>PROXY_API_KEY_HASH</code></td><td>(none)</td><td>SHA-256 hash of legacy API key</td></tr>
-    <tr><td><code>PROXY_ENABLED</code></td><td><code>false</code></td><td>Enable IPRoyal proxy for Claude requests</td></tr>
-    <tr><td><code>PROXY_USER</code></td><td>(set)</td><td>IPRoyal proxy username</td></tr>
-    <tr><td><code>PROXY_PASS</code></td><td>(set)</td><td>IPRoyal proxy password</td></tr>
-    <tr><td><code>PROXY_HOST</code></td><td><code>geo.iproyal.com</code></td><td>IPRoyal proxy host</td></tr>
-    <tr><td><code>PROXY_PORT</code></td><td><code>12321</code></td><td>IPRoyal proxy port</td></tr>
-    <tr><td><code>DB_PATH</code></td><td><code>/data/cookies.db</code></td><td>SQLite database path</td></tr>
-</table>
+        <h3>JavaScript — OpenAI SDK (Node)</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">javascript</span></div>
+          <pre><span class="k">import</span> OpenAI <span class="k">from</span> <span class="s">"openai"</span><span class="op">;</span>
 
-<h3>Database Schema</h3>
-<table class="api-table">
-    <tr><th>Table</th><th>Purpose</th><th>Key Columns</th></tr>
-    <tr><td><code>cookie_files</code></td><td>Uploaded cookie files</td><td>id, platform, filename, raw_content, cookie_count</td></tr>
-    <tr><td><code>cookies</code></td><td>Individual parsed cookies</td><td>file_id, domain, name, value, expiration</td></tr>
-    <tr><td><code>api_providers</code></td><td>Provider definitions</td><td>slug, name, base_url, free_models, provider_type</td></tr>
-    <tr><td><code>api_keys</code></td><td>Provider API keys</td><td>provider_id, label, key_value, is_active, dead, usage_count</td></tr>
-    <tr><td><code>proxy_requests</code></td><td>Request log</td><td>model_slug, provider_slug, status, latency_ms</td></tr>
-    <tr><td><code>proxy_api_keys</code></td><td>Generated API keys</td><td>key_hash (SHA-256), label, created_at</td></tr>
-</table>
+<span class="k">const</span> client = <span class="k">new</span> <span class="f">OpenAI</span>(<span class="p">{</span>
+  baseURL<span class="op">:</span> <span class="s">"https://aicookies.elliaa.com/v1"</span><span class="op">,</span>
+  apiKey<span class="op">:</span> <span class="s">"sk-your-key"</span><span class="op">,</span>
+<span class="p">})</span><span class="op">;</span>
 
-<h3>Docker Deployment</h3>
-<pre><code>docker-compose.yml:
-  services:
-    aicookies:
-      build: .
-      ports: ["5050:5050"]
-      environment:
-        - SECRET_KEY=your-secret
-        - COOKIE_ENCRYPTION_KEY=your-fernet-key
-        - AUTH_USERNAME=admin
-        - AUTH_PASSWORD=your-password
-        - PROXY_ENABLED=true
-      volumes:
-        - ./data:/data</code></pre>
+<span class="k">const</span> resp = <span class="k">await</span> client.chat.completions.<span class="f">create</span>(<span class="p">{</span>
+  model<span class="op">:</span> <span class="s">"gpt-5"</span><span class="op">,</span>
+  messages<span class="op">:</span> [<span class="p">{</span> role<span class="op">:</span> <span class="s">"user"</span><span class="op">,</span> content<span class="op">:</span> <span class="s">"Hello!"</span> <span class="p">}</span>]<span class="op">,</span>
+<span class="p">})</span><span class="op">;</span>
+console.<span class="f">log</span>(resp.choices[<span class="n">0</span>].message.content)<span class="op">;</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+      </section>
 
-<h3>Dependencies</h3>
-<pre><code># requirements.txt
-flask>=3.1
-werkzeug>=3.1
-httpx>=0.28
-curl-cffi>=0.15.0
-playwright>=1.50
-cryptography>=42.0</code></pre>
+      <!-- ============ HEALTH CHECK ============ -->
+      <section class="section" id="health">
+        <div class="section-head">
+          <span class="num">13</span>
+          <h2>Health Check</h2>
+          <a class="anchor" href="#health">#</a>
+        </div>
+        <p>
+          A lightweight, unauthenticated endpoint for uptime monitoring and load-balancer
+          probes.
+        </p>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- 21. FRONTEND PLAN -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2 id="frontend-plan">21. 🎨 Frontend Improvement Plan</h2>
+        <div class="endpoint">
+          <span class="method GET">GET</span>
+          <span class="path">/v1/health</span>
+          <span class="auth-tag">no auth</span>
+        </div>
 
-<div class="info-box">
-    <strong>Goal:</strong> Transform the admin panel into a professional, secure dashboard that displays API tokens, allows admins to create/revoke tokens from the UI, and shows real-time usage stats — all with enterprise-grade security.
-</div>
+        <h3>Example Request</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">bash</span></div>
+          <pre><span class="f">curl</span> https://aicookies.elliaa.com/v1/health</pre>
+          <button class="copy-btn">copy</button>
+        </div>
 
-<h3>Phase A: Token Management UI</h3>
-<table class="api-table">
-    <tr><th>Feature</th><th>Description</th><th>Priority</th></tr>
-    <tr><td>Token list page</td><td>Display all generated <code>sk-aic-*</code> keys with labels, creation date, last used, usage count</td><td>High</td></tr>
-    <tr><td>Create token button</td><td>Modal with label input → generates key → shows once with copy button</td><td>High</td></tr>
-    <tr><td>Revoke token</td><td>Delete API key by hash — removes access immediately</td><td>High</td></tr>
-    <tr><td>Copy-to-clipboard</td><td>One-click copy for newly generated keys</td><td>Medium</td></tr>
-    <tr><td>Token usage stats</td><td>Per-token request count, last used timestamp</td><td>Medium</td></tr>
-</table>
+        <h3>Example Response</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="p">{</span>
+  <span class="t">"status"</span><span class="op">:</span> <span class="s">"ok"</span><span class="op">,</span>
+  <span class="t">"version"</span><span class="op">:</span> <span class="s">"3.0.0"</span><span class="op">,</span>
+  <span class="t">"uptime"</span><span class="op">:</span> <span class="s">"7d 14h 22m"</span><span class="op">,</span>
+  <span class="t">"providers"</span><span class="op">:</span> <span class="p">{</span>
+    <span class="t">"openai"</span><span class="op">:</span>    <span class="p">{</span> <span class="t">"healthy"</span><span class="op">:</span> <span class="n">4</span><span class="op">,</span> <span class="t">"cooldown"</span><span class="op">:</span> <span class="n">1</span><span class="op">,</span> <span class="t">"dead"</span><span class="op">:</span> <span class="n">0</span> <span class="p">},</span>
+    <span class="t">"anthropic"</span><span class="op">:</span> <span class="p">{</span> <span class="t">"healthy"</span><span class="op">:</span> <span class="n">3</span><span class="op">,</span> <span class="t">"cooldown"</span><span class="op">:</span> <span class="n">0</span><span class="op">,</span> <span class="t">"dead"</span><span class="op">:</span> <span class="n">1</span> <span class="p">},</span>
+    <span class="t">"google"</span><span class="op">:</span>    <span class="p">{</span> <span class="t">"healthy"</span><span class="op">:</span> <span class="n">2</span><span class="op">,</span> <span class="t">"cooldown"</span><span class="op">:</span> <span class="n">0</span><span class="op">,</span> <span class="t">"dead"</span><span class="op">:</span> <span class="n">0</span> <span class="p">},</span>
+    <span class="t">"xai"</span><span class="op">:</span>       <span class="p">{</span> <span class="t">"healthy"</span><span class="op">:</span> <span class="n">2</span><span class="op">,</span> <span class="t">"cooldown"</span><span class="op">:</span> <span class="n">0</span><span class="op">,</span> <span class="t">"dead"</span><span class="op">:</span> <span class="n">0</span> <span class="p">},</span>
+    <span class="t">"deepseek"</span><span class="op">:</span>  <span class="p">{</span> <span class="t">"healthy"</span><span class="op">:</span> <span class="n">1</span><span class="op">,</span> <span class="t">"cooldown"</span><span class="op">:</span> <span class="n">0</span><span class="op">,</span> <span class="t">"dead"</span><span class="op">:</span> <span class="n">0</span> <span class="p">}</span>
+  <span class="p">},</span>
+  <span class="t">"models_available"</span><span class="op">:</span> <span class="n">15</span><span class="op">,</span>
+  <span class="t">"timestamp"</span><span class="op">:</span> <span class="s">"2026-06-27T12:00:00Z"</span>
+<span class="p">}</span></pre>
+          <button class="copy-btn">copy</button>
+        </div>
+      </section>
 
-<h3>Phase B: Security Hardening</h3>
-<table class="api-table">
-    <tr><th>Feature</th><th>Description</th><th>Priority</th></tr>
-    <tr><td>CSRF protection</td><td>Add Flask-WTF or custom CSRF token for all POST forms</td><td>High</td></tr>
-    <tr><td>Session timeout</td><td>Auto-logout after 30 minutes of inactivity</td><td>High</td></tr>
-    <tr><td>Rate limit on login</td><td>Max 5 login attempts per IP per 10 minutes</td><td>High</td></tr>
-    <tr><td>HTTPS-only cookies</td><td><code>SESSION_COOKIE_SECURE=True</code> in production</td><td>Medium</td></tr>
-    <tr><td>Content-Security-Policy</td><td>CSP headers to prevent XSS</td><td>Medium</td></tr>
-    <tr><td>API key prefix masking</td><td>Show only <code>sk-aic-xxxx...xxxx</code> in list (never full key)</td><td>Medium</td></tr>
-</table>
+      <!-- ============ FLOW DIAGRAM ============ -->
+      <section class="section" id="flow">
+        <div class="section-head">
+          <span class="num">14</span>
+          <h2>Request Flow</h2>
+          <a class="anchor" href="#flow">#</a>
+        </div>
+        <p>The path a request takes through the gateway, from client to upstream provider and back.</p>
 
-<h3>Phase C: Dashboard Enhancement</h3>
-<table class="api-table">
-    <tr><th>Feature</th><th>Description</th><th>Priority</th></tr>
-    <tr><td>Real-time stats</td><td>Live request count, success rate, avg latency (auto-refresh)</td><td>Medium</td></tr>
-    <tr><td>Cookie health table</td><td>Per-cookie status: Active/Parked/Quarantined with cooldown timer</td><td>Medium</td></tr>
-    <tr><td>Request log viewer</td><td>Last 20 requests with model, provider, latency, status</td><td>Low</td></tr>
-    <tr><td>Provider health cards</td><td>Color-coded cards: green (active keys), yellow (rate-limited), red (all dead)</td><td>Low</td></tr>
-    <tr><td>Affinity map viewer</td><td>Show active affinity pins and which cookies they map to</td><td>Low</td></tr>
-</table>
+        <div class="flow-box">
+<pre>  <span class="accent">Client</span>
+    │
+    │  POST /v1/chat/completions
+    │  Authorization: Bearer sk-xxx
+    ▼
+┌──────────────────────────────────────────────────┐
+│              <span class="hi">AI Proxy Gateway</span>                  │
+│                                                  │
+│  1. <span class="ok">Auth</span>   ── verify Bearer token              │
+│  2. <span class="ok">Rate</span>   ── token bucket check (60/min)      │
+│  3. <span class="ok">Model</span>  ── resolve slug → provider           │
+│  4. <span class="warn">Keys</span>   ── pick healthy key (round-robin)  │
+│  5. <span class="warn">Build</span>  ── normalize to provider schema    │
+│                                                  │
+│      ┌─────────────┬───────────────┐             │
+│      ▼             ▼               ▼             │
+│   <span class="hi">OpenAI</span>      <span class="hi">Anthropic</span>      <span class="hi">Google/xAI</span>        │
+│   (API)       (API or Cookie)    (API)           │
+│      │             │               │             │
+│      │     ┌───────┴────────┐      │             │
+│      │     │ curl_cffi      │      │             │
+│      │     │ TLS: chrome120 │      │             │
+│      │     │ cookie session │      │             │
+│      │     └────────────────┘      │             │
+│      │             │               │             │
+│      └─────────────┴───────────────┘             │
+│                    │                             │
+│  6. <span class="err">Errors</span> ── 429→cooldown, 401→dead, retry  │
+│  7. <span class="ok">Parse</span>  ── normalize response → OpenAI shape │
+│  8. <span class="ok">Stream</span> ── re-emit SSE chunks if stream:true│
+└──────────────────────────────────────────────────┘
+    │
+    │  200 OK  /  SSE stream  /  error JSON
+    ▼
+  <span class="accent">Client</span></pre>
+        </div>
 
-<h3>Phase D: UI/UX Polish</h3>
-<table class="api-table">
-    <tr><th>Feature</th><th>Description</th><th>Priority</th></tr>
-    <tr><td>Dark/Light toggle</td><td>Theme switcher (currently dark-only)</td><td>Low</td></tr>
-    <tr><td>Responsive sidebar</td><td>Collapsible nav sidebar instead of top bar on mobile</td><td>Low</td></tr>
-    <tr><td>Toast notifications</td><td>Replace flash messages with auto-dismiss toasts</td><td>Low</td></tr>
-    <tr><td>Loading states</td><td>Skeleton loaders for async data fetching</td><td>Low</td></tr>
-    <tr><td>Search/filter</td><td>Search bar for keys, cookies, and request logs</td><td>Low</td></tr>
-</table>
+        <div class="callout success">
+          <span class="ico">✓</span>
+          <div class="body">
+            <strong>Total added latency:</strong> typically &lt; 20ms excluding upstream.
+            The gateway adds auth, rate-limit, key selection, and schema normalization — all
+            in-process, no external hops.
+          </div>
+        </div>
+      </section>
 
-<h3>Implementation Roadmap</h3>
-<ol>
-    <li><strong>Sprint 1:</strong> Token list page + create/revoke endpoints + CSRF protection</li>
-    <li><strong>Sprint 2:</strong> Session timeout + login rate limit + HTTPS cookies</li>
-    <li><strong>Sprint 3:</strong> Real-time stats + cookie health table + request log viewer</li>
-    <li><strong>Sprint 4:</strong> UI polish: responsive sidebar, toasts, loading states, search</li>
-</ol>
+      <div class="divider"></div>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<!-- HEALTH CHECK -->
-<!-- ═══════════════════════════════════════════════════════════════════════════ -->
-<h2>📊 Health Check</h2>
-<div class="endpoint-box">GET https://aicookies.elliaa.com/v1/health</div>
-<pre><code>curl https://aicookies.elliaa.com/v1/health
+      <div style="text-align:center; padding: 20px 0 10px;">
+        <p style="color:var(--text-dim); font-size:13px; margin:0 0 16px;">
+          Prefer Markdown? Grab the full docs in a single file.
+        </p>
+        <a href="/docs.md" download style="
+          display:inline-flex; align-items:center; gap:8px;
+          padding:12px 24px; border-radius:var(--r-md);
+          background:linear-gradient(135deg, var(--accent), #7c3aed);
+          color:#fff; text-decoration:none; font-weight:700; font-size:14px;
+          border:1px solid transparent; box-shadow:0 12px 30px -10px var(--accent);
+        ">📄 Download docs.md</a>
+      </div>
 
-{
-  "status": "healthy",
-  "timestamp": "2026-06-27T12:00:00Z",
-  "models_available": 15,
-  "claude_sessions": 5,
-  "claude_orchestration": {
-    "active": 3, "parked": 1, "quarantined": 0,
-    "affinity_pins": 12
-  },
-  "proxy_blacklist": {"blacklisted_count": 0, "entries": []},
-  "active_api_keys": 8,
-  "version": "3.0.0",
-  "proxy_provider": "IPRoyal"
-}</code></pre>
+      <p style="text-align:center; color:var(--text-dim); font-size:12px; margin-top:40px;">
+        AI Proxy Gateway <span class="badge-v3" style="font-size:10px; padding:2px 8px;">v3.0.0</span> &nbsp;·&nbsp;
+        <a href="/" style="color:var(--text-dim);">← Back to app</a>
+      </p>
 
-<hr style="margin:3rem 0;border:none;border-top:1px solid var(--border);">
-<p style="color:var(--text-dim);font-size:0.8rem;text-align:center;">
-    AI Proxy Gateway v3.0.0 · Built with Flask + curl_cffi · <a href="https://github.com/MahmoudAtteyya/aicookies" target="_blank" style="color:var(--accent);">GitHub</a> · <a href="/" style="color:var(--accent);">Dashboard</a>
-</p>
-
-<!-- ═════════════════════════════════════════════════════════════════════════
-     SECTION 9: FRONTEND IMPROVEMENT PLAN
-═════════════════════════════════════════════════════════════════════════ -->
-<h2 id="frontend-plan" class="section-title">🎨 Frontend Improvement Plan & Security</h2>
-
-<div class="card" style="margin-bottom:2rem;">
-<h3>Architecture Overview</h3>
-<p>The frontend consists of 7 Jinja2 templates served by Flask with a dark-themed, CSS-variable-driven design system. All pages extend <code>base.html</code> which provides the navigation bar, flash messages, and consistent styling.</p>
-
-<div style="background:#0d1117;padding:1rem;border-radius:8px;margin:1rem 0;font-family:monospace;font-size:0.8rem;overflow-x:auto;">
-<pre>base.html (nav + flash + CSS vars)
-├── login.html         → Username/password auth
-├── dashboard.html     → Overview + dead-key alerts + revive
-├── keys.html          → API key CRUD + per-key revive
-├── tokens.html        → API token management (sk-aic-*)
-├── cookies.html       → View uploaded Claude cookie sets
-├── upload.html        → Upload Claude cookie files
-└── docs.html          → This page (comprehensive API docs)</pre>
-</div>
-</div>
-
-<div class="card" style="margin-bottom:2rem;">
-<h3>Security Layers (Implemented)</h3>
-<table>
-<thead><tr><th>Layer</th><th>Mechanism</th><th>Status</th></tr></thead>
-<tbody>
-<tr><td><strong>Authentication</strong></td><td>Username + bcrypt hash, session-based</td><td>✅</td></tr>
-<tr><td><strong>Session Timeout</strong></td><td>30 min inactivity → auto-logout</td><td>✅</td></tr>
-<tr><td><strong>Login Rate Limit</strong></td><td>5 attempts / 10 min per IP</td><td>✅</td></tr>
-<tr><td><strong>CSRF Protection</strong></td><td>Per-session token, all POST forms + API</td><td>✅</td></tr>
-<tr><td><strong>Cookie Security</strong></td><td>HttpOnly, SameSite=Lax, Secure in prod</td><td>✅</td></tr>
-<tr><td><strong>API Key Encryption</strong></td><td>Fernet at-rest encryption</td><td>✅</td></tr>
-<tr><td><strong>API Token Hashing</strong></td><td>SHA-256, constant-time verify</td><td>✅</td></tr>
-<tr><td><strong>Proxy Auth</strong></td><td>Bearer token (sk-aic-*) on all /v1/* routes</td><td>✅</td></tr>
-</tbody>
-</table>
-</div>
-
-<div class="card" style="margin-bottom:2rem;">
-<h3>Frontend Improvement Roadmap</h3>
-
-<h4 style="color:var(--green);">Phase 1 — Token Management UI ✅ Done</h4>
-<ul>
-<li><code>/tokens</code> page: create, list, pause, activate, revoke API tokens</li>
-<li>Copy-to-clipboard with one-click</li>
-<li>Usage statistics per token (request count, last used)</li>
-<li>CSRF-protected forms with confirm dialogs</li>
-</ul>
-
-<h4 style="color:var(--green);">Phase 2 — Dead Key Management ✅ Done</h4>
-<ul>
-<li>Dashboard red alert banner when dead keys exist</li>
-<li>"Revive All Dead Keys" button (checks account status via /models)</li>
-<li>Per-key revive button on keys page</li>
-<li>Status indicators: ✅ Active / ⏸ Paused / 💀 Dead</li>
-</ul>
-
-<h4 style="color:var(--blue);">Phase 3 — Real-time Monitoring (Next)</h4>
-<ul>
-<li>Live request log (WebSocket / SSE) showing proxy requests in real-time</li>
-<li>Per-provider latency charts (Chart.js)</li>
-<li>Key health dashboard: success rate, error breakdown, last 100 requests</li>
-<li>Auto-refresh dashboard stats every 30s</li>
-</ul>
-
-<h4 style="color:var(--blue);">Phase 4 — Enhanced Security (Next)</h4>
-<ul>
-<li>2FA (TOTP) for admin login</li>
-<li>IP allowlist for admin panel</li>
-<li>Audit log: track all admin actions (key add/delete/revive)</li>
-<li>API token scopes (read-only / full access)</li>
-<li>Rate limiting per API token (not just global)</li>
-</ul>
-
-<h4 style="color:var(--blue);">Phase 5 — UX Polish (Next)</h4>
-<ul>
-<li>Toast notifications instead of alert() dialogs</li>
-<li>Dark/light theme toggle</li>
-<li>Responsive mobile layout</li>
-<li>Keyboard shortcuts (Ctrl+K for search, etc.)</li>
-<li>Searchable key/token tables with pagination</li>
-</ul>
-
-<h4 style="color:var(--blue);">Phase 6 — API Key Management Enhancement (Next)</h4>
-<ul>
-<li>Bulk key import (CSV/JSON)</li>
-<li>Key rotation reminders (expiry tracking)</li>
-<li>Provider health check (ping all keys on demand)</li>
-<li>Key grouping by account (Fireworks account A, B, C...)</li>
-<li>Automatic failover testing: simulate 412 to verify rotation works</li>
-</ul>
-</div>
-
-<div class="card" style="margin-bottom:2rem;">
-<h3>Fireworks AI Failover — How It Works</h3>
-<div style="background:#0d1117;padding:1rem;border-radius:8px;margin:1rem 0;font-family:monospace;font-size:0.8rem;overflow-x:auto;">
-<pre>Request → /v1/fireworks-deepseek/chat/completions
-  │
-  ▼
-proxy_to_provider("fireworks", ...)
-  │
-  ├─ get_provider_keys("fireworks") → [key1, key2, key3, ...]
-  │   (ordered by usage_count ASC — least used first)
-  │
-  ├─ Try key1:
-  │   ├─ HTTP 200 → return response ✅
-  │   ├─ HTTP 412 (suspended) → mark_key_dead(key1) → continue to key2
-  │   ├─ HTTP 402 (depleted) → mark_key_dead(key1) → continue to key2
-  │   ├─ HTTP 429 (rate limit) → mark_key_rate_limited(key1) → continue to key2
-  │   └─ HTTP 401/403 (auth) → mark_key_dead(key1) → continue to key2
-  │
-  ├─ Try key2:
-  │   ├─ HTTP 200 → return response ✅
-  │   └─ ... same logic
-  │
-  ├─ Try key3: ...
-  │
-  └─ All keys failed → 503 with failover details
-      {
-        "error": "Service Unavailable",
-        "tried_keys": 3,
-        "errors": ["ACCOUNT_SUSPENDED", "RATE_LIMITED", "ACCOUNT_SUSPENDED"]
-      }</pre>
-</div>
-<p><strong>Dead Key Recovery:</strong> Dead keys are <strong>never</strong> auto-revived. Admin must click "🔄 Revive" in the dashboard or keys page. The system sends a lightweight <code>GET /models</code> request to check if the account is active again. If 200 → key is restored to active.</p>
+    </main>
+  </div>
 </div>
 
 <script>
-function switchCode(evt, id) {
-    document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.code-content').forEach(c => c.classList.remove('active'));
-    evt.target.classList.add('active');
-    document.getElementById(id).classList.add('active');
-}
-</script>
+// Lightweight copy-to-clipboard for code blocks
+document.querySelectorAll('.code-block .copy-btn').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var pre = btn.parentElement.querySelector('pre');
+    var text = pre.innerText;
+    navigator.clipboard.writeText(text).then(function(){
+      btn.textContent = '✓ copied';
+      setTimeout(function(){ btn.textContent = 'copy'; }, 1400);
+    });
+  });
+});
 
+// Smooth scroll for TOC anchors
+document.querySelectorAll('.docs-toc a').forEach(function(a){
+  a.addEventListener('click', function(e){
+    var id = a.getAttribute('href');
+    if(id && id.startsWith('#')){
+      var el = document.querySelector(id);
+      if(el){ e.preventDefault(); el.scrollIntoView({behavior:'smooth', block:'start'}); }
+    }
+  });
+});
+</script>
 {% endblock %}

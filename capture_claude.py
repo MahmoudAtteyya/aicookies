@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-Claude Cookie Capture Script (Requires Bright Data Proxy)
-==========================================================
-Opens a Chrome browser through Bright Data residential proxy.
+Claude Cookie Capture Script (IPRoyal Residential Proxy)
+=========================================================
+Opens a Chrome browser through IPRoyal residential proxy.
 You log in manually. Script auto-captures cookies + saves to DB.
 
 Usage:
   PROXY_SESSION_ID=my-session-123 python3 capture_claude.py
 
 Env vars needed:
-  BRD_CUSTOMER_ID, BRD_ZONE, BRD_PASSWORD  (Bright Data credentials)
-  PROXY_SESSION_ID  (optional — for sticky IP. If omitted, generates UUID)
+  PROXY_USER, PROXY_PASS  (IPRoyal credentials)
+  PROXY_HOST=geo.iproyal.com  (default)
+  PROXY_PORT=12321  (default)
+  PROXY_SESSION_ID  (optional — for tracking. IPRoyal sticky is dashboard-controlled)
 """
 
 import os, sys, json, uuid, subprocess, sqlite3
@@ -18,20 +20,16 @@ from pathlib import Path
 
 def main():
     # ── Config ──
-    customer_id = os.environ.get("BRD_CUSTOMER_ID")
-    zone = os.environ.get("BRD_ZONE")
-    password = os.environ.get("BRD_PASSWORD")
+    proxy_user = os.environ.get("PROXY_USER", "7MbCthZqPB0y1E1T")
+    proxy_pass = os.environ.get("PROXY_PASS", "sTj24Oqhz2RPrIM8")
+    proxy_host = os.environ.get("PROXY_HOST", "geo.iproyal.com")
+    proxy_port = os.environ.get("PROXY_PORT", "12321")
     session_id = os.environ.get("PROXY_SESSION_ID") or str(uuid.uuid4())[:8]
     
-    if not all([customer_id, zone, password]):
-        print("❌ Set BRD_CUSTOMER_ID, BRD_ZONE, BRD_PASSWORD env vars")
-        sys.exit(1)
-    
-    proxy_user = f"brd-customer-{customer_id}-zone-{zone}-session-{session_id}"
-    proxy_url = f"http://{proxy_user}:{password}@brd.superproxy.io:33335"
+    proxy_url = f"http://{proxy_user}:{proxy_pass}@{proxy_host}:{proxy_port}"
     
     print(f"🔑 Session ID: {session_id}")
-    print(f"🌐 Proxy: brd.superproxy.io:33335 (sticky IP via session-{session_id})")
+    print(f"🌐 Proxy: {proxy_host}:{proxy_port} (IPRoyal residential)")
     print()
     print("📋 Instructions:")
     print("   1. A Chrome window will open")
@@ -54,7 +52,7 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=False,
-            proxy={"server": f"http://brd.superproxy.io:33335", "username": proxy_user, "password": password}
+            proxy={"server": f"http://{proxy_host}:{proxy_port}", "username": proxy_user, "password": proxy_pass}
         )
         context = browser.new_context()
         page = context.new_page()
@@ -70,7 +68,8 @@ def main():
         # Write Netscape format
         with open(cookie_file_path, "w") as f:
             f.write("# Netscape HTTP Cookie File\n")
-            f.write("# Captured via Bright Data proxy\n\n")
+            f.write(f"# Captured via IPRoyal proxy (geo.iproyal.com:12321)\n")
+            f.write(f"# Session: {session_id}\n\n")
             for c in claude_cookies:
                 domain = c.get("domain", ".claude.ai")
                 flag = "TRUE" if domain.startswith(".") else "FALSE"
@@ -101,9 +100,9 @@ def main():
     conn.close()
     
     print(f"💾 Saved to database with proxy_session_id={session_id}")
-    print(f"\n📝 To use this account through the gateway, enable proxy in docker-compose:")
-    print(f"   PROXY_ENABLED=true")
-    print(f"   The gateway will use session-{session_id} for this account's sticky IP.")
+    print(f"\n📝 To use this account through the gateway:")
+    print(f"   PROXY_ENABLED=true (already enabled by default)")
+    print(f"   IPRoyal sticky session: enable in IPRoyal Dashboard → Proxy Settings → Sticky Session")
 
 
 if __name__ == "__main__":

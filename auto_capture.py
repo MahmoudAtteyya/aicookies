@@ -19,11 +19,11 @@ from pathlib import Path
 # CONFIG — set these or export as env vars
 # ═══════════════════════════════════════════════════════════════════════════
 
-BRD_CUSTOMER_ID = os.environ.get("BRD_CUSTOMER_ID", "hl_39802a10")
-BRD_ZONE = os.environ.get("BRD_ZONE", "claude_sessions")
-BRD_PASSWORD = os.environ.get("BRD_PASSWORD", "fjoiw7270o69")
-PROXY_HOST = os.environ.get("BRD_PROXY_HOST", "brd.superproxy.io")
-PROXY_PORT = os.environ.get("BRD_PROXY_PORT", "33335")
+# IPRoyal residential proxy (no KYC, rotating — sticky via dashboard setting)
+PROXY_USER = os.environ.get("PROXY_USER", "7MbCthZqPB0y1E1T")
+PROXY_PASS = os.environ.get("PROXY_PASS", "sTj24Oqhz2RPrIM8")
+PROXY_HOST = os.environ.get("PROXY_HOST", "geo.iproyal.com")
+PROXY_PORT = os.environ.get("PROXY_PORT", "12321")
 
 AICOOKIES_URL = os.environ.get("AICOOKIES_URL", "https://aicookies.elliaa.com")
 AICOOKIES_USER = os.environ.get("AICOOKIES_USER", "mahmoud")
@@ -32,12 +32,14 @@ AICOOKIES_KEY = os.environ.get("AICOOKIES_KEY", "sk-gGpJ6m53XqosM5opVcoHz3-Jh-4S
 
 # ═══════════════════════════════════════════════════════════════════════════
 
-def get_proxy_config(session_id):
-    user = f"brd-customer-{BRD_CUSTOMER_ID}-zone-{BRD_ZONE}-session-{session_id}"
+def get_proxy_config():
+    """Build IPRoyal proxy config for Playwright.
+    IPRoyal uses simple user:pass auth, no zone/customer/session in URL.
+    Sticky sessions are dashboard-controlled."""
     return {
         "server": f"http://{PROXY_HOST}:{PROXY_PORT}",
-        "username": user,
-        "password": BRD_PASSWORD
+        "username": PROXY_USER,
+        "password": PROXY_PASS,
     }
 
 def upload_cookies(cookie_file_path, session_id):
@@ -73,11 +75,11 @@ def capture_single_account(account_num, session_id):
     """Open browser, user logs in, capture cookies, upload, clear."""
     from playwright.sync_api import sync_playwright
     
-    proxy = get_proxy_config(session_id)
+    proxy = get_proxy_config()
     
     print(f"\n{'='*60}")
     print(f"🍪 حساب #{account_num} | Session: {session_id}")
-    print(f"🌐 Proxy: {proxy['username'][:50]}...")
+    print(f"🌐 Proxy: {PROXY_HOST}:{PROXY_PORT} (IPRoyal residential)")
     print(f"{'='*60}")
     print()
     print("📋 هيتم فتح متصفح — سجل دخولك لكلود، وبعدين ارجع هنا واضغط Enter")
@@ -115,7 +117,8 @@ def capture_single_account(account_num, session_id):
             # Write Netscape format
             with open(cookie_file_path, "w") as f:
                 f.write("# Netscape HTTP Cookie File\n")
-                f.write(f"# Session: {session_id}\n\n")
+                f.write(f"# Session: {session_id}\n")
+                f.write(f"# Proxy: IPRoyal (geo.iproyal.com:12321)\n\n")
                 for c in claude_cookies:
                     domain = c.get("domain", ".claude.ai")
                     flag = "TRUE" if domain.startswith(".") else "FALSE"
@@ -159,6 +162,7 @@ def main():
 ╔══════════════════════════════════════════╗
 ║   🍪 Claude Multi-Account Capture       ║
 ║   Auto: Browser → Cookies → Upload      ║
+║   Proxy: IPRoyal (geo.iproyal.com:12321)║
 ╚══════════════════════════════════════════╝
 """)
     

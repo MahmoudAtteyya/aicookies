@@ -15,20 +15,32 @@ services:
       - AUTH_PASSWORD=Mmm12011305
       - PROXY_API_KEY_HASH=39ed4e7fecce75348ef79a2a2fa89dff3e1971022ae405a82d1e79d7b94215be
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
-      # Bright Data Residential Proxy (optional — set PROXY_ENABLED=true to enable)
+      # IPRoyal Residential Proxy (no KYC, rotating — sticky via dashboard setting)
       - PROXY_ENABLED=true
-      - BRD_CUSTOMER_ID=hl_39802a10
-      - BRD_ZONE=claude_sessions
-      - BRD_PASSWORD=fjoiw7270o69
-      - BRD_PROXY_HOST=brd.superproxy.io
-      - BRD_PROXY_PORT=33335
+      - PROXY_USER=7MbCthZqPB0y1E1T
+      - PROXY_PASS=sTj24Oqhz2RPrIM8
+      - PROXY_HOST=geo.iproyal.com
+      - PROXY_PORT=12321
     networks:
       - dokploy-network
     labels:
       - "traefik.enable=true"
+      # --- Main router ---
       - "traefik.http.routers.aicookies.rule=Host(`aicookies.elliaa.com`)"
       - "traefik.http.routers.aicookies.entrypoints=websecure"
       - "traefik.http.routers.aicookies.tls.certresolver=letsencrypt"
+      # --- API rate limit: 120 req/min per IP ---
+      - "traefik.http.middlewares.aicookies-ratelimit.ratelimit.average=120"
+      - "traefik.http.middlewares.aicookies-ratelimit.ratelimit.burst=30"
+      - "traefik.http.routers.aicookies.middlewares=aicookies-ratelimit,aicookies-secheaders@docker"
+      # --- Security headers (allow API from any origin) ---
+      - "traefik.http.middlewares.aicookies-secheaders.headers.accesscontrolallowmethods=GET,POST,OPTIONS"
+      - "traefik.http.middlewares.aicookies-secheaders.headers.accesscontrolallowheaders=Content-Type,Authorization,X-Requested-With"
+      - "traefik.http.middlewares.aicookies-secheaders.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.aicookies-secheaders.headers.accesscontrolmaxage=86400"
+      - "traefik.http.middlewares.aicookies-secheaders.headers.browserxssfilter=true"
+      - "traefik.http.middlewares.aicookies-secheaders.headers.contenttypenosniff=true"
+      - "traefik.http.middlewares.aicookies-secheaders.headers.customresponseheaders.X-API-Proxy=AI-Cookies-Gateway"
       - "traefik.http.services.aicookies.loadbalancer.server.port=5050"
       - "traefik.docker.network=dokploy-network"
 

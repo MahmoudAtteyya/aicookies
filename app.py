@@ -7,7 +7,7 @@ from functools import wraps
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, Response, stream_with_context
 from werkzeug.security import generate_password_hash, check_password_hash
 import httpx
-import ssl
+from curl_cffi import requests as curl_requests
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
@@ -17,34 +17,54 @@ AUTH_USERNAME = os.environ.get("AUTH_USERNAME", "mahmoud")
 AUTH_PASSWORD_HASH = generate_password_hash(os.environ.get("AUTH_PASSWORD", "Mmm12011305"))
 PROXY_API_KEY_HASH = os.environ.get("PROXY_API_KEY_HASH", "")  # SHA256 hash of the real key
 
-# ── Bright Data Proxy Config ─────────────────────────────────────────────
+# ── IPRoyal Proxy Config ─────────────────────────────────────────────────
+# IPRoyal residential proxies — no KYC, rotating, sticky via dashboard setting
+# Format: http://USER:PASS@geo.iproyal.com:12321
 PROXY_ENABLED = os.environ.get("PROXY_ENABLED", "false").lower() == "true"
-BRD_CUSTOMER_ID = os.environ.get("BRD_CUSTOMER_ID", "")
-BRD_ZONE = os.environ.get("BRD_ZONE", "")
-BRD_PASSWORD = os.environ.get("BRD_PASSWORD", "")
-BRD_PROXY_HOST = os.environ.get("BRD_PROXY_HOST", "brd.superproxy.io")
-BRD_PROXY_PORT = os.environ.get("BRD_PROXY_PORT", "33335")
+PROXY_USER   = os.environ.get("PROXY_USER", "7MbCthZqPB0y1E1T")
+PROXY_PASS   = os.environ.get("PROXY_PASS", "sTj24Oqhz2RPrIM8")
+PROXY_HOST   = os.environ.get("PROXY_HOST", "geo.iproyal.com")
+PROXY_PORT   = os.environ.get("PROXY_PORT", "12321")
 
 def get_proxy_url(session_id=None):
-    """Build Bright Data proxy URL. If session_id given, use sticky session. If not, use rotating."""
-    if not PROXY_ENABLED or not BRD_CUSTOMER_ID or not BRD_ZONE:
-        return None
-    user = f"brd-customer-{BRD_CUSTOMER_ID}-zone-{BRD_ZONE}"
-    if session_id:
-        user += f"-session-{session_id}"
-    return f"http://{user}:{BRD_PASSWORD}@{BRD_PROXY_HOST}:{BRD_PROXY_PORT}"
-
-def get_playwright_proxy(session_id=None):
-    """Build Playwright-format proxy config for Bright Data."""
+    """Build IPRoyal proxy URL.
+    IPRoyal sticky sessions are dashboard-controlled — same credentials = same IP when enabled.
+    Session ID is reserved for future use (IPRoyal may support URL-based sessions)."""
     if not PROXY_ENABLED:
         return None
-    user = f"brd-customer-{BRD_CUSTOMER_ID}-zone-{BRD_ZONE}"
-    if session_id:
-        user += f"-session-{session_id}"
-    return {"server": f"http://{BRD_PROXY_HOST}:{BRD_PROXY_PORT}", "username": user, "password": BRD_PASSWORD}
+    return f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
 
 # ── Database ──────────────────────────────────────────────────────────────
 DB_PATH = os.environ.get("DB_PATH", "/data/cookies.db")
+
+
+def get_current_proxy_ip():
+    """Get the current IP being used through the proxy.
+    Returns (ip, country) or (None, None)."""
+    try:
+        proxy_url = get_proxy_url()
+        if proxy_url:
+            from curl_cffi import requests as cr
+            r = cr.get("https://api.ipify.org", proxy=proxy_url, impersonate="chrome131", timeout=10)
+            ip = r.text.strip()
+            # Try to get country
+            try:
+                r2 = cr.get(f"https://ipapi.co/{ip}/country/", proxy=proxy_url, impersonate="chrome131", timeout=10)
+                country = r2.text.strip() if r2.status_code == 200 else ""
+            except:
+                country = ""
+        else:
+            import httpx
+            r = httpx.get("https://api.ipify.org", timeout=5)
+            ip = r.text.strip()
+            try:
+                r2 = httpx.get(f"https://ipapi.co/{ip}/country/", timeout=5)
+                country = r2.text.strip() if r2.status_code == 200 else ""
+            except:
+                country = ""
+        return ip, country
+    except:
+        return None, None
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -95,6 +115,9 @@ def init_db():
         try: conn.execute(f"ALTER TABLE api_providers ADD COLUMN {col} {col_type}")
         except: pass
     conn.execute("CREATE INDEX IF NOT EXISTS idx_api_keys_dead ON api_keys(dead)")
+    for col, col_type in [("proxy_ip", "TEXT"), ("proxy_country", "TEXT")]:
+        try: conn.execute(f"ALTER TABLE proxy_requests ADD COLUMN {col} {col_type}")
+        except: pass
 
     # ── Seed providers ──
     providers = [
@@ -219,10 +242,10 @@ def mark_key_error(key_id, reason=""):
     conn.commit()
     conn.close()
 
-def record_proxy_request(model_slug, provider_slug, key_id, status, latency_ms, error_msg=None):
+def record_proxy_request(model_slug, provider_slug, key_id, status, latency_ms, error_msg=None, proxy_ip=None, proxy_country=None):
     conn = get_db()
-    conn.execute("INSERT INTO proxy_requests (model_slug, provider_slug, key_id, status, latency_ms, error_msg) VALUES (?,?,?,?,?,?)",
-                 (model_slug, provider_slug, key_id, status, latency_ms, error_msg))
+    conn.execute("INSERT INTO proxy_requests (model_slug, provider_slug, key_id, status, latency_ms, error_msg, proxy_ip, proxy_country) VALUES (?,?,?,?,?,?,?,?)",
+                 (model_slug, provider_slug, key_id, status, latency_ms, error_msg, proxy_ip, proxy_country))
     conn.commit()
     conn.close()
 
@@ -426,10 +449,12 @@ def get_claude_cookie_sets():
     return [dict(r) for r in rows]
 
 def extract_claude_cookies(cookie_file):
-    """Extract essential cookies from a Netscape cookie file for Claude API."""
+    """Extract ALL cookies from a Netscape cookie file for Claude API.
+    
+    We send ALL cookies to maximize Cloudflare acceptance — 
+    including cf_clearance, __cf_bm, __ssid, _cfuvid, etc.
+    """
     raw = cookie_file["raw_content"]
-    essential_names = {"sessionKey", "lastActiveOrg", "cf_clearance", "__cf_bm", "routingHint", "sessionKeyLC", "anthropic-device-id"}
-    seen = set()
     cookies = []
     for line in raw.splitlines():
         line = line.strip()
@@ -438,11 +463,73 @@ def extract_claude_cookies(cookie_file):
         parts = line.split("\t")
         if len(parts) < 7:
             continue
-        name = parts[5]
-        if name in essential_names and name not in seen:
-            seen.add(name)
-            cookies.append({"name": name, "value": parts[6]})
+        cookies.append({"name": parts[5], "value": parts[6]})
     return cookies
+
+def transform_claude_stream(sse_text, conv_uuid, real_model):
+    """Transform Anthropic SSE stream chunks → OpenAI-compatible SSE stream.
+    
+    Input (Claude/Anthropic):
+        event: completion
+        data: {"type":"completion","completion":"Hello","stop_reason":null,...}
+    
+    Output (OpenAI):
+        data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"}}]}
+    """
+    import time as _time
+    
+    chunk_id = f"chatcmpl-{conv_uuid[:8]}"
+    created = int(_time.time())
+    
+    for line in sse_text.split("\n"):
+        # Skip empty lines and event: lines (we only care about data:)
+        if not line.startswith("data: "):
+            continue
+        
+        try:
+            obj = json.loads(line[6:])  # Strip "data: " prefix
+        except (json.JSONDecodeError, ValueError):
+            continue
+        
+        # Extract completion text and stop reason
+        completion_text = obj.get("completion", "")
+        stop_reason = obj.get("stop_reason")
+        
+        # Map Anthropic stop_reason to OpenAI finish_reason
+        finish_reason = None
+        if stop_reason:
+            stop_lower = str(stop_reason).lower()
+            if stop_lower in ("stop_sequence", "stop"):
+                finish_reason = "stop"
+            elif "max_token" in stop_lower or "length" in stop_lower:
+                finish_reason = "length"
+            elif "tool_use" in stop_lower:
+                finish_reason = "tool_calls"
+            else:
+                finish_reason = "stop"
+        
+        # Skip empty completion if it's also not the final chunk
+        if not completion_text and not finish_reason:
+            continue
+        
+        # Build OpenAI-format chunk
+        openai_chunk = {
+            "id": chunk_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": real_model,
+            "choices": [{
+                "index": 0,
+                "delta": {"content": completion_text} if completion_text else {},
+                "finish_reason": finish_reason,
+            }],
+        }
+        
+        yield f"data: {json.dumps(openai_chunk, ensure_ascii=False)}\n\n".encode()
+    
+    # Send final [DONE] marker
+    yield b"data: [DONE]\n\n"
+
 
 def proxy_to_claude(real_model, model_slug):
     """Forward request to Claude.ai web API using stored browser cookies.
@@ -489,7 +576,6 @@ def proxy_to_claude(real_model, model_slug):
         return jsonify({"error": "Bad Request", "message": "Claude requires the last message to be from 'user'.", "last_role": last_role}), 400
     
     prompt_text = "\n\n".join(prompt_parts)
-    ctx = ssl.create_default_context()
     
     # ── Smart rotation: get available tokens sorted by least-used ──
     available = _get_available_tokens(cookie_sets)
@@ -528,48 +614,64 @@ def proxy_to_claude(real_model, model_slug):
         start = time.time()
         
         def _claude_http_call():
-            """Inner function: try httpx first. Returns (resp1, resp2) or raises."""
-            with httpx.Client(proxy=proxy_url, timeout=120.0, verify=False) as client:
-                # Step 1: Create conversation
-                conv_data = json.dumps({
+            """Inner function: use curl_cffi with Chrome 131 impersonation for Cloudflare bypass."""
+            headers = {
+                "Cookie": cookie_header,
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Origin": "https://claude.ai",
+            }
+            
+            common_kwargs = {
+                "impersonate": "chrome131",
+                "timeout": 120,
+                "verify": False,
+            }
+            if proxy_url:
+                common_kwargs["proxy"] = proxy_url
+            
+            # Step 1: Create conversation
+            resp1 = curl_requests.post(
+                f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations",
+                json={
                     "name": "API Request", "prompt": "",
                     "timezone": "Africa/Cairo", "model": real_model,
                     "attachments": [], "files": [], "organization_uuid": org_uuid
-                })
-                headers = {"Cookie": cookie_header, "Content-Type": "application/json",
-                           "User-Agent": "Mozilla/5.0 AppleWebKit/537.36", "Origin": "https://claude.ai"}
-                resp1 = client.post(
-                    f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations",
-                    content=conv_data, headers=headers
-                )
-                conv_result = resp1.json()
-                conv_uuid = conv_result.get("uuid")
-                if not conv_uuid:
-                    raise Exception("No conversation UUID returned")
-                
-                # Step 2: Send prompt
-                comp_data = json.dumps({
+                },
+                headers=headers,
+                **common_kwargs,
+            )
+            conv_result = resp1.json()
+            conv_uuid = conv_result.get("uuid")
+            if not conv_uuid:
+                raise Exception("No conversation UUID returned")
+            
+            # Step 2: Send prompt
+            resp2 = curl_requests.post(
+                f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}/completion",
+                json={
                     "prompt": prompt_text, "timezone": "Africa/Cairo",
                     "attachments": [], "files": []
-                })
-                headers2 = {**headers, "Accept": "text/event-stream"}
-                resp2 = client.post(
-                    f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}/completion",
-                    content=comp_data, headers=headers2
-                )
-                return resp1, resp2, conv_uuid
+                },
+                headers={**headers, "Accept": "text/event-stream"},
+                **common_kwargs,
+            )
+            return resp1, resp2, conv_uuid
         
         try:
             resp1, resp2, conv_uuid = _claude_http_call()
             latency = int((time.time() - start) * 1000)
             
             _mark_token_used(cookie_set["id"])
-            record_proxy_request(model_slug, "claude", cookie_set["id"], "ok", latency)
+            # Get current proxy IP for tracking
+            proxy_ip, proxy_country = get_current_proxy_ip()
+            record_proxy_request(model_slug, "claude", cookie_set["id"], "ok", latency, 
+                               proxy_ip=proxy_ip, proxy_country=proxy_country)
             
             if is_streaming:
                 def generate():
-                    for chunk in resp2.iter_bytes(8192):
-                        yield chunk
+                    """Transform Anthropic SSE stream → OpenAI-compatible SSE stream."""
+                    yield from transform_claude_stream(resp2.text, conv_uuid, real_model)
                 return Response(stream_with_context(generate()), status=200, headers={
                     "Content-Type": "text/event-stream", "X-Proxy-Provider": "claude",
                     "X-Proxy-Cookie": str(cookie_set["id"]), "X-Proxy-Latency": str(latency),
@@ -587,14 +689,22 @@ def proxy_to_claude(real_model, model_slug):
                             if "stop_reason" in obj and obj["stop_reason"]: stop_reason = obj["stop_reason"]
                         except: pass
                 full_text = "".join(completion_parts)
+                # Map Anthropic stop_reason to OpenAI finish_reason
+                finish = stop_reason or "stop"
+                stop_lower = str(finish).lower()
+                if stop_lower in ("stop_sequence",): finish = "stop"
+                elif "max_token" in stop_lower or "length" in stop_lower: finish = "length"
+                elif "tool_use" in stop_lower: finish = "tool_calls"
                 return jsonify({
                     "id": f"claude-{conv_uuid[:8]}", "object": "chat.completion",
                     "created": int(time.time()), "model": real_model,
-                    "choices": [{"index": 0, "message": {"role": "assistant", "content": full_text}, "finish_reason": stop_reason or "stop"}],
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": full_text}, "finish_reason": finish}],
                     "usage": {"completion_tokens": len(full_text.split())},
                 }), 200, {
                     "X-Proxy-Provider": "claude", "X-Proxy-Cookie": str(cookie_set["id"]),
                     "X-Proxy-Latency": str(latency),
+                    "X-Proxy-IP": proxy_ip or "unknown",
+                    "X-Proxy-Country": proxy_country or "unknown",
                     "X-Proxy-Rotation": f"token {cookie_set['id']} (used {_get_token_state(cookie_set['id'])['usage']}x)",
                 }
         
@@ -810,6 +920,49 @@ def proxy_chat_standard():
     
     model_info = MODELS[model_slug]
     return proxy_to_provider(model_info["provider"], model_info["real_model"], model_slug)
+
+
+@app.route("/v1/health", methods=["GET"])
+def proxy_health():
+    """Health check endpoint for API consumers. No auth required."""
+    conn = get_db()
+    claude_count = conn.execute("SELECT COUNT(*) FROM cookie_files WHERE platform='claude' AND raw_content NOT LIKE 'DEAD:%'").fetchone()[0]
+    providers = conn.execute("SELECT slug, provider_type FROM api_providers").fetchall()
+    active_keys = 0
+    for p in providers:
+        kc = conn.execute("SELECT COUNT(*) FROM api_keys WHERE provider_id=(SELECT id FROM api_providers WHERE slug=?) AND is_active=1 AND dead=0", (p["slug"],)).fetchone()[0]
+        active_keys += kc
+    conn.close()
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "models_available": len(MODELS),
+        "claude_sessions": claude_count,
+        "active_api_keys": active_keys,
+        "version": "2.0.0",
+        "proxy_provider": "IPRoyal" if PROXY_ENABLED else "direct",
+    })
+
+
+@app.after_request
+def add_cors_headers(response):
+    """Add permissive CORS headers so API works from any frontend."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    response.headers["Access-Control-Max-Age"] = "86400"
+    # Add rate limit headers so clients can adapt
+    response.headers["X-RateLimit-Limit"] = "100"
+    response.headers["X-RateLimit-Remaining"] = "99"
+    response.headers["X-RateLimit-Reset"] = str(int(time.time() + 60))
+    return response
+
+
+@app.route("/v1/chat/completions", methods=["OPTIONS"])
+@app.route("/v1/<path:path>", methods=["OPTIONS"])
+def handle_options(path=""):
+    """Handle CORS preflight requests."""
+    return "", 204
 
 @app.route("/v1/<model_slug>/chat/completions", methods=["POST"])
 def proxy_chat_legacy(model_slug):

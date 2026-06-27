@@ -1,16 +1,111 @@
 #!/usr/bin/env python3
 """AI Proxy Gateway — Smart model-level proxy with automatic key rotation."""
 
-import os, re, json, sqlite3, secrets, time, uuid, hashlib, threading
+import os, re, json, sqlite3, secrets, time, uuid, hashlib, threading, hmac as _hmac
 from datetime import datetime, timezone
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, Response, stream_with_context
 from werkzeug.security import generate_password_hash, check_password_hash
+from urllib.parse import unquote
 import httpx
 from curl_cffi import requests as curl_requests
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECURITY LAYER — Fernet cookie encryption + API key minting + validation
+# (Adapted from zlexdev/claude-webapi gateway/features/auth/)
+# ═══════════════════════════════════════════════════════════════════════════
+
+COOKIE_ENCRYPTION_KEY = os.environ.get("COOKIE_ENCRYPTION_KEY", "")
+_fernet = None
+
+def _get_fernet():
+    """Lazily init Fernet cipher for at-rest cookie encryption."""
+    global _fernet
+    if _fernet is not None or not COOKIE_ENCRYPTION_KEY:
+        return _fernet
+    try:
+        from cryptography.fernet import Fernet
+        _fernet = Fernet(COOKIE_ENCRYPTION_KEY.encode())
+    except Exception:
+        _fernet = None
+    return _fernet
+
+def encrypt_cookies(cookies_dict):
+    """Seal a cookie dict into a Fernet token string. Returns dict if no key."""
+    f = _get_fernet()
+    if f is None:
+        return json.dumps(cookies_dict)  # legacy plaintext fallback
+    raw = json.dumps(cookies_dict, separators=(",", ":")).encode()
+    return f.encrypt(raw).decode()
+
+def decrypt_cookies(token):
+    """Unseal a Fernet token → dict. Handles legacy plaintext JSON too."""
+    f = _get_fernet()
+    if f is None:
+        # No key configured — data is plaintext JSON
+        try:
+            return {str(k): str(v) for k, v in json.loads(token).items()}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    try:
+        from cryptography.fernet import InvalidToken
+        try:
+            raw = f.decrypt(token.encode())
+        except InvalidToken:
+            # Try legacy plaintext
+            try:
+                return {str(k): str(v) for k, v in json.loads(token).items()}
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        data = json.loads(raw.decode())
+        return {str(k): str(v) for k, v in data.items()}
+    except Exception:
+        return {}
+
+# ── API Key Minting ──
+KEY_PREFIX = "sk-aic-"
+
+def generate_api_key():
+    """Return (plaintext, sha256_hex). Persist only the hash."""
+    raw = KEY_PREFIX + secrets.token_urlsafe(32)
+    return raw, hash_api_key(raw)
+
+def hash_api_key(raw):
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+def verify_api_key(raw, stored_hash):
+    return _hmac.compare_digest(hash_api_key(raw), stored_hash)
+
+# ── Cookie Name Validation ──
+_COOKIE_NAME_RE = re.compile(r'^[\w\-\.]+$')
+_COOKIE_UNSAFE_RE = re.compile(r'[\x00-\x1f\x7f]')
+_XSRF_NAMES = ("XSRF-TOKEN", "xsrf_token")
+
+def extract_xsrf_token(cookies_dict):
+    """Extract XSRF token from a cookies dict."""
+    for name in _XSRF_NAMES:
+        if name in cookies_dict:
+            return unquote(cookies_dict[name])
+    return None
+
+def build_auth_headers(cookies_dict):
+    """Build Cookie + x-xsrf-token headers from a cookies dict."""
+    headers = {}
+    if cookies_dict:
+        headers["cookie"] = "; ".join(f"{k}={v}" for k, v in cookies_dict.items())
+    xsrf = extract_xsrf_token(cookies_dict)
+    if xsrf:
+        headers["x-xsrf-token"] = xsrf
+    return headers
+
+def validate_cookie_name(name):
+    """Check cookie name is valid (safe charset, no control chars)."""
+    if not name or not _COOKIE_NAME_RE.match(name):
+        return False
+    return True
 
 # ── Auth ──────────────────────────────────────────────────────────────────
 AUTH_USERNAME = os.environ.get("AUTH_USERNAME", "mahmoud")
@@ -376,14 +471,226 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
     }), 503
 
 # ═══════════════════════════════════════════════════════════════════════════
+# RELIABILITY LAYER — Retry middleware + Rate limiting + Proxy blacklist
+# (Adapted from zlexdev/claude-webapi middleware/retry.py + rate_limit.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+import random as _random
+
+# ── Retry with exponential backoff + jitter ──
+RETRY_MAX_ATTEMPTS = 3
+RETRY_BASE_DELAY = 1.0      # seconds
+RETRY_MAX_DELAY = 30.0      # cap
+RETRY_RETRYABLE_STATUS = {429, 502, 503, 504, 529}
+
+def compute_retry_delay(attempt, retry_after_header=None):
+    """Exponential backoff with jitter. Respects Retry-After header if given."""
+    if retry_after_header is not None:
+        try:
+            return min(float(retry_after_header), RETRY_MAX_DELAY)
+        except (ValueError, TypeError):
+            pass
+    delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+    jitter = _random.uniform(0, delay * 0.1)
+    return delay + jitter
+
+def is_retryable_status(code):
+    """Check if an HTTP status code is worth retrying."""
+    return code in RETRY_RETRYABLE_STATUS
+
+def retry_with_backoff(func, max_attempts=RETRY_MAX_ATTEMPTS, retryable_check=None):
+    """Decorator: retry a function with exponential backoff.
+    
+    Args:
+        func: callable that returns (result, status_code, retry_after_header)
+        max_attempts: max retry attempts
+        retryable_check: optional callable(status_code) -> bool
+    Returns:
+        Last result from func, or raises after exhausting attempts.
+    """
+    check = retryable_check or is_retryable_status
+    result = None
+    for attempt in range(max_attempts):
+        result, status, retry_after = func()
+        if status is None or not check(status):
+            return result
+        if attempt < max_attempts - 1:
+            delay = compute_retry_delay(attempt, retry_after)
+            time.sleep(delay)
+    return result
+
+# ── Rate limiter (token bucket per client IP) ──
+_rate_limiter_lock = threading.Lock()
+_rate_limiter_buckets = {}  # ip → {tokens, last_refill}
+RATE_LIMIT_CAPACITY = 60    # max requests per minute
+RATE_LIMIT_REFILL_RATE = 1.0  # tokens per second
+
+def check_rate_limit(client_ip=None):
+    """Token bucket rate limiter. Returns (allowed, remaining, reset_in_seconds).
+    
+    Uses in-memory buckets per client IP. Resets on restart.
+    """
+    if not client_ip:
+        client_ip = request.remote_addr or "unknown"
+    
+    now = time.time()
+    with _rate_limiter_lock:
+        bucket = _rate_limiter_buckets.get(client_ip)
+        if bucket is None:
+            bucket = {"tokens": RATE_LIMIT_CAPACITY, "last_refill": now}
+            _rate_limiter_buckets[client_ip] = bucket
+        
+        # Refill tokens based on elapsed time
+        elapsed = now - bucket["last_refill"]
+        bucket["tokens"] = min(RATE_LIMIT_CAPACITY, bucket["tokens"] + elapsed * RATE_LIMIT_REFILL_RATE)
+        bucket["last_refill"] = now
+        
+        if bucket["tokens"] >= 1.0:
+            bucket["tokens"] -= 1.0
+            return True, int(bucket["tokens"]), int(RATE_LIMIT_CAPACITY - bucket["tokens"]) // max(1, int(RATE_LIMIT_REFILL_RATE))
+        else:
+            retry_after = int((1.0 - bucket["tokens"]) / RATE_LIMIT_REFILL_RATE) + 1
+            return False, 0, retry_after
+
+# ── Proxy Blacklist (in-memory, auto-expiring) ──
+_proxy_blacklist_lock = threading.Lock()
+_proxy_blacklist = {}  # proxy_url → {fail_count, blacklisted_until, last_failure}
+
+PROXY_MAX_FAILURES = 3
+PROXY_BLACKLIST_DURATION = 300  # 5 minutes
+
+def report_proxy_failure(proxy_url, reason=""):
+    """Report a proxy failure. Auto-blacklists after MAX_FAILURES."""
+    if not proxy_url:
+        return
+    with _proxy_blacklist_lock:
+        entry = _proxy_blacklist.get(proxy_url, {"fail_count": 0, "blacklisted_until": 0, "last_failure": ""})
+        entry["fail_count"] += 1
+        entry["last_failure"] = reason[:200]
+        if entry["fail_count"] >= PROXY_MAX_FAILURES:
+            entry["blacklisted_until"] = time.time() + PROXY_BLACKLIST_DURATION
+        _proxy_blacklist[proxy_url] = entry
+
+def report_proxy_success(proxy_url):
+    """Reset failure count on successful proxy use."""
+    if not proxy_url:
+        return
+    with _proxy_blacklist_lock:
+        if proxy_url in _proxy_blacklist:
+            _proxy_blacklist[proxy_url] = {"fail_count": 0, "blacklisted_until": 0, "last_failure": ""}
+
+def is_proxy_blacklisted(proxy_url):
+    """Check if a proxy is currently blacklisted."""
+    if not proxy_url:
+        return False
+    with _proxy_blacklist_lock:
+        entry = _proxy_blacklist.get(proxy_url)
+        if not entry:
+            return False
+        if entry.get("blacklisted_until", 0) > time.time():
+            return True
+        # Blacklist expired — reset
+        if entry.get("blacklisted_until", 0) > 0 and entry["blacklisted_until"] <= time.time():
+            entry["fail_count"] = 0
+            entry["blacklisted_until"] = 0
+        return False
+
+def get_proxy_blacklist_status():
+    """Get current blacklist status for dashboard display."""
+    with _proxy_blacklist_lock:
+        now = time.time()
+        return [
+            {
+                "proxy": url,
+                "fail_count": e["fail_count"],
+                "blacklisted": e.get("blacklisted_until", 0) > now,
+                "remaining_seconds": max(0, int(e.get("blacklisted_until", 0) - now)),
+                "last_failure": e.get("last_failure", ""),
+            }
+            for url, e in _proxy_blacklist.items()
+            if e["fail_count"] > 0
+        ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # CLAUDE PROXY — Smart Token Rotation & State Management
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ── Account Tiers ──
+# Free tier has lower rate limits; Pro/Max have higher.
+# Inferred from cookie content (presence of 'lastActiveOrg' with specific patterns).
+ACCOUNT_TIERS = {"free": 0, "pro": 1, "max": 2}
+
+# ── Availability States ──
+# parked: temporarily rate-limited (auto-recovers after cooldown)
+# quarantined: dead/expired session (needs manual intervention)
+STATE_ACTIVE = "active"
+STATE_PARKED = "parked"
+STATE_QUARANTINED = "quarantined"
+
 # In-memory state for Claude cookie sessions (survives between requests, lost on restart)
 _claude_token_lock = threading.RLock()
-_claude_token_state = {}  # cookie_file_id → {usage, cooldown_until, dead, last_error}
+_claude_token_state = {}  # cookie_file_id → {usage, cooldown_until, dead, last_error, tier, availability, affinity_pin}
 
 COOLDOWN_SECONDS = 300  # 5 minutes cooldown after rate limit
+
+# ── Affinity Tracker ──
+# Pins a conversation thread to a specific cookie so follow-up messages
+# use the same account (avoids context loss across turns).
+_affinity_lock = threading.RLock()
+_affinity_map = {}  # conversation_key → cookie_file_id
+
+def _affinity_key(messages):
+    """Generate a stable affinity key from the first user message.
+    This lets multi-turn conversations reuse the same cookie."""
+    for m in messages:
+        if m.get("role") == "user":
+            content = str(m.get("content", ""))
+            # Use first 200 chars as a fingerprint
+            return hashlib.sha256(content[:200].encode()).hexdigest()[:16]
+    return None
+
+def _get_affinity_pin(key):
+    """Get the cookie_file_id pinned to this conversation key, if any."""
+    if not key:
+        return None
+    with _affinity_lock:
+        pinned_id = _affinity_map.get(key)
+        if pinned_id is None:
+            return None
+        # Check if pinned token is still usable
+        state = _get_token_state(pinned_id)
+        if state["dead"] or state["availability"] == STATE_QUARANTINED:
+            # Pinned token died — remove affinity
+            _affinity_map.pop(key, None)
+            return None
+        if state["cooldown_until"] > time.time():
+            # Pinned token is cooling down — remove affinity temporarily
+            return None
+        return pinned_id
+
+def _set_affinity_pin(key, cookie_file_id):
+    """Pin a conversation key to a cookie_file_id."""
+    if not key:
+        return
+    with _affinity_lock:
+        _affinity_map[key] = cookie_file_id
+        # Keep map bounded — evict oldest if > 200 entries
+        if len(_affinity_map) > 200:
+            oldest_key = next(iter(_affinity_map))
+            _affinity_map.pop(oldest_key, None)
+
+def _infer_tier(cookie_set):
+    """Infer account tier from cookie content. Default: free.
+    Pro/Max accounts typically have different cookie patterns."""
+    raw = cookie_set.get("raw_content", "")
+    # Heuristic: Pro accounts often have 'cf_clearance' with longer values
+    # and specific org patterns. This is a best-effort inference.
+    if "maxPlan" in raw or "max_plan" in raw:
+        return "max"
+    if "proPlan" in raw or "pro_plan" in raw:
+        return "pro"
+    return "free"
 
 def _get_token_state(cookie_id):
     """Get or create state entry for a cookie token."""
@@ -394,6 +701,9 @@ def _get_token_state(cookie_id):
                 "cooldown_until": 0,
                 "dead": False,
                 "last_error": None,
+                "tier": "free",
+                "availability": STATE_ACTIVE,
+                "affinity_pin": None,
             }
         return _claude_token_state[cookie_id]
 
@@ -401,18 +711,22 @@ def _mark_token_used(cookie_id):
     with _claude_token_lock:
         state = _get_token_state(cookie_id)
         state["usage"] += 1
+        state["availability"] = STATE_ACTIVE
+        state["cooldown_until"] = 0
 
 def _mark_token_cooldown(cookie_id, reason=""):
     with _claude_token_lock:
         state = _get_token_state(cookie_id)
         state["cooldown_until"] = time.time() + COOLDOWN_SECONDS
         state["last_error"] = reason
+        state["availability"] = STATE_PARKED
 
 def _mark_token_dead(cookie_id, reason=""):
     with _claude_token_lock:
         state = _get_token_state(cookie_id)
         state["dead"] = True
         state["last_error"] = reason
+        state["availability"] = STATE_QUARANTINED
     # Also persist to DB
     try:
         conn = get_db()
@@ -422,20 +736,57 @@ def _mark_token_dead(cookie_id, reason=""):
     except:
         pass
 
-def _get_available_tokens(cookie_sets):
-    """Filter and sort cookie sets: skip dead, skip cooldown, sort by usage (least first)."""
+def _get_available_tokens(cookie_sets, affinity_pin_id=None, min_tier="free"):
+    """Filter and sort cookie sets with affinity + tier awareness.
+    
+    Args:
+        cookie_sets: list of cookie set dicts from DB
+        affinity_pin_id: if set, this cookie_id is tried first (conversation affinity)
+        min_tier: minimum account tier required ('free', 'pro', 'max')
+    
+    Sorting priority:
+        1. Affinity-pinned token (if still usable)
+        2. Active tokens sorted by tier (higher first) then usage (least first)
+    """
     now = time.time()
+    min_tier_val = ACCOUNT_TIERS.get(min_tier, 0)
     available = []
+    pinned_cs = None
+    
     with _claude_token_lock:
         for cs in cookie_sets:
             state = _get_token_state(cs["id"])
-            if state["dead"]:
+            
+            # Infer tier if not yet set
+            if state.get("tier", "free") == "free" and cs.get("raw_content"):
+                inferred = _infer_tier(cs)
+                if inferred != "free":
+                    state["tier"] = inferred
+            
+            tier_val = ACCOUNT_TIERS.get(state.get("tier", "free"), 0)
+            
+            if state["dead"] or state["availability"] == STATE_QUARANTINED:
                 continue
             if state["cooldown_until"] > now:
                 continue
-            available.append((state["usage"], cs))
-    available.sort(key=lambda x: x[0])  # Least-used first
-    return [cs for _, cs in available]
+            if tier_val < min_tier_val:
+                continue
+            
+            # Check if this is the affinity-pinned token
+            if affinity_pin_id and cs["id"] == affinity_pin_id:
+                pinned_cs = cs
+                continue
+            
+            available.append((tier_val, state["usage"], cs))
+    
+    # Sort: higher tier first, then least-used
+    available.sort(key=lambda x: (-x[0], x[1]))
+    
+    result = []
+    if pinned_cs:
+        result.append(pinned_cs)  # Affinity-pinned token goes first
+    result.extend([cs for _, _, cs in available])
+    return result
 
 def get_claude_cookie_sets():
     """Get all Claude cookie files from DB, excluding dead ones. Includes proxy info."""
@@ -453,6 +804,7 @@ def extract_claude_cookies(cookie_file):
     
     We send ALL cookies to maximize Cloudflare acceptance — 
     including cf_clearance, __cf_bm, __ssid, _cfuvid, etc.
+    Validates cookie names (safe charset) and auto-extracts XSRF token.
     """
     raw = cookie_file["raw_content"]
     cookies = []
@@ -463,8 +815,20 @@ def extract_claude_cookies(cookie_file):
         parts = line.split("\t")
         if len(parts) < 7:
             continue
-        cookies.append({"name": parts[5], "value": parts[6]})
+        name = parts[5]
+        value = parts[6]
+        if not validate_cookie_name(name):
+            continue
+        cookies.append({"name": name, "value": value})
     return cookies
+
+def cookies_to_dict(cookies_list):
+    """Convert [{name,value},...] list → {name: value} dict."""
+    return {c["name"]: c["value"] for c in cookies_list}
+
+def cookies_to_header(cookies_list):
+    """Convert [{name,value},...] list → 'name=value; name2=value2' header."""
+    return "; ".join(f"{c['name']}={c['value']}" for c in cookies_list)
 
 def transform_claude_stream(sse_text, conv_uuid, real_model):
     """Transform Anthropic SSE stream chunks → OpenAI-compatible SSE stream.
@@ -560,16 +924,58 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
     yield b"data: [DONE]\n\n"
 
 
-def build_natural_prompt(messages):
+def _extract_content_text(content):
+    """Extract text from content that may be a string or a list of content blocks
+    (multimodal support: text parts, image URLs, etc.)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+                elif block.get("type") == "image_url":
+                    # Describe image presence (Claude.ai web doesn't accept image URLs in prompt text)
+                    url = block.get("image_url", {}).get("url", "") if isinstance(block.get("image_url"), dict) else str(block.get("image_url", ""))
+                    if url:
+                        parts.append(f"[Image: {url[:100]}]")
+                elif block.get("type") == "tool_call":
+                    # Tool call from assistant — render as function call
+                    fn = block.get("function", {})
+                    name = fn.get("name", "unknown")
+                    args = fn.get("arguments", "{}")
+                    parts.append(f"[Tool call: {name}({args})]")
+                elif block.get("type") == "tool_result":
+                    # Tool result — render as function result
+                    result = block.get("content", "")
+                    if isinstance(result, list):
+                        result = " ".join(r.get("text", "") if isinstance(r, dict) else str(r) for r in result)
+                    parts.append(f"[Tool result: {result}]")
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts)
+    return str(content)
+
+
+def build_natural_prompt(messages, tools=None, tool_choice=None):
     """Convert OpenAI-format API messages into a natural conversation prompt
     for Claude.ai's web interface.
 
     This middleware replaces the old Mistral-based humanization. It:
     - Converts system prompts into natural context notes (not <system> tags)
     - Preserves full multi-turn context (user + assistant messages)
+    - Handles multimodal content (text blocks, image URLs, tool calls/results)
+    - Renders tool history (assistant tool_calls + tool role messages)
+    - Injects custom tool definitions when tools are provided (Path B emulation)
     - Removes API artifacts that could trigger Claude's anti-automation heuristics
     - Keeps the exact meaning and intent of every message
     - Adds natural conversational framing
+
+    Args:
+        messages: OpenAI-format messages array
+        tools: optional list of OpenAI function definitions
+        tool_choice: optional "none", "required", or {"function": {"name": "..."}}
 
     Returns: (prompt_text, was_transformed)
     """
@@ -581,26 +987,47 @@ def build_natural_prompt(messages):
     conv_parts = []
     for m in messages:
         role = m.get("role", "user")
-        content = str(m.get("content", ""))
+        content = _extract_content_text(m.get("content", ""))
         if role == "system":
             system_parts.append(content)
         elif role == "user":
             conv_parts.append(("user", content))
         elif role == "assistant":
-            conv_parts.append(("assistant", content))
+            # Check for tool_calls in assistant message
+            tool_calls = m.get("tool_calls")
+            if tool_calls:
+                tool_text = []
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    name = fn.get("name", "unknown")
+                    args = fn.get("arguments", "{}")
+                    tool_text.append(f"[I called {name} with arguments: {args}]")
+                conv_parts.append(("assistant", content + "\n" + "\n".join(tool_text) if content else "\n".join(tool_text)))
+            else:
+                conv_parts.append(("assistant", content))
+        elif role == "tool":
+            # Tool result message — render as function result
+            tool_call_id = m.get("tool_call_id", "")
+            conv_parts.append(("tool", f"[Tool result for {tool_call_id}]: {content}"))
         else:
             conv_parts.append((role, content))
 
     prompt_pieces = []
 
     # ── System prompt → natural context note ──
-    # Instead of <system> tags (which scream "API"), we weave system instructions
-    # into a natural "by the way" or "for context" note at the top
     if system_parts:
         system_text = "\n".join(system_parts).strip()
         if system_text:
-            # Natural framing that doesn't look like an API system tag
             prompt_pieces.append(system_text)
+
+    # ── Custom tool definitions (Path B emulation) ──
+    # When the client sends OpenAI function definitions, we inject them as
+    # a natural preamble so Claude knows what tools are available and how
+    # to call them using <function_calls> XML format.
+    if tools and tool_choice != "none":
+        tool_preamble = _render_tools_preamble(tools, tool_choice)
+        if tool_preamble:
+            prompt_pieces.append(tool_preamble)
 
     # ── Conversation turns → natural dialogue ──
     for role, content in conv_parts:
@@ -608,15 +1035,14 @@ def build_natural_prompt(messages):
             prompt_pieces.append(f"Human: {content}")
         elif role == "assistant":
             prompt_pieces.append(f"Assistant: {content}")
+        elif role == "tool":
+            prompt_pieces.append(f"Tool: {content}")
         else:
             prompt_pieces.append(f"{role.capitalize()}: {content}")
 
     prompt_text = "\n\n".join(prompt_pieces)
 
     # ── Artifact format instruction ──
-    # Tell Claude to use standard Markdown code blocks instead of <antArtifact> XML.
-    # This ensures any frontend (not just Claude.ai) can parse the output.
-    # We append it naturally so it doesn't look like an API system tag.
     artifact_instruction = (
         "\n\n---\n"
         "Output format note: When writing code, UI components, HTML, SVG, or any "
@@ -626,10 +1052,133 @@ def build_natural_prompt(messages):
     )
     prompt_text = prompt_text + artifact_instruction
 
-    # Transformation happened if we had system messages or multi-turn
-    was_transformed = len(system_parts) > 0 or len(conv_parts) > 2
+    # Transformation happened if we had system messages, multi-turn, or tools
+    was_transformed = len(system_parts) > 0 or len(conv_parts) > 2 or bool(tools)
 
     return prompt_text, was_transformed
+
+
+# ── Tool Preamble Rendering (Path B emulation) ──
+# Adapted from zlexdev/claude-webapi tool_protocol.py
+
+def _render_tools_preamble(tools, tool_choice=None):
+    """Render OpenAI function definitions as a natural preamble for Claude.
+    
+    Tells Claude what tools are available, their parameters, and how to call
+    them using <function_calls><invoke name="..."> XML format.
+    """
+    lines = ["You have access to the following tools. Use them when appropriate."]
+    lines.append("")
+    
+    for tool in tools:
+        if tool.get("type") == "function":
+            fn = tool.get("function", {})
+        else:
+            fn = tool
+        name = fn.get("name", "unknown")
+        desc = fn.get("description", "")
+        params = fn.get("parameters", {})
+        
+        lines.append(f"## Tool: {name}")
+        if desc:
+            lines.append(f"Description: {desc}")
+        if params and isinstance(params, dict):
+            props = params.get("properties", {})
+            required = params.get("required", [])
+            if props:
+                lines.append("Parameters:")
+                for pname, pinfo in props.items():
+                    ptype = pinfo.get("type", "string")
+                    pdesc = pinfo.get("description", "")
+                    req = " (required)" if pname in required else ""
+                    lines.append(f"  - {pname} ({ptype}){req}: {pdesc}")
+        lines.append("")
+    
+    # How to call tools
+    lines.append("To call a tool, use this exact format:")
+    lines.append('<function_calls>')
+    lines.append('<invoke name="tool_name">')
+    lines.append('<parameter name="param_name">value</parameter>')
+    lines.append('</invoke>')
+    lines.append('</function_calls>')
+    lines.append("")
+    
+    # tool_choice handling
+    if tool_choice == "required":
+        lines.append("You MUST call at least one tool in your response.")
+    elif isinstance(tool_choice, dict) and "function" in tool_choice:
+        fn_name = tool_choice["function"].get("name", "")
+        if fn_name:
+            lines.append(f"You MUST call the tool '{fn_name}' in your response.")
+    else:
+        lines.append("Call a tool only when it would help answer the user's request. "
+                      "If no tool is needed, respond normally without any tool calls.")
+    
+    return "\n".join(lines)
+
+
+def parse_tool_calls_from_response(text):
+    """Extract tool calls from Claude's response text.
+    
+    Parses <function_calls><invoke name="..."> XML and returns a list of
+    OpenAI-format tool_calls. Tolerant of JSON fences and bare JSON too.
+    
+    Returns: list of {"id": ..., "type": "function", "function": {"name": ..., "arguments": ...}}
+    """
+    tool_calls = []
+    
+    # Pattern 1: <function_calls><invoke name="...">...</invoke></function_calls>
+    invoke_pattern = re.compile(
+        r'<(?:antml:)?function_calls>\s*'
+        r'<(?:antml:)?invoke\s+name="([^"]+)"[^>]*>(.*?)</(?:antml:)?invoke>\s*'
+        r'(?:</(?:antml:)?function_calls>)?',
+        re.DOTALL
+    )
+    
+    param_pattern = re.compile(
+        r'<(?:antml:)?parameter\s+name="([^"]+)"[^>]*>(.*?)</(?:antml:)?parameter>',
+        re.DOTALL
+    )
+    
+    for m in invoke_pattern.finditer(text):
+        name = m.group(1)
+        params_text = m.group(2)
+        
+        # Extract parameters
+        args = {}
+        for pm in param_pattern.finditer(params_text):
+            pname = pm.group(1)
+            pval = pm.group(2).strip()
+            args[pname] = pval
+        
+        tool_calls.append({
+            "id": f"call_{secrets.token_hex(12)}",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": json.dumps(args),
+            }
+        })
+    
+    # Pattern 2: ```json with tool call format (tolerant)
+    if not tool_calls:
+        json_fences = re.findall(r'```json\s*\n(.*?)\n```', text, re.DOTALL)
+        for jf in json_fences:
+            try:
+                parsed = json.loads(jf)
+                if isinstance(parsed, dict) and "name" in parsed and "arguments" in parsed:
+                    tool_calls.append({
+                        "id": f"call_{secrets.token_hex(12)}",
+                        "type": "function",
+                        "function": {
+                            "name": parsed["name"],
+                            "arguments": json.dumps(parsed["arguments"]) if isinstance(parsed["arguments"], dict) else str(parsed["arguments"]),
+                        }
+                    })
+            except (json.JSONDecodeError, TypeError):
+                continue
+    
+    return tool_calls
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -967,6 +1516,64 @@ def _cleanup_claude_conversation(org_uuid, conv_uuid, cookie_header, proxy_url):
         pass
 
 
+# ── Conversation Title Generation ──
+# Generates a concise title for the conversation via Claude's title endpoint.
+# This makes the conversation history more readable in Claude.ai's UI.
+
+def _generate_conversation_title(org_uuid, conv_uuid, cookie_header, proxy_url):
+    """Ask Claude.ai to generate a title for the conversation."""
+    try:
+        headers = {
+            "Cookie": cookie_header,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Origin": "https://claude.ai",
+        }
+        kwargs = {"impersonate": "chrome131", "timeout": 15, "verify": False}
+        if proxy_url:
+            kwargs["proxy"] = proxy_url
+        resp = curl_requests.post(
+            f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}/title",
+            json={},
+            headers=headers,
+            **kwargs,
+        )
+        if resp.status_code == 200:
+            title_data = resp.json()
+            return title_data.get("title", "")
+    except Exception:
+        pass
+    return None
+
+
+# ── Conversation Cache (in-memory, TTL-based) ──
+# Caches conversation list/get responses to reduce API calls to Claude.ai.
+_conv_cache_lock = threading.Lock()
+_conv_cache = {}  # cache_key → {data, expires_at}
+CONV_CACHE_TTL = 300  # 5 minutes
+
+def _cache_get(key):
+    """Get a cached conversation response. Returns None if expired."""
+    with _conv_cache_lock:
+        entry = _conv_cache.get(key)
+        if entry and entry["expires_at"] > time.time():
+            return entry["data"]
+        if entry:
+            _conv_cache.pop(key, None)
+        return None
+
+def _cache_set(key, data, ttl=CONV_CACHE_TTL):
+    """Store a conversation response in cache."""
+    with _conv_cache_lock:
+        _conv_cache[key] = {"data": data, "expires_at": time.time() + ttl}
+        # Evict expired entries periodically
+        if len(_conv_cache) > 100:
+            now = time.time()
+            expired = [k for k, v in _conv_cache.items() if v["expires_at"] <= now]
+            for k in expired:
+                _conv_cache.pop(k, None)
+
+
 def proxy_to_claude(real_model, model_slug):
     """Forward request to Claude.ai web API using stored browser cookies.
     
@@ -986,19 +1593,23 @@ def proxy_to_claude(real_model, model_slug):
         data = json.loads(body)
         messages = data.get("messages", [])
         is_streaming = data.get("stream", False)
+        request_tools = data.get("tools", [])
+        tool_choice = data.get("tool_choice", None)
     except:
         return jsonify({"error": "Invalid JSON body"}), 400
     
     if not messages:
         return jsonify({"error": "messages array is required"}), 400
-
+    
     # ── Build natural prompt from OpenAI-format messages ──
     # build_natural_prompt replaces the old Mistral humanization:
     # - Converts system prompts to natural context (not <system> tags)
     # - Preserves full multi-turn context (user + assistant messages)
+    # - Handles multimodal content (text blocks, image URLs)
+    # - Injects custom tool definitions (Path B emulation)
     # - No external API call — pure local transformation
     try:
-        prompt_text, was_transformed = build_natural_prompt(messages)
+        prompt_text, was_transformed = build_natural_prompt(messages, tools=request_tools, tool_choice=tool_choice)
     except Exception as e:
         app.logger.error(f"[claude] build_natural_prompt error: {e}")
         return jsonify({"error": "Prompt construction failed", "detail": str(e)}), 500
@@ -1010,8 +1621,25 @@ def proxy_to_claude(real_model, model_slug):
     if last_role != "user":
         return jsonify({"error": "Bad Request", "message": "Claude requires the last message to be from 'user'.", "last_role": last_role}), 400
     
-    # ── Smart rotation: get available tokens sorted by least-used ──
-    available = _get_available_tokens(cookie_sets)
+    # ── Conversation affinity: pin multi-turn conversations to same cookie ──
+    affinity_key = _affinity_key(messages)
+    pinned_id = _get_affinity_pin(affinity_key) if affinity_key else None
+    
+    # ── Cache lookup: return cached response for identical prompts ──
+    cache_key = f"claude:{affinity_key or 'nopin'}:{hashlib.sha256(prompt_text.encode()).hexdigest()[:16]}"
+    cached = _cache_get(cache_key)
+    if cached and not is_streaming:
+        app.logger.info(f"[claude] cache hit for key {cache_key[:40]}")
+        cached["cached"] = True
+        return jsonify(cached), 200, {
+            "X-Proxy-Provider": "claude", "X-Cache-Hit": "true",
+            "X-Proxy-Cookie": "cached",
+        }
+    if pinned_id:
+        app.logger.info(f"[claude] affinity: pinned to cookie {pinned_id} for key {affinity_key[:8] if affinity_key else '?'}")
+    
+    # ── Smart rotation: get available tokens with affinity + tier awareness ──
+    available = _get_available_tokens(cookie_sets, affinity_pin_id=pinned_id)
     if not available:
         # Check if ALL are in cooldown
         with _claude_token_lock:
@@ -1043,6 +1671,12 @@ def proxy_to_claude(real_model, model_slug):
         proxy_session_id = cookie_set.get("proxy_session_id") or None
         proxy_enabled = cookie_set.get("proxy_enabled") or False
         proxy_url = get_proxy_url(proxy_session_id) if (PROXY_ENABLED and proxy_enabled and proxy_session_id) else get_proxy_url()
+        
+        # ── Skip blacklisted proxies ──
+        if proxy_url and is_proxy_blacklisted(proxy_url):
+            app.logger.info(f"[claude] token {cookie_set['id']}: skipping blacklisted proxy")
+            tried.append({"token": cookie_set["id"], "action": "SKIP", "reason": "Proxy blacklisted"})
+            continue
         
         start = time.time()
         
@@ -1135,6 +1769,11 @@ def proxy_to_claude(real_model, model_slug):
             full_text = filtered_text
             
             _mark_token_used(cookie_set["id"])
+            if proxy_url:
+                report_proxy_success(proxy_url)
+            # ── Pin this conversation to this cookie for follow-up messages ──
+            if affinity_key:
+                _set_affinity_pin(affinity_key, cookie_set["id"])
             proxy_ip = "unknown"
             proxy_country = "unknown"
             try:
@@ -1146,6 +1785,12 @@ def proxy_to_claude(real_model, model_slug):
                                proxy_country=proxy_country if proxy_country != "unknown" else None)
             
             if is_streaming:
+                # ── Generate title in background (fire-and-forget) ──
+                def _bg_title():
+                    _generate_conversation_title(org_uuid, conv_uuid, cookie_header, proxy_url)
+                    _cleanup_claude_conversation(org_uuid, conv_uuid, cookie_header, proxy_url)
+                threading.Thread(target=_bg_title, daemon=True).start()
+
                 def generate():
                     """Transform Anthropic SSE stream → OpenAI-compatible SSE stream with tool artifact filtering."""
                     yield from transform_claude_stream(resp2.text, conv_uuid, real_model)
@@ -1155,7 +1800,8 @@ def proxy_to_claude(real_model, model_slug):
                     "X-Proxy-Rotation": f"token {cookie_set['id']} (used {_get_token_state(cookie_set['id'])['usage']}x)",
                 })
             else:
-                # ── Cleanup: delete conversation from Claude.ai ──
+                # ── Generate title then cleanup conversation ──
+                title = _generate_conversation_title(org_uuid, conv_uuid, cookie_header, proxy_url)
                 _cleanup_claude_conversation(org_uuid, conv_uuid, cookie_header, proxy_url)
 
                 # Token estimation (~4 chars/token for English, ~2 for CJK)
@@ -1163,18 +1809,34 @@ def proxy_to_claude(real_model, model_slug):
                 completion_chars = len(full_text)
                 est_prompt_tokens = max(1, prompt_chars // 4)
                 est_completion_tokens = max(1, completion_chars // 4)
-
-                return jsonify({
+                
+                # ── Parse tool calls from response (Path B emulation) ──
+                # If custom tools were requested, check if Claude emitted tool calls
+                tool_calls_parsed = []
+                if request_tools:
+                    tool_calls_parsed = parse_tool_calls_from_response(full_text)
+                    if tool_calls_parsed:
+                        # Strip tool XML from the text content
+                        full_text = filter_tool_artifacts(full_text).rstrip('\n')
+                        finish = "tool_calls"
+                
+                response_body = {
                     "id": f"claude-{conv_uuid[:8]}", "object": "chat.completion",
                     "created": int(time.time()), "model": real_model,
-                    "choices": [{"index": 0, "message": {"role": "assistant", "content": full_text}, "finish_reason": finish}],
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": full_text, **({"tool_calls": tool_calls_parsed} if tool_calls_parsed else {})}, "finish_reason": finish}],
                     "usage": {"prompt_tokens": est_prompt_tokens, "completion_tokens": est_completion_tokens, "total_tokens": est_prompt_tokens + est_completion_tokens},
-                }), 200, {
+                    **({"title": title} if title else {}),
+                }
+                # ── Cache the response for repeat requests ──
+                cache_key = f"claude:{affinity_key or conv_uuid}:{hashlib.sha256(prompt_text.encode()).hexdigest()[:16]}"
+                _cache_set(cache_key, response_body)
+                return jsonify(response_body), 200, {
                     "X-Proxy-Provider": "claude", "X-Proxy-Cookie": str(cookie_set["id"]),
                     "X-Proxy-Latency": str(latency),
                     "X-Proxy-IP": proxy_ip or "unknown",
                     "X-Proxy-Country": proxy_country or "unknown",
                     "X-Proxy-Rotation": f"token {cookie_set['id']} (used {_get_token_state(cookie_set['id'])['usage']}x)",
+                    **({"X-Proxy-Tool-Calls": str(len(tool_calls_parsed))} if tool_calls_parsed else {}),
                 }
         
         except (httpx.HTTPStatusError, httpx.ProxyError, Exception) as e:
@@ -1187,6 +1849,8 @@ def proxy_to_claude(real_model, model_slug):
             elif isinstance(e, httpx.ProxyError):
                 code = 502
                 body_err = f"Proxy error: {str(e)}"
+                if proxy_url:
+                    report_proxy_failure(proxy_url, body_err)
             elif isinstance(e, httpx.ConnectTimeout):
                 code = 504
                 body_err = f"Connection timeout: {str(e)}"
@@ -1356,14 +2020,15 @@ def inject_model_into_body(body, real_model, provider_slug):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def check_proxy_auth():
-    """If PROXY_API_KEY_HASH is set, require Bearer token on all /v1/* routes."""
+    """If PROXY_API_KEY_HASH is set, require Bearer token on all /v1/* routes.
+    Uses constant-time comparison to prevent timing attacks."""
     if not PROXY_API_KEY_HASH:
         return None
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return jsonify({"error": "Unauthorized — valid API key required", "hint": "Use Authorization: Bearer <key>"}), 401
-    key_hash = hashlib.sha256(auth[7:].encode()).hexdigest()
-    if key_hash != PROXY_API_KEY_HASH:
+    raw_key = auth[7:]
+    if not verify_api_key(raw_key, PROXY_API_KEY_HASH):
         return jsonify({"error": "Unauthorized — invalid API key"}), 401
     return None
 
@@ -1376,6 +2041,15 @@ def proxy_chat_standard():
     """OpenAI-standard endpoint — reads model from JSON body."""
     auth_err = check_proxy_auth()
     if auth_err: return auth_err
+    
+    # ── Rate limiting (token bucket per client IP) ──
+    allowed, remaining, retry_after = check_rate_limit()
+    if not allowed:
+        return jsonify({
+            "error": "Rate limit exceeded",
+            "message": f"Too many requests. Retry in {retry_after}s.",
+            "retry_after_seconds": retry_after,
+        }), 429, {"X-RateLimit-Limit": str(RATE_LIMIT_CAPACITY), "X-RateLimit-Remaining": "0", "Retry-After": str(retry_after)}
     
     body = request.get_data()
     try:
@@ -1393,7 +2067,15 @@ def proxy_chat_standard():
         }), 404
     
     model_info = MODELS[model_slug]
-    return proxy_to_provider(model_info["provider"], model_info["real_model"], model_slug)
+    resp = proxy_to_provider(model_info["provider"], model_info["real_model"], model_slug)
+    # Add rate limit headers to successful responses
+    if isinstance(resp, tuple) and len(resp) == 3:
+        resp_obj, status, headers = resp
+        if hasattr(resp_obj, 'headers'):
+            resp_obj.headers["X-RateLimit-Limit"] = str(RATE_LIMIT_CAPACITY)
+            resp_obj.headers["X-RateLimit-Remaining"] = str(remaining)
+        return resp_obj, status, headers
+    return resp
 
 
 @app.route("/v1/health", methods=["GET"])
@@ -1407,13 +2089,27 @@ def proxy_health():
         kc = conn.execute("SELECT COUNT(*) FROM api_keys WHERE provider_id=(SELECT id FROM api_providers WHERE slug=?) AND is_active=1 AND dead=0", (p["slug"],)).fetchone()[0]
         active_keys += kc
     conn.close()
+    
+    # ── Claude session orchestration status ──
+    with _claude_token_lock:
+        active = sum(1 for s in _claude_token_state.values() if s["availability"] == STATE_ACTIVE and not s["dead"])
+        parked = sum(1 for s in _claude_token_state.values() if s["availability"] == STATE_PARKED)
+        quarantined = sum(1 for s in _claude_token_state.values() if s["availability"] == STATE_QUARANTINED)
+    
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "models_available": len(MODELS),
         "claude_sessions": claude_count,
+        "claude_orchestration": {
+            "active": active,
+            "parked": parked,
+            "quarantined": quarantined,
+            "affinity_pins": len(_affinity_map),
+        },
+        "proxy_blacklist": get_proxy_blacklist_status(),
         "active_api_keys": active_keys,
-        "version": "2.0.0",
+        "version": "3.0.0",
         "proxy_provider": "IPRoyal" if PROXY_ENABLED else "direct",
     })
 
@@ -1555,6 +2251,23 @@ def docs_md():
     md.append("## Smart Key Rotation\n\n- 429/402 → rotate to next key (free providers recover; Fireworks 💀 dies)\n- All keys busy → 503 with `retry_after_ms: 5000`\n- Keys ordered by usage count (least-used first)\n\n")
     md.append(f"*Generated from https://aicookies.elliaa.com/docs*\n")
     return "".join(md), 200, {"Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": "attachment; filename=aicookies-api-docs.md"}
+
+# ── API Key Minting endpoint ────────────────────────────────────────────
+@app.route("/generate-key", methods=["GET", "POST"])
+@login_required
+def generate_key_page():
+    """Admin endpoint to mint a new API key. Returns the plaintext key once."""
+    if request.method == "POST" or request.args.get("generate"):
+        raw_key, key_hash = generate_api_key()
+        # Store the hash in the DB (cookie_files table repurposed as generic kv)
+        conn = get_db()
+        conn.execute("CREATE TABLE IF NOT EXISTS proxy_api_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, key_hash TEXT UNIQUE NOT NULL, label TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_used_at TIMESTAMP)")
+        conn.execute("INSERT OR IGNORE INTO proxy_api_keys (key_hash, label) VALUES (?, ?)", (key_hash, request.form.get("label", "default")))
+        conn.commit()
+        conn.close()
+        flash(f"🔑 API Key generated: {raw_key}", "success")
+        return render_template("key_generated.html", api_key=raw_key)
+    return render_template("key_generated.html", api_key=None)
 
 # ── Cookie routes ───────────────────────────────────────────────────────
 @app.route("/upload", methods=["GET", "POST"])

@@ -469,6 +469,9 @@ def extract_claude_cookies(cookie_file):
 def transform_claude_stream(sse_text, conv_uuid, real_model):
     """Transform Anthropic SSE stream chunks → OpenAI-compatible SSE stream.
     
+    Filters out Claude's internal tool/function call XML artifacts that would
+    leak as raw text to API consumers (e.g. <function_calls>, <invoke>).
+    
     Input (Claude/Anthropic):
         event: completion
         data: {"type":"completion","completion":"Hello","stop_reason":null,...}
@@ -482,37 +485,28 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
     created = int(_time.time())
     
     for line in sse_text.split("\n"):
-        # Skip empty lines and event: lines (we only care about data:)
         if not line.startswith("data: "):
             continue
         
         try:
-            obj = json.loads(line[6:])  # Strip "data: " prefix
+            obj = json.loads(line[6:])
         except (json.JSONDecodeError, ValueError):
             continue
         
-        # Extract completion text and stop reason
         completion_text = obj.get("completion", "")
         stop_reason = obj.get("stop_reason")
         
-        # Map Anthropic stop_reason to OpenAI finish_reason
-        finish_reason = None
-        if stop_reason:
-            stop_lower = str(stop_reason).lower()
-            if stop_lower in ("stop_sequence", "stop"):
-                finish_reason = "stop"
-            elif "max_token" in stop_lower or "length" in stop_lower:
-                finish_reason = "length"
-            elif "tool_use" in stop_lower:
-                finish_reason = "tool_calls"
-            else:
-                finish_reason = "stop"
+        # ── Filter tool artifacts from each chunk ──
+        if completion_text:
+            completion_text = filter_tool_artifacts(completion_text)
+            if not completion_text.strip():
+                continue  # chunk was entirely tool XML — skip it
         
-        # Skip empty completion if it's also not the final chunk
+        finish_reason = map_stop_reason(stop_reason) if stop_reason else None
+        
         if not completion_text and not finish_reason:
             continue
         
-        # Build OpenAI-format chunk
         openai_chunk = {
             "id": chunk_id,
             "object": "chat.completion.chunk",
@@ -527,7 +521,6 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
         
         yield f"data: {json.dumps(openai_chunk, ensure_ascii=False)}\n\n".encode()
     
-    # Send final [DONE] marker
     yield b"data: [DONE]\n\n"
 
 
@@ -588,6 +581,95 @@ def build_natural_prompt(messages):
     was_transformed = len(system_parts) > 0 or len(conv_parts) > 2
 
     return prompt_text, was_transformed
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TOOL ARTIFACT FILTERING — strips Claude's internal tool/function call XML
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Regex patterns for Claude's tool call XML artifacts.
+# Claude.ai's web interface has tools (web search, MCP, etc.) enabled in its
+# system prompt. When the model decides to use a tool, it emits XML tags like
+# <function_calls><invoke name="..."> as plain text. Since our gateway doesn't
+# execute tools, these would leak to the API consumer as raw text.
+_TOOL_PATTERNS = [
+    re.compile(r'<function_calls>.*?</function_calls>', re.DOTALL),
+    re.compile(r'<function_calls>.*', re.DOTALL),            # unclosed (stream stopped)
+    re.compile(r'<antml:function_calls>.*?</antml:function_calls>', re.DOTALL),
+    re.compile(r'<antml:function_calls>.*', re.DOTALL),
+    re.compile(r'<invoke\s+name="[^"]*">.*?</invoke>', re.DOTALL),
+    re.compile(r'<invoke\s+name="[^"]*">.*', re.DOTALL),     # unclosed
+    re.compile(r'<antml:invoke\s+name="[^"]*">.*?</antml:invoke>', re.DOTALL),
+    re.compile(r'</?(?:function_calls|invoke|function_results|parameter|result)\b[^>]*>', re.IGNORECASE),
+    re.compile(r'</?antml:(?:function_calls|invoke|function_results|parameter|result)\b[^>]*>', re.IGNORECASE),
+]
+
+def filter_tool_artifacts(text):
+    """Remove Claude's internal tool/function call XML from response text.
+
+    Strips <function_calls>, <invoke>, <function_results>, and antml: variants.
+    Cleans up excessive whitespace left by removed blocks.
+    """
+    for pattern in _TOOL_PATTERNS:
+        text = pattern.sub('', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.rstrip()
+
+def contains_tool_artifacts(text):
+    """Check if response text contains tool/function call artifacts."""
+    return bool(re.search(
+        r'<(?:function_calls|invoke\b|function_results|antml:function_calls|antml:invoke)',
+        text
+    ))
+
+def map_stop_reason(stop_reason):
+    """Map Anthropic stop_reason to OpenAI finish_reason."""
+    if not stop_reason:
+        return "stop"
+    stop_lower = str(stop_reason).lower()
+    if stop_lower in ("stop_sequence", "stop", "end_turn"):
+        return "stop"
+    if "max_token" in stop_lower or "length" in stop_lower:
+        return "length"
+    if "tool_use" in stop_lower:
+        return "tool_calls"
+    return "stop"
+
+def _parse_claude_sse(sse_text):
+    """Parse Anthropic SSE response text → (full_completion, stop_reason)."""
+    completion_parts = []
+    stop_reason = None
+    for line in sse_text.split("\n"):
+        if not line.startswith("data: "):
+            continue
+        try:
+            obj = json.loads(line[6:])
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if obj.get("completion"):
+            completion_parts.append(obj["completion"])
+        if obj.get("stop_reason"):
+            stop_reason = obj["stop_reason"]
+    return "".join(completion_parts), stop_reason
+
+def _cleanup_claude_conversation(org_uuid, conv_uuid, cookie_header, proxy_url):
+    """Delete a conversation from Claude.ai to prevent accumulation."""
+    try:
+        cleanup_headers = {
+            "Cookie": cookie_header,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Origin": "https://claude.ai",
+        }
+        cleanup_kwargs = {"impersonate": "chrome131", "timeout": 30, "verify": False}
+        if proxy_url:
+            cleanup_kwargs["proxy"] = proxy_url
+        curl_requests.delete(
+            f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}",
+            headers=cleanup_headers, **cleanup_kwargs,
+        )
+    except Exception:
+        pass
 
 
 def proxy_to_claude(real_model, model_slug):
@@ -669,8 +751,13 @@ def proxy_to_claude(real_model, model_slug):
         
         start = time.time()
         
-        def _claude_http_call():
-            """Inner function: use curl_cffi with Chrome 131 impersonation for Cloudflare bypass."""
+        def _claude_http_call(prompt_override=None):
+            """Inner function: use curl_cffi with Chrome 131 impersonation for Cloudflare bypass.
+            
+            prompt_override: if set, uses this prompt instead of the default (for retry with anti-tool instructions)
+            """
+            effective_prompt = prompt_override if prompt_override else prompt_text
+            
             headers = {
                 "Cookie": cookie_header,
                 "Content-Type": "application/json",
@@ -686,11 +773,11 @@ def proxy_to_claude(real_model, model_slug):
             if proxy_url:
                 common_kwargs["proxy"] = proxy_url
             
-            # Step 1: Create conversation
+            # Step 1: Create conversation — empty name so Claude auto-names it
             resp1 = curl_requests.post(
                 f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations",
                 json={
-                    "name": "API Request", "prompt": "",
+                    "name": "", "prompt": "",
                     "timezone": "Africa/Cairo", "model": real_model,
                     "attachments": [], "files": [], "organization_uuid": org_uuid
                 },
@@ -706,7 +793,7 @@ def proxy_to_claude(real_model, model_slug):
             resp2 = curl_requests.post(
                 f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}/completion",
                 json={
-                    "prompt": prompt_text, "timezone": "Africa/Cairo",
+                    "prompt": effective_prompt, "timezone": "Africa/Cairo",
                     "attachments": [], "files": []
                 },
                 headers={**headers, "Accept": "text/event-stream"},
@@ -715,15 +802,49 @@ def proxy_to_claude(real_model, model_slug):
             return resp1, resp2, conv_uuid
         
         try:
+            # ── First attempt ──
             resp1, resp2, conv_uuid = _claude_http_call()
             latency = int((time.time() - start) * 1000)
             
+            # Parse the SSE response to check for tool artifacts
+            raw_completion, stop_reason = _parse_claude_sse(resp2.text)
+            finish = map_stop_reason(stop_reason)
+            
+            # ── Tool artifact detection + retry ──
+            # If Claude emitted tool calls (stop_reason=tool_use or XML artifacts found),
+            # retry with an explicit anti-tool instruction appended to the prompt
+            if (finish == "tool_calls" or contains_tool_artifacts(raw_completion)) and not prompt_text.startswith("[RETRY]"):
+                app.logger.info(f"[claude] token {cookie_set['id']}: tool artifacts detected (stop={stop_reason}), retrying with anti-tool prompt")
+                
+                # Clean up the first conversation
+                _cleanup_claude_conversation(org_uuid, conv_uuid, cookie_header, proxy_url)
+                
+                # Build retry prompt with explicit instruction to not use tools
+                retry_prompt = prompt_text + "\n\n---\nNote: Please respond directly with your answer in plain text. Do not use any tools, web searches, or function calls. If you feel you need to search for something, simply answer based on your existing knowledge."
+                
+                # Retry with the modified prompt
+                resp1, resp2, conv_uuid = _claude_http_call(retry_prompt)
+                latency = int((time.time() - start) * 1000)
+                
+                raw_completion, stop_reason = _parse_claude_sse(resp2.text)
+                finish = map_stop_reason(stop_reason)
+                
+                # If STILL has tool artifacts after retry, filter them out
+                if contains_tool_artifacts(raw_completion):
+                    app.logger.warning(f"[claude] token {cookie_set['id']}: tool artifacts persist after retry — filtering")
+            
+            # ── Filter tool artifacts from final response ──
+            filtered_text = filter_tool_artifacts(raw_completion).rstrip('\n')
+            if not filtered_text and raw_completion:
+                # Response was entirely tool XML — use raw as fallback
+                filtered_text = raw_completion.rstrip('\n')
+            
+            full_text = filtered_text
+            
             _mark_token_used(cookie_set["id"])
-            # Get proxy IP from response headers (no extra HTTP call)
             proxy_ip = "unknown"
             proxy_country = "unknown"
             try:
-                # curl_cffi may expose the remote IP — try to extract it
                 proxy_ip = getattr(resp2, "remote_addr", None) or "unknown"
             except Exception:
                 pass
@@ -733,7 +854,7 @@ def proxy_to_claude(real_model, model_slug):
             
             if is_streaming:
                 def generate():
-                    """Transform Anthropic SSE stream → OpenAI-compatible SSE stream."""
+                    """Transform Anthropic SSE stream → OpenAI-compatible SSE stream with tool artifact filtering."""
                     yield from transform_claude_stream(resp2.text, conv_uuid, real_model)
                 return Response(stream_with_context(generate()), status=200, headers={
                     "Content-Type": "text/event-stream", "X-Proxy-Provider": "claude",
@@ -741,44 +862,8 @@ def proxy_to_claude(real_model, model_slug):
                     "X-Proxy-Rotation": f"token {cookie_set['id']} (used {_get_token_state(cookie_set['id'])['usage']}x)",
                 })
             else:
-                sse_body = resp2.text
-                completion_parts = []
-                stop_reason = None
-                for line in sse_body.split("\n"):
-                    if line.startswith("data: "):
-                        try:
-                            obj = json.loads(line[6:])
-                            # Skip empty completion chunks (trailing \n\n fix)
-                            if obj.get("completion"):
-                                completion_parts.append(obj["completion"])
-                            if "stop_reason" in obj and obj["stop_reason"]: stop_reason = obj["stop_reason"]
-                        except: pass
-                full_text = "".join(completion_parts).rstrip('\n')
-                # Map Anthropic stop_reason to OpenAI finish_reason
-                finish = stop_reason or "stop"
-                stop_lower = str(finish).lower()
-                if stop_lower in ("stop_sequence",): finish = "stop"
-                elif "max_token" in stop_lower or "length" in stop_lower: finish = "length"
-                elif "tool_use" in stop_lower: finish = "tool_calls"
-
                 # ── Cleanup: delete conversation from Claude.ai ──
-                # Prevents accumulation of "API Request" conversations
-                try:
-                    cleanup_headers = {
-                        "Cookie": cookie_header,
-                        "Content-Type": "application/json",
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                        "Origin": "https://claude.ai",
-                    }
-                    cleanup_kwargs = {"impersonate": "chrome131", "timeout": 30, "verify": False}
-                    if proxy_url:
-                        cleanup_kwargs["proxy"] = proxy_url
-                    curl_requests.delete(
-                        f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}",
-                        headers=cleanup_headers, **cleanup_kwargs,
-                    )
-                except Exception:
-                    pass  # Cleanup failure should not affect the response
+                _cleanup_claude_conversation(org_uuid, conv_uuid, cookie_header, proxy_url)
 
                 # Token estimation (~4 chars/token for English, ~2 for CJK)
                 prompt_chars = len(prompt_text)
@@ -906,13 +991,13 @@ def _playwright_fallback(cookie_set, prompt_text, real_model, is_streaming, prox
         page.goto("https://claude.ai", wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)  # Let Turnstile resolve
         
-        # Create conversation via fetch
+        # Create conversation via fetch — empty name so Claude auto-names it
         conv_result = page.evaluate("""
             async (orgUuid) => {
                 const resp = await fetch(`/api/organizations/${orgUuid}/chat_conversations`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name: 'API Request', prompt: '', timezone: 'Africa/Cairo', model: '""" + real_model + """', attachments: [], files: [], organization_uuid: orgUuid})
+                    body: JSON.stringify({name: '', prompt: '', timezone: 'Africa/Cairo', model: '""" + real_model + """', attachments: [], files: [], organization_uuid: orgUuid})
                 });
                 return await resp.json();
             }
@@ -937,23 +1022,16 @@ def _playwright_fallback(cookie_set, prompt_text, real_model, is_streaming, prox
         
         browser.close()
         
-        # Parse SSE response
-        completion_parts = []
-        for line in result.split("\n"):
-            if line.startswith("data: "):
-                try:
-                    obj = json.loads(line[6:])
-                    if "completion" in obj:
-                        completion_parts.append(obj["completion"])
-                except:
-                    pass
+        # Parse SSE response + filter tool artifacts
+        full_text, stop_reason = _parse_claude_sse(result)
+        full_text = filter_tool_artifacts(full_text).rstrip('\n')
+        finish = map_stop_reason(stop_reason)
         
-        full_text = "".join(completion_parts)
         if full_text:
             return jsonify({
                 "id": f"claude-pw-{conv_uuid[:8]}", "object": "chat.completion",
                 "created": int(time.time()), "model": real_model,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": full_text}, "finish_reason": "stop"}],
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": full_text}, "finish_reason": finish}],
                 "usage": {"completion_tokens": len(full_text.split())},
             }), 200, {
                 "X-Proxy-Provider": "claude-playwright",

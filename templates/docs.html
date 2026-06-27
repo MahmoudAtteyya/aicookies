@@ -192,8 +192,31 @@ data: [DONE]</code></pre>
 // 504 — Gateway Timeout (Claude didn't respond in 120s)
 {"error": "Gateway Timeout", "message": "Provider did not respond in time"}</code></pre>
 
-<h4>🧹 Auto-Cleanup</h4>
-<p>After each successful request, the gateway automatically deletes the conversation from Claude.ai to prevent accumulation of "API Request" conversations that could trigger spam detection.</p>
+<h4>🧹 Auto-Cleanup & Natural Conversation Naming</h4>
+<p>After each successful request, the gateway automatically deletes the conversation from Claude.ai to prevent accumulation. Conversations are created with an <strong>empty name</strong> — Claude auto-names them based on the first message content, just like a normal user conversation. This ensures the sessions look natural and don't trigger spam detection.</p>
+
+<h4>🔧 Tool Artifact Filtering (Anti-Leak Protection)</h4>
+<p>Claude.ai's web interface has tools (web search, MCP, etc.) enabled in its system prompt. When the model decides to use a tool, it emits XML tags like <code>&lt;function_calls&gt;</code> and <code>&lt;invoke name="..."&gt;</code> as plain text, then stops generation to wait for a tool result. Since our gateway doesn't execute tools, these artifacts would leak to the API consumer as raw text.</p>
+<p><strong>The gateway handles this in two layers:</strong></p>
+<ul>
+    <li><strong>Layer 1 — Automatic Retry:</strong> If Claude's response contains tool artifacts or stops with <code>tool_use</code> reason, the gateway automatically retries with an anti-tool instruction appended to the prompt. This usually makes Claude answer directly.</li>
+    <li><strong>Layer 2 — Regex Filtering:</strong> Any remaining tool XML is stripped from the response before sending to the client. Patterns filtered: <code>&lt;function_calls&gt;</code>, <code>&lt;invoke&gt;</code>, <code>&lt;function_results&gt;</code>, <code>&lt;antml:function_calls&gt;</code>, and all variants.</li>
+</ul>
+<p>This means API consumers always receive clean text responses — never tool call XML or incomplete responses.</p>
+
+<h4>📡 Claude Streaming Format</h4>
+<p>Claude responses are streamed in OpenAI-compatible SSE format. The gateway transforms Anthropic's native SSE format in real-time:</p>
+<pre><code># Claude SSE (Anthropic format) → OpenAI SSE format
+data: {"choices":[{"delta":{"content":"Hello"}}]}
+data: {"choices":[{"delta":{"content":" world"}}]}
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+data: [DONE]</code></pre>
+<p><strong>Tool artifacts are filtered from each streaming chunk</strong> — chunks that are entirely tool XML are silently dropped. The <code>finish_reason</code> mapping:</p>
+<ul>
+    <li><code>stop_sequence</code> / <code>end_turn</code> → <code>stop</code></li>
+    <li><code>max_tokens</code> → <code>length</code></li>
+    <li><code>tool_use</code> → <code>tool_calls</code> (triggers automatic retry)</li>
+</ul>
 
 <p><strong>Rate limits:</strong> Claude uses session-based limits (per 5 hours / 7 days). The proxy automatically rotates between uploaded cookie sets when one hits the limit. Cloudflare challenges trigger a cooldown (not permanent death) — the token auto-recovers after 5 minutes.</p>
 

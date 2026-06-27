@@ -584,24 +584,339 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             tried_keys.append({"key_id": key_id, "error": error_msg})
             continue
     
-    # All keys failed — return clean error with failover details
+    # All keys failed — try cross-provider fallback before giving up
     app.logger.warning(f"[proxy] All {len(tried_keys)} keys failed for {provider_slug}/{model_slug}: {tried_keys}")
-    return jsonify({
-        "error": "Service Unavailable",
-        "message": f"All {len(tried_keys)} provider key(s) are currently unavailable. Failover exhausted.",
-        "model": model_slug,
-        "provider": provider_slug,
-        "tried_keys": len(tried_keys),
-        "errors": [t.get("error", "unknown") for t in tried_keys],
-        "retry_after_ms": 5000,
-    }), 503
+    
+    # ── Cross-Provider Fallback ──
+    # If this provider has a fallback chain, try the next provider automatically
+    fallback_chain = PROVIDER_FALLBACK_CHAIN.get(provider_slug, [])
+    for fb_provider, fb_model, fb_label in fallback_chain:
+        fb_keys = get_provider_keys(fb_provider)
+        if not fb_keys:
+            continue
+        
+        app.logger.info(f"[proxy] Cross-provider fallback: {provider_slug}/{model_slug} → {fb_provider}/{fb_model} ({fb_label})")
+        
+        # Build a modified request with the fallback model
+        try:
+            body_data = json.loads(body)
+            body_data["model"] = MODELS.get(fb_model, {}).get("real_model", fb_model)
+            fb_body = json.dumps(body_data).encode()
+        except:
+            fb_body = body  # If we can't modify, just forward as-is
+        
+        for fb_key in fb_keys:
+            fb_key_id = fb_key["id"]
+            fb_base_url = fb_key["base_url"]
+            fb_key_val = fb_key["key_value"]
+            
+            fb_start = time.time()
+            try:
+                if fb_provider == "cohere":
+                    fb_url = f"{fb_base_url}/chat"
+                else:
+                    fb_url = f"{fb_base_url}/chat/completions"
+                
+                fb_payload = inject_model_into_body(fb_body, MODELS.get(fb_model, {}).get("real_model", fb_model), fb_provider)
+                fb_headers = {"Authorization": f"Bearer {fb_key_val}", "Content-Type": "application/json"}
+                
+                proxy = get_proxy_url()
+                with httpx.Client(proxy=proxy, timeout=120.0, verify=False) as client:
+                    fb_resp = client.post(fb_url, content=fb_payload, headers=fb_headers)
+                
+                fb_latency = int((time.time() - fb_start) * 1000)
+                
+                if fb_resp.status_code < 400:
+                    bump_key_usage(fb_key_id)
+                    record_proxy_request(fb_model, fb_provider, fb_key_id, "ok", fb_latency)
+                    app.logger.info(f"[proxy] Fallback SUCCESS: {fb_provider}/{fb_model} via key #{fb_key_id}")
+                    
+                    # Add fallback notice in headers
+                    if is_streaming:
+                        def fb_generate():
+                            for chunk in fb_resp.iter_bytes(8192):
+                                yield chunk
+                        return Response(stream_with_context(fb_generate()), status=fb_resp.status_code, headers={
+                            "Content-Type": fb_resp.headers.get("Content-Type", "text/event-stream"),
+                            "X-Proxy-Provider": fb_provider, "X-Proxy-Key": str(fb_key_id),
+                            "X-Proxy-Latency": str(fb_latency), "X-Proxy-Model": fb_model,
+                            "X-Proxy-Fallback": f"{provider_slug}→{fb_provider}",
+                            "X-Proxy-Fallback-Reason": "Primary provider exhausted",
+                        })
+                    else:
+                        return fb_resp.content, fb_resp.status_code, {
+                            "Content-Type": fb_resp.headers.get("Content-Type", "application/json"),
+                            "X-Proxy-Provider": fb_provider, "X-Proxy-Key": str(fb_key_id),
+                            "X-Proxy-Latency": str(fb_latency),
+                            "X-Proxy-Fallback": f"{provider_slug}→{fb_provider}",
+                            "X-Proxy-Fallback-Reason": "Primary provider exhausted",
+                        }
+                else:
+                    # Fallback key also failed — continue to next
+                    fb_code = fb_resp.status_code
+                    try: fb_err = fb_resp.text[:200]
+                    except: fb_err = ""
+                    if fb_code == 429:
+                        mark_key_rate_limited(fb_key_id, f"429: {fb_err}")
+                    elif fb_code in (401, 403, 412, 402):
+                        mark_key_dead(fb_key_id, f"{fb_code}: {fb_err}")
+                    else:
+                        mark_key_error(fb_key_id, f"{fb_code}: {fb_err}")
+                    record_proxy_request(fb_model, fb_provider, fb_key_id, "error", fb_latency, f"HTTP_{fb_code}")
+                    continue
+            except Exception as fb_e:
+                app.logger.warning(f"[proxy] Fallback key #{fb_key_id} error: {str(fb_e)[:100]}")
+                continue
+    
+    # All keys AND all fallbacks failed — return user-friendly error
+    is_stream = False
+    try:
+        is_stream = json.loads(body).get("stream", False)
+    except: pass
+    
+    return format_error_response(
+        "ALL_KEYS_EXHAUSTED", model_slug, provider_slug,
+        tried_count=len(tried_keys),
+        retry_after_ms=5000,
+        is_streaming=is_stream,
+    )
 
 # ═══════════════════════════════════════════════════════════════════════════
-# RELIABILITY LAYER — Retry middleware + Rate limiting + Proxy blacklist
-# (Adapted from zlexdev/claude-webapi middleware/retry.py + rate_limit.py)
+# PRODUCTION RESILIENCE LAYER — Mid-stream failover, cross-provider fallback,
+# user-friendly error formatting, SSE error events
 # ═══════════════════════════════════════════════════════════════════════════
 
 import random as _random
+
+# ── Cross-Provider Fallback Chain ──
+# When ALL keys for a provider are exhausted, try a similar model from another provider.
+# This gives the user a seamless experience even when an entire provider goes down.
+PROVIDER_FALLBACK_CHAIN = {
+    "fireworks": [
+        ("sambanova", "llama-3.3-70b", "Llama 3.3 70B (SambaNova fallback)"),
+        ("mistral",   "mistral-medium", "Mistral Medium (fallback)"),
+    ],
+    "sambanova": [
+        ("mistral",   "mistral-small", "Mistral Small (fallback)"),
+        ("fireworks", "glm-5p2", "GLM-5.2 (Fireworks fallback)"),
+    ],
+    "mistral": [
+        ("sambanova", "llama-3.3-70b", "Llama 3.3 70B (SambaNova fallback)"),
+        ("cohere",    "command-a", "Command-A (Cohere fallback)"),
+    ],
+    "cohere": [
+        ("mistral",   "mistral-small", "Mistral Small (fallback)"),
+        ("sambanova", "llama-3.3-70b", "Llama 3.3 70B (SambaNova fallback)"),
+    ],
+    # Claude has no direct API fallback, but GLM is the closest reasoning model
+    "claude": [
+        ("fireworks", "glm-5p2", "GLM-5.2 Reasoning (Fireworks fallback for Claude)"),
+    ],
+}
+
+# ── User-Friendly Error Formatter ──
+def format_error_response(error_type, model_slug, provider_slug=None, detail=None,
+                          tried_count=0, retry_after_ms=5000, is_streaming=False):
+    """Format a user-friendly error response that explains what happened.
+    
+    Returns either a JSON response (non-streaming) or an SSE event (streaming).
+    The error message is written in plain language that a developer can understand
+    and act on — not raw internal error codes.
+    """
+    error_messages = {
+        "RATE_LIMITED": {
+            "title": "Rate Limit Reached",
+            "message": "The AI provider is temporarily limiting requests from this key. "
+                       "The system automatically rotated to another key, but all available "
+                       "keys for this provider are currently cooling down.",
+            "suggestion": f"Wait {retry_after_ms // 1000}s and retry, or try a different model.",
+        },
+        "ALL_KEYS_EXHAUSTED": {
+            "title": "All Provider Keys Exhausted",
+            "message": f"All {tried_count} API key(s) for '{provider_slug}' are currently "
+                       "unavailable (rate-limited, suspended, or dead). "
+                       "The system attempted cross-provider fallback but no suitable "
+                       "alternative was found.",
+            "suggestion": "Try again in a few minutes, or use a different model from another provider.",
+        },
+        "CLAUDE_ALL_SESSIONS_BUSY": {
+            "title": "All Claude Sessions Busy",
+            "message": f"All {tried_count} Claude cookie sessions are currently in cooldown "
+                       "or expired. Claude.ai enforces per-account rate limits.",
+            "suggestion": f"Wait {retry_after_ms // 1000}s for cooldown to expire, "
+                          "or upload fresh Claude cookies at /upload.",
+        },
+        "TIMEOUT": {
+            "title": "Request Timeout",
+            "message": f"The request to '{provider_slug}' timed out after exceeding the "
+                       "maximum allowed response time. This can happen with complex reasoning "
+                       "models that take longer to generate responses.",
+            "suggestion": "Try simplifying your prompt, reducing max_tokens, or using a faster model.",
+        },
+        "CLOUDFLARE_CHALLENGE": {
+            "title": "Cloudflare Protection Triggered",
+            "message": "Claude.ai's Cloudflare protection blocked the request. "
+                       "This usually happens when the residential proxy IP is flagged.",
+            "suggestion": "The system will auto-retry with a different proxy. "
+                          "If this persists, refresh the Claude cookies.",
+        },
+        "PROXY_ERROR": {
+            "title": "Proxy Connection Error",
+            "message": "The residential proxy failed to connect to the AI provider.",
+            "suggestion": "The system auto-blacklisted the failing proxy and will use a different one.",
+        },
+        "INTERNAL_ERROR": {
+            "title": "Internal Server Error",
+            "message": f"An unexpected error occurred while processing your request: {detail}",
+            "suggestion": "Please retry. If the problem persists, check server logs.",
+        },
+        "MODEL_NOT_FOUND": {
+            "title": "Model Not Found",
+            "message": f"The model '{model_slug}' is not in the available models list.",
+            "suggestion": "Check /v1/models for the list of available models.",
+        },
+        "INVALID_REQUEST": {
+            "title": "Invalid Request",
+            "message": f"The request was malformed: {detail}",
+            "suggestion": "Check the API documentation at /docs for the correct format.",
+        },
+    }
+    
+    info = error_messages.get(error_type, {
+        "title": "Service Error",
+        "message": detail or f"An error occurred: {error_type}",
+        "suggestion": "Please retry.",
+    })
+    
+    error_body = {
+        "error": {
+            "type": error_type.lower(),
+            "title": info["title"],
+            "message": info["message"],
+            "suggestion": info["suggestion"],
+            "model": model_slug,
+            "provider": provider_slug,
+            "retry_after_ms": retry_after_ms,
+        },
+        # Keep backward compatibility with OpenAI error format
+        "error_code": error_type,
+    }
+    
+    if is_streaming:
+        # Return as SSE event so streaming clients receive it gracefully
+        sse_data = json.dumps({"error": error_body["error"]})
+        return f"data: {sse_data}\n\ndata: [DONE]\n\n", 200, {"Content-Type": "text/event-stream"}
+    else:
+        return jsonify(error_body), 503 if error_type != "MODEL_NOT_FOUND" and error_type != "INVALID_REQUEST" else 400
+
+
+# ── Mid-Stream Partial Response Capture ──
+def _capture_stream_partial(resp, max_chunks=500):
+    """Capture partial content from a streaming response before it breaks.
+    
+    Works with both httpx responses (iter_lines) and curl_cffi responses (.text).
+    Returns (partial_text, chunk_count) — the text accumulated so far.
+    Used for mid-stream failover: if the stream breaks, we can send a
+    continuation request to the next key with the partial text as context.
+    """
+    partial_text = ""
+    chunk_count = 0
+    
+    # Method 1: Try httpx-style iter_lines (for API providers)
+    if hasattr(resp, 'iter_lines'):
+        try:
+            for line in resp.iter_lines():
+                if line:
+                    chunk_count += 1
+                    if line.startswith("data: ") and line != "data: [DONE]":
+                        try:
+                            data = json.loads(line[6:])
+                            delta = data.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                partial_text += content
+                        except (json.JSONDecodeError, IndexError, KeyError):
+                            pass
+                    if chunk_count >= max_chunks:
+                        break
+        except Exception:
+            pass
+    
+    # Method 2: Try .text attribute (curl_cffi — already downloaded)
+    # For Claude SSE, parse the full text for text_delta events
+    elif hasattr(resp, 'text'):
+        try:
+            raw = resp.text
+            if raw and "data:" in raw:
+                for line in raw.split("\n"):
+                    if line.startswith("data: ") and line.strip() != "data: [DONE]":
+                        chunk_count += 1
+                        try:
+                            data = json.loads(line[6:])
+                            # Claude SSE format: {"type":"completion","completion":"..."}
+                            # or OpenAI format: {"choices":[{"delta":{"content":"..."}}]}
+                            if "completion" in data:
+                                partial_text += data.get("completion", "")
+                            elif "choices" in data:
+                                partial_text += data["choices"][0].get("delta", {}).get("content", "")
+                        except (json.JSONDecodeError, IndexError, KeyError):
+                            pass
+            elif raw:
+                # Not SSE — just use the text directly
+                partial_text = raw
+                chunk_count = 1
+        except Exception:
+            pass
+    
+    return partial_text, chunk_count
+
+
+# ── Build Continuation Messages ──
+def _build_continuation_messages(original_messages, partial_text):
+    """Build a messages array for a continuation request.
+    
+    When a stream breaks mid-response, we:
+    1. Keep the original user messages
+    2. Add the partial assistant response as an 'assistant' message
+    3. Add a 'user' message asking to continue from where it left off
+    
+    This makes the next key/provider continue seamlessly.
+    """
+    if not partial_text.strip():
+        return original_messages, None
+    
+    continuation_messages = list(original_messages)
+    continuation_messages.append({"role": "assistant", "content": partial_text})
+    continuation_messages.append({
+        "role": "user",
+        "content": "Continue your response from exactly where you left off. "
+                   "Do not repeat what you already said. Just continue naturally."
+    })
+    return continuation_messages, partial_text
+
+
+# ── Seamless Stream Stitcher ──
+def _stitch_stream(first_generator, second_generator, first_partial_text):
+    """Stitch two SSE streams together seamlessly.
+    
+    The first stream produced partial_text before breaking.
+    The second stream continues from where the first left off.
+    We yield both as a single continuous SSE stream to the client.
+    """
+    # Yield the first generator's output (already captured as text)
+    if first_partial_text:
+        # Send the partial text as SSE chunks
+        # Split into word-level chunks for smooth streaming
+        words = first_partial_text.split()
+        for i, word in enumerate(words):
+            chunk_data = {
+                "choices": [{"index": 0, "delta": {"content": word + (" " if i < len(words) - 1 else "")}, "finish_reason": None}]
+            }
+            yield f"data: {json.dumps(chunk_data)}\n\n"
+    
+    # Yield the second generator's output
+    if second_generator:
+        yield from second_generator
 
 # ── Retry with exponential backoff + jitter ──
 RETRY_MAX_ATTEMPTS = 3
@@ -1780,6 +2095,7 @@ def proxy_to_claude(real_model, model_slug):
         }), 503
     
     tried = []
+    accumulated_partial = ""  # ← Text accumulated from failed attempts, for continuation
     
     for cookie_set in available:
         cookies = extract_claude_cookies(cookie_set)
@@ -1813,6 +2129,17 @@ def proxy_to_claude(real_model, model_slug):
             """
             effective_prompt = prompt_override if prompt_override else prompt_text
             
+            # ── Continuation: if we have partial text from a failed attempt, ask Claude to continue ──
+            if accumulated_partial:
+                effective_prompt = (
+                    f"{prompt_text}\n\n"
+                    f"---\n\n"
+                    f"[A previous attempt to answer this was interrupted. Here is what was generated so far:]\n"
+                    f'"{accumulated_partial}"\n\n'
+                    f"[Continue the answer from exactly where it left off. Do not repeat the text above. "
+                    f"Just continue naturally as if you never stopped.]"
+                )
+            
             headers = {
                 "Cookie": cookie_header,
                 "Content-Type": "application/json",
@@ -1822,7 +2149,7 @@ def proxy_to_claude(real_model, model_slug):
             
             common_kwargs = {
                 "impersonate": "chrome131",
-                "timeout": 120,
+                "timeout": 180,
                 "verify": False,
             }
             if proxy_url:
@@ -1924,6 +2251,7 @@ def proxy_to_claude(real_model, model_slug):
                     "Content-Type": "text/event-stream", "X-Proxy-Provider": "claude",
                     "X-Proxy-Cookie": str(cookie_set["id"]), "X-Proxy-Latency": str(latency),
                     "X-Proxy-Rotation": f"token {cookie_set['id']} (used {_get_token_state(cookie_set['id'])['usage']}x)",
+                    **({"X-Proxy-Continuation": "true"} if accumulated_partial else {}),
                 })
             else:
                 # ── Generate title then cleanup conversation ──
@@ -1963,6 +2291,7 @@ def proxy_to_claude(real_model, model_slug):
                     "X-Proxy-Country": proxy_country or "unknown",
                     "X-Proxy-Rotation": f"token {cookie_set['id']} (used {_get_token_state(cookie_set['id'])['usage']}x)",
                     **({"X-Proxy-Tool-Calls": str(len(tool_calls_parsed))} if tool_calls_parsed else {}),
+                    **({"X-Proxy-Continuation": "true"} if accumulated_partial else {}),
                 }
         
         except (httpx.HTTPStatusError, httpx.ProxyError, Exception) as e:
@@ -2000,6 +2329,19 @@ def proxy_to_claude(real_model, model_slug):
             app.logger.warning(f"[claude] token {cookie_set['id']} error: code={code} err={body_err[:80]}")
             record_proxy_request(model_slug, "claude", cookie_set["id"], "error", latency, body_err[:100])
 
+            # ── Capture partial response for continuation ──
+            # If we got ANY text back before the error (e.g. timeout during thinking),
+            # accumulate it so the next cookie can continue from where this one stopped.
+            try:
+                _r2 = locals().get('resp2')
+                if _r2 is not None:
+                    partial_text, _ = _capture_stream_partial(_r2)
+                    if partial_text:
+                        accumulated_partial = (accumulated_partial + partial_text).strip()
+                        app.logger.info(f"[claude] Captured {len(partial_text)} chars partial text for continuation (total: {len(accumulated_partial)})")
+            except Exception:
+                pass
+
             # Check for Cloudflare challenge FIRST (before generic 403 handling)
             if code == 403 and ("challenge" in body_err.lower() or "just a moment" in body_err.lower()):
                 # Cloudflare challenge — cooldown, don't kill the token
@@ -2016,14 +2358,84 @@ def proxy_to_claude(real_model, model_slug):
                 tried.append({"token": cookie_set["id"], "action": "COOLDOWN", "reason": f"HTTP {code}"})
             continue
     
-    # All tokens exhausted in this request
-    return jsonify({
-        "error": "Service Unavailable",
-        "message": "All Claude sessions are currently unavailable.",
-        "tried": tried,
-        "retry_after_ms": COOLDOWN_SECONDS * 1000,
-        "model": model_slug,
-    }), 503
+    # All tokens exhausted in this request — try cross-provider fallback for Claude
+    app.logger.warning(f"[claude] All {len(tried)} cookie sessions exhausted for {model_slug}")
+    
+    # Claude fallback: try GLM-5.2 (closest reasoning model) via Fireworks
+    fallback_chain = PROVIDER_FALLBACK_CHAIN.get("claude", [])
+    for fb_provider, fb_model, fb_label in fallback_chain:
+        fb_keys = get_provider_keys(fb_provider)
+        if not fb_keys:
+            continue
+        
+        app.logger.info(f"[claude] Cross-provider fallback: claude → {fb_provider}/{fb_model} ({fb_label})")
+        
+        # Build a modified request with the fallback model
+        try:
+            body_data = json.loads(body)
+            body_data["model"] = MODELS.get(fb_model, {}).get("real_model", fb_model)
+            fb_body = json.dumps(body_data).encode()
+        except:
+            fb_body = body
+        
+        for fb_key in fb_keys:
+            fb_key_id = fb_key["id"]
+            fb_base_url = fb_key["base_url"]
+            fb_key_val = fb_key["key_value"]
+            
+            fb_start = time.time()
+            try:
+                fb_url = f"{fb_base_url}/chat/completions"
+                fb_payload = inject_model_into_body(fb_body, MODELS.get(fb_model, {}).get("real_model", fb_model), fb_provider)
+                fb_headers = {"Authorization": f"Bearer {fb_key_val}", "Content-Type": "application/json"}
+                
+                proxy = get_proxy_url()
+                with httpx.Client(proxy=proxy, timeout=120.0, verify=False) as client:
+                    fb_resp = client.post(fb_url, content=fb_payload, headers=fb_headers)
+                
+                fb_latency = int((time.time() - fb_start) * 1000)
+                
+                if fb_resp.status_code < 400:
+                    bump_key_usage(fb_key_id)
+                    record_proxy_request(fb_model, fb_provider, fb_key_id, "ok", fb_latency)
+                    app.logger.info(f"[claude] Fallback SUCCESS: {fb_provider}/{fb_model}")
+                    
+                    if is_streaming:
+                        def fb_gen():
+                            for chunk in fb_resp.iter_bytes(8192):
+                                yield chunk
+                        return Response(stream_with_context(fb_gen()), status=fb_resp.status_code, headers={
+                            "Content-Type": fb_resp.headers.get("Content-Type", "text/event-stream"),
+                            "X-Proxy-Provider": fb_provider, "X-Proxy-Key": str(fb_key_id),
+                            "X-Proxy-Fallback": f"claude→{fb_provider}",
+                            "X-Proxy-Fallback-Reason": "All Claude sessions exhausted",
+                        })
+                    else:
+                        return fb_resp.content, fb_resp.status_code, {
+                            "Content-Type": fb_resp.headers.get("Content-Type", "application/json"),
+                            "X-Proxy-Provider": fb_provider, "X-Proxy-Key": str(fb_key_id),
+                            "X-Proxy-Fallback": f"claude→{fb_provider}",
+                            "X-Proxy-Fallback-Reason": "All Claude sessions exhausted",
+                        }
+                else:
+                    fb_code = fb_resp.status_code
+                    try: fb_err = fb_resp.text[:200]
+                    except: fb_err = ""
+                    if fb_code == 429:
+                        mark_key_rate_limited(fb_key_id, f"429: {fb_err}")
+                    elif fb_code in (401, 403, 412, 402):
+                        mark_key_dead(fb_key_id, f"{fb_code}: {fb_err}")
+                    continue
+            except Exception:
+                continue
+    
+    # All Claude sessions AND all fallbacks failed — return user-friendly error
+    return format_error_response(
+        "CLAUDE_ALL_SESSIONS_BUSY", model_slug, "claude",
+        tried_count=len(tried),
+        retry_after_ms=COOLDOWN_SECONDS * 1000,
+        is_streaming=is_streaming,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2233,15 +2645,10 @@ def proxy_chat_standard():
         data = json.loads(body)
         model_slug = data.get("model", "")
     except:
-        return jsonify({"error": "Invalid JSON body", "hint": "Send {\"model\":\"...\",\"messages\":[...]}"}), 400
+        return format_error_response("INVALID_REQUEST", "", detail="Invalid JSON body. Send {\"model\":\"...\",\"messages\":[...]}")
     
     if not model_slug or model_slug not in MODELS:
-        return jsonify({
-            "error": f"Unknown model: '{model_slug}'",
-            "available_models": list(MODELS.keys()),
-            "hint": "Use /v1/chat/completions with \"model\" in the JSON body, or /v1/{model}/chat/completions",
-            "docs": "https://aicookies.elliaa.com/docs"
-        }), 404
+        return format_error_response("MODEL_NOT_FOUND", model_slug or "unknown")
     
     model_info = MODELS[model_slug]
     resp = proxy_to_provider(model_info["provider"], model_info["real_model"], model_slug)
@@ -2318,12 +2725,7 @@ def proxy_chat_legacy(model_slug):
     if auth_err: return auth_err
     
     if model_slug not in MODELS:
-        return jsonify({
-            "error": f"Unknown model: '{model_slug}'",
-            "available_models": list(MODELS.keys()),
-            "hint": "Use /v1/chat/completions with \"model\" in the JSON body instead",
-            "docs": "https://aicookies.elliaa.com/docs"
-        }), 404
+        return format_error_response("MODEL_NOT_FOUND", model_slug)
     
     model_info = MODELS[model_slug]
     return proxy_to_provider(model_info["provider"], model_info["real_model"], model_slug)

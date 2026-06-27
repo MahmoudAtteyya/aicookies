@@ -685,8 +685,25 @@ All POST forms require a CSRF token injected via Jinja context processor:
 
 ### Session Security
 
-```python
+```
 app.config["SESSION_COOKIE_SECURE"] = True  # HTTPS only in production
+```
+
+### Frontend Access Control
+
+All frontend pages require admin authentication. No page is publicly accessible.
+
+| Page | Route | Protection |
+|------|-------|------------|
+| Dashboard | `/`, `/dashboard` | `@login_required` |
+| API Keys | `/keys` | `@login_required` |
+| Tokens | `/tokens` | `@login_required` |
+| Endpoints | `/endpoints` | `@login_required` |
+| Upload | `/upload` | `@login_required` |
+| Cookies | `/cookies`, `/cookies/<id>` | `@login_required` |
+| Docs | `/docs`, `/docs.md` | `@login_required` |
+
+**API endpoints** (`/v1/*`) remain publicly accessible with a valid Bearer token — this is by design, as the gateway is an API service. CORS headers are only set on `/v1/*` routes; frontend pages have no `Access-Control-Allow-Origin` header, preventing cross-origin access to admin pages.
 app.config["SESSION_COOKIE_HTTPONLY"] = True  # No JS access
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # CSRF mitigation
 app.config["PERMANENT_SESSION_LIFETIME"] = 1800  # 30 min timeout
@@ -980,13 +997,14 @@ CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "2", "--timeout", "120",
 
 ### Production Checklist
 
-- [x] gunicorn WSGI server (2 workers, 120s timeout)
+- [x] gunicorn WSGI server (2 workers, 180s timeout)
 - [x] SQLite WAL mode with `busy_timeout=5000`
 - [x] Fernet cookie encryption enabled
 - [x] CSRF protection on all POST forms
 - [x] Rate limiting (API + login)
 - [x] Session security (HTTPOnly, Secure, SameSite)
-- [x] CORS headers for frontend access
+- [x] CORS headers restricted to API endpoints (`/v1/*`) only
+- [x] Frontend pages require admin auth (including /docs)
 - [x] Health check endpoint
 - [x] Global error handlers (400-504 + catch-all)
 - [x] Reverse proxy with SSL (Traefik)
@@ -996,6 +1014,9 @@ CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "2", "--timeout", "120",
 - [x] User-friendly typed error responses (9 error types)
 - [x] SSE error events for streaming clients
 - [x] 180s Claude timeout for reasoning models
+- [x] `@app.before_request` DB initialization for gunicorn fork safety
+- [x] Custom Endpoints (virtual API with forced system prompts)
+- [x] Auth bypass protection (empty/fake/SQL-injection/long tokens)
 
 ---
 

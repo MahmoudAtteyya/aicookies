@@ -1,27 +1,71 @@
 {% extends "base.html" %}
 {% block title %}Upload — AI Proxy Gateway{% endblock %}
+
+{% block head %}
+<style>
+.up-hero {
+    position: relative; overflow: hidden; border-radius: var(--r-xl);
+    padding: 1.75rem 2rem; margin-bottom: 1.5rem;
+    background: radial-gradient(circle at 80% 30%, var(--accent-glow) 0%, transparent 55%),
+        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+    border: 1px solid var(--border-accent); box-shadow: var(--shadow-glow), var(--shadow-md);
+}
+.up-hero::after { content:''; position:absolute; top:-50%; right:-10%; width:350px; height:350px; background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%); border-radius:50%; pointer-events:none; }
+.up-hero h2 { font-size:1.6rem; font-weight:800; letter-spacing:-0.03em; margin:0; background: linear-gradient(135deg, var(--text), var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.up-hero p { color:var(--text-dim); margin:0.3rem 0 0; font-size:0.88rem; }
+
+.up-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: var(--r-lg);
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--t-med), background var(--t-med), transform var(--t-med);
+    background: var(--bg-elevated);
+}
+.up-dropzone:hover { border-color: var(--accent); background: var(--bg-hover); }
+.up-dropzone.dragover { border-color: var(--accent); background: var(--accent-dim); transform: scale(1.01); }
+.up-dropzone .icon { font-size: 2.5rem; margin-bottom: 0.5rem; display:block; }
+.up-dropzone h3 { margin-bottom:0.25rem; }
+.up-dropzone p { color: var(--text-dim); margin: 0; font-size: 0.85rem; }
+.up-dropzone .hint { margin-top:0.5rem; font-size:0.72rem; color:var(--text-muted); }
+
+.up-file-info {
+    margin-top:1rem; text-align:center; padding:0.75rem;
+    background: var(--bg-input); border-radius: var(--r-md);
+    animation: pageFadeIn 0.3s ease;
+}
+
+.up-format-card { padding: 1.25rem; }
+.up-format-card h3 { font-size:1.05rem; font-weight:700; margin:0 0 0.5rem; }
+.up-format-card .desc { color: var(--text-dim); font-size:0.82rem; margin:0 0 0.75rem; }
+.up-info-box {
+    background: rgba(59,130,246,0.08); border-left: 3px solid var(--blue);
+    border-radius: var(--r-md); padding: 0.75rem 1rem; margin-top: 0.75rem;
+}
+.up-info-box strong { color: var(--blue); }
+</style>
+{% endblock %}
+
 {% block content %}
 
-<div class="page-header">
+<div class="up-hero">
     <h2>⬆️ Upload Claude Cookie File</h2>
-    <a href="/" class="btn">← Dashboard</a>
+    <p>Upload Netscape HTTP Cookie format files to enable Claude AI proxy</p>
 </div>
 
 <div class="card mb-3">
     <form method="POST" enctype="multipart/form-data" id="upload-form">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <div class="file-upload" id="drop-zone">
-            <div class="icon">📁</div>
-            <h3 style="margin-bottom:0.25rem;">Drop your Claude cookie file here</h3>
+        <div class="up-dropzone" id="drop-zone">
+            <span class="icon">📁</span>
+            <h3>Drop your Claude cookie file here</h3>
             <p>or click to browse</p>
-            <p style="margin-top:0.5rem;font-size:0.75rem;color:var(--text-muted);">
-                Netscape HTTP Cookie format (.txt)<br>
-                Export from browser extension like "cookies.txt"
-            </p>
-            <input type="file" name="cookie_file" id="cookie_file" accept=".txt,.text,text/plain" required>
+            <p class="hint">Netscape HTTP Cookie format (.txt) — export from "cookies.txt" extension</p>
+            <input type="file" name="cookie_file" id="cookie_file" accept=".txt,.text,text/plain" required style="display:none;">
         </div>
 
-        <div id="file-info" class="hidden" style="margin-top:1rem;text-align:center;padding:0.75rem;background:var(--bg-input);border-radius:var(--r-md);">
+        <div id="file-info" class="up-file-info hidden">
             <span id="file-name" style="color:var(--accent);font-weight:600;"></span>
             <span id="file-size" style="color:var(--text-dim);margin-left:0.5rem;"></span>
         </div>
@@ -32,9 +76,9 @@
     </form>
 </div>
 
-<div class="card">
-    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">📋 Expected Format</h3>
-    <p class="text-dim text-sm mb-2">Your file should be in Netscape HTTP Cookie format — the standard format exported by browser extensions like "cookies.txt".</p>
+<div class="card up-format-card">
+    <h3>📋 Expected Format</h3>
+    <p class="desc">Your file should be in Netscape HTTP Cookie format — the standard format exported by browser extensions.</p>
     <div class="raw-preview" style="font-size:0.75rem;">
 # Netscape HTTP Cookie File
 # Exported from browser
@@ -43,8 +87,8 @@
 claude.ai	FALSE	/	TRUE	1808409348	anthropic-device-id	12308106-...
 .claude.ai	TRUE	/	TRUE	1814025349	lastActiveOrg	767566e5-...
     </div>
-    <div class="info-box mt-2" style="background:var(--blue-bg);border-left:3px solid var(--blue);border-radius:var(--r-md);padding:0.75rem 1rem;">
-        <strong style="color:var(--blue);">For Claude.ai:</strong>
+    <div class="up-info-box">
+        <strong>For Claude.ai:</strong>
         <span class="text-sm text-dim">Export cookies from your browser using any "cookies.txt" extension while logged into claude.ai. The system will extract sessionKey, lastActiveOrg, and Cloudflare tokens automatically.</span>
     </div>
 </div>

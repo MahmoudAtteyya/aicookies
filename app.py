@@ -11,13 +11,23 @@ import httpx
 from curl_cffi import requests as curl_requests
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+
+# ── Stable SECRET_KEY (critical for multi-worker gunicorn) ──
+# If not provided via env, derive a stable key from AUTH_PASSWORD_HASH
+# so all workers share the same key across restarts.
+_DEFAULT_SECRET = os.environ.get("SECRET_KEY", "") or hashlib.sha256(
+    (os.environ.get("AUTH_PASSWORD_HASH", "") + os.environ.get("AUTH_PASSWORD", "fallback-secret-key-v542")).encode()
+).hexdigest()
+app.secret_key = _DEFAULT_SECRET
 
 # ── Production security settings ──
-app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production"
+# Use SECURE cookies only when behind HTTPS reverse proxy (Traefik handles TLS)
+# Check both FLASK_ENV and X-Forwarded-Proto header at runtime
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = 1800  # 30 min
+# Don't set SESSION_COOKIE_SECURE here — set it dynamically in before_request
+# based on whether the request came over HTTPS (via Traefik X-Forwarded-Proto)
 
 # ── Jinja context processor: inject CSRF token into all templates ──
 @app.context_processor
@@ -281,6 +291,12 @@ init_db()
 @app.before_request
 def _ensure_db_tables():
     """Re-run init_db on first request in each worker to handle gunicorn fork."""
+    # Dynamic SESSION_COOKIE_SECURE based on actual request protocol
+    fwd_proto = request.headers.get("X-Forwarded-Proto", "")
+    if fwd_proto == "https" or request.url.startswith("https://"):
+        app.config["SESSION_COOKIE_SECURE"] = True
+    else:
+        app.config["SESSION_COOKIE_SECURE"] = False
     if not getattr(app, '_db_initialized', False):
         try:
             init_db()

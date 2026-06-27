@@ -1,15 +1,43 @@
 {% extends "base.html" %}
 {% block title %}API Keys — AI Proxy Gateway{% endblock %}
+
+{% block head %}
+<style>
+.kp-hero {
+    position: relative; overflow: hidden; border-radius: var(--r-xl);
+    padding: 1.75rem 2rem; margin-bottom: 1.5rem;
+    background: radial-gradient(circle at 80% 30%, var(--accent-glow) 0%, transparent 55%),
+        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+    border: 1px solid var(--border-accent); box-shadow: var(--shadow-glow), var(--shadow-md);
+}
+.kp-hero::after { content:''; position:absolute; top:-50%; right:-10%; width:350px; height:350px; background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%); border-radius:50%; pointer-events:none; }
+.kp-hero h2 { font-size:1.6rem; font-weight:800; letter-spacing:-0.03em; margin:0; background: linear-gradient(135deg, var(--text), var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.kp-hero p { color:var(--text-dim); margin:0.3rem 0 0; font-size:0.88rem; }
+
+.kp-section-title { display:flex; align-items:center; gap:0.5rem; font-size:1.05rem; font-weight:700; margin:0 0 0.85rem; }
+.kp-section-title .bar { width:4px; height:1.1rem; border-radius:2px; background: linear-gradient(180deg, var(--accent), var(--accent-dim)); }
+
+.kp-provider-row { margin-bottom:1.25rem; padding-bottom:1.25rem; border-bottom:1px solid var(--border); }
+.kp-provider-row:last-child { border-bottom:none; padding-bottom:0; margin-bottom:0; }
+.kp-provider-name { color:var(--accent); font-size:1.05rem; font-weight:700; }
+.kp-provider-desc { color:var(--text-dim); font-size:0.8rem; margin:0.3rem 0; }
+.kp-model-chip { background:var(--bg-input); padding:0.15rem 0.5rem; border-radius:var(--r-sm); font-size:0.72rem; margin:0.15rem; display:inline-block; font-family:var(--font-mono); }
+
+.kp-key-row { transition: background var(--t-fast); }
+.kp-key-row:hover { background: var(--bg-hover); }
+</style>
+{% endblock %}
+
 {% block content %}
 
-<div class="page-header">
+<div class="kp-hero">
     <h2>🔑 API Keys Manager</h2>
-    <a href="/" class="btn">← Dashboard</a>
+    <p>Manage provider API keys with automatic rotation and health monitoring</p>
 </div>
 
 <!-- ═══════════ ADD KEY FORM ═══════════ -->
+<h3 class="kp-section-title"><span class="bar"></span>➕ Add API Key</h3>
 <div class="card mb-3">
-    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">➕ Add API Key</h3>
     <form method="POST">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
@@ -38,20 +66,20 @@
 </div>
 
 <!-- ═══════════ PROVIDER INFO ═══════════ -->
+<h3 class="kp-section-title"><span class="bar"></span>📋 Supported Providers & Free Models</h3>
 <div class="card mb-3">
-    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">📋 Supported Providers & Free Models</h3>
     {% for p in providers %}
-    <div style="margin-bottom:1.25rem;padding-bottom:1.25rem;border-bottom:1px solid var(--border);">
+    <div class="kp-provider-row">
         <div class="flex items-center gap-1">
-            <strong style="color:var(--accent);font-size:1.05rem;">{{ p.name }}</strong>
+            <strong class="kp-provider-name">{{ p.name }}</strong>
             {% if p.api_docs_url %}
             <a href="{{ p.api_docs_url }}" target="_blank" style="color:var(--blue);font-size:0.8rem;text-decoration:none;">docs ↗</a>
             {% endif %}
         </div>
-        <p style="color:var(--text-dim);font-size:0.8rem;margin:0.3rem 0;">{{ p.description }}</p>
+        <p class="kp-provider-desc">{{ p.description }}</p>
         <div style="margin-top:0.5rem;">
             {% for m in p.free_models_parsed %}
-            <code style="background:var(--bg-input);padding:0.15rem 0.5rem;border-radius:var(--r-sm);font-size:0.72rem;margin:0.15rem;display:inline-block;">{{ m }}</code>
+            <code class="kp-model-chip">{{ m }}</code>
             {% endfor %}
         </div>
     </div>
@@ -59,15 +87,13 @@
 </div>
 
 <!-- ═══════════ STORED KEYS ═══════════ -->
-<h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🗄️ Stored Keys ({{ keys|length }})</h3>
+<h3 class="kp-section-title"><span class="bar"></span>🗄️ Stored Keys <span class="text-dim" style="font-weight:500;font-size:0.85rem;">({{ keys|length }})</span></h3>
 
 {% if not keys %}
-<div class="card">
-    <div class="empty-state">
-        <div class="icon">🔑</div>
-        <h3>No API keys stored</h3>
-        <p>Add keys for your providers above to start using the gateway</p>
-    </div>
+<div class="card empty-state">
+    <div class="icon">🔑</div>
+    <h3>No API keys stored</h3>
+    <p>Add keys for your providers above to start using the gateway</p>
 </div>
 {% else %}
 <div class="card" style="padding:0;overflow:hidden;">
@@ -84,8 +110,8 @@
         </thead>
         <tbody>
         {% for k in keys %}
-            <tr>
-                <td><span class="badge badge-{{ k.provider_slug }}">{{ k.provider_name }}</span></td>
+            <tr class="kp-key-row">
+                <td><span class="badge badge-{{ k.provider_slug|default('unknown') }}">{{ k.provider_name }}</span></td>
                 <td class="text-sm">{{ k.label or '—' }}</td>
                 <td><code class="text-xs" style="color:var(--text-muted);">{{ k.key_value[:12] }}…{{ k.key_value[-4:] }}</code></td>
                 <td class="text-sm">{{ k.usage_count }} uses</td>

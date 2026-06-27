@@ -1,32 +1,53 @@
 {% extends "base.html" %}
 {% block title %}{{ file.filename }} — AI Proxy Gateway{% endblock %}
+
+{% block head %}
+<style>
+.ck-hero {
+    position: relative; overflow: hidden; border-radius: var(--r-xl);
+    padding: 1.5rem 1.75rem; margin-bottom: 1.5rem;
+    background: radial-gradient(circle at 85% 25%, var(--accent-glow) 0%, transparent 55%),
+        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+    border: 1px solid var(--border-accent); box-shadow: var(--shadow-md);
+}
+.ck-hero-inner { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; }
+.ck-hero h2 { font-size:1.4rem; font-weight:800; margin:0; display:flex; align-items:center; gap:0.5rem; }
+.ck-hero .meta { color:var(--text-dim); font-size:0.82rem; margin-top:0.3rem; }
+.ck-section-title { display:flex; align-items:center; gap:0.5rem; font-size:1.05rem; font-weight:700; margin:0 0 0.85rem; }
+.ck-section-title .bar { width:4px; height:1.1rem; border-radius:2px; background: linear-gradient(180deg, var(--accent), var(--accent-dim)); }
+.ck-table { overflow-x:auto; }
+.ck-table th { font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; }
+.ck-value-cell { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-mono); font-size:0.78rem; }
+</style>
+{% endblock %}
+
 {% block content %}
 
-<div class="page-header">
-    <div>
-        <h2>
-            <span class="badge badge-{{ file.platform }}">{{ file.platform }}</span>
-            {{ file.filename }}
-        </h2>
-        <p class="text-sm text-dim" style="margin-top:0.25rem;">
-            {{ file.cookie_count }} cookies • Uploaded {{ file.uploaded_at[:16]|replace('T', ' ') }}
-        </p>
-    </div>
-    <div class="flex gap-1">
-        <a href="/" class="btn">← Back</a>
-        <a href="/api/cookies/raw/{{ file.id }}" class="btn" target="_blank">📋 Raw Text</a>
-        <button class="btn" onclick="copyAll()">📋 Copy All</button>
+<div class="ck-hero">
+    <div class="ck-hero-inner">
+        <div>
+            <h2>
+                <span class="badge badge-{{ file.platform|default('unknown') }}">{{ file.platform }}</span>
+                {{ file.filename }}
+            </h2>
+            <p class="meta">{{ file.cookie_count }} cookies • Uploaded {{ file.uploaded_at[:16]|replace('T', ' ') }}</p>
+        </div>
+        <div class="flex gap-1">
+            <a href="/" class="btn btn-sm">← Back</a>
+            <a href="/api/cookies/raw/{{ file.id }}" class="btn btn-sm" target="_blank">📋 Raw</a>
+            <button class="btn btn-sm" onclick="copyAll()">📋 Copy All</button>
+        </div>
     </div>
 </div>
 
 <div class="card mb-3">
-    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">📝 Raw Cookie Text</h3>
+    <h3 class="ck-section-title"><span class="bar"></span>📝 Raw Cookie Text</h3>
     <div class="raw-preview" id="raw-content">{{ file.raw_content }}</div>
 </div>
 
 <div class="card">
-    <h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🍪 Parsed Cookies ({{ cookies|length }})</h3>
-    <div style="overflow-x:auto;">
+    <h3 class="ck-section-title"><span class="bar"></span>🍪 Parsed Cookies <span class="text-dim" style="font-weight:500;font-size:0.85rem;">({{ cookies|length }})</span></h3>
+    <div class="ck-table">
         <table>
             <thead>
                 <tr>
@@ -43,7 +64,7 @@
                 <tr>
                     <td class="text-sm">{{ c.domain }}</td>
                     <td><code class="text-xs">{{ c.name }}</code></td>
-                    <td><div class="cookie-value" title="{{ c.value }}">{{ c.value }}</div></td>
+                    <td><div class="ck-value-cell" title="{{ c.value }}">{{ c.value }}</div></td>
                     <td class="text-sm">{{ c.path }}</td>
                     <td>
                         {% if c.secure == 'TRUE' %}
@@ -70,7 +91,17 @@
 function copyAll() {
     const raw = document.getElementById('raw-content').textContent;
     navigator.clipboard.writeText(raw).then(() => {
-        alert('✅ Raw cookies copied to clipboard!');
+        // Use base.html toast
+        const container = document.getElementById('toastContainer');
+        if (container) {
+            const toast = document.createElement('div');
+            toast.className = 'toast success';
+            toast.textContent = '✅ Raw cookies copied!';
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4200);
+        } else {
+            alert('✅ Raw cookies copied to clipboard!');
+        }
     });
 }
 </script>

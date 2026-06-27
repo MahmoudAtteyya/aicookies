@@ -1,21 +1,179 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — AI Proxy Gateway{% endblock %}
+
+{% block head %}
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   PREMIUM DASHBOARD — scoped enhancements (uses base.html CSS vars only)
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Hero ── */
+.hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--r-xl);
+    padding: 2rem 2.25rem;
+    margin-bottom: 1.5rem;
+    background:
+        radial-gradient(circle at 85% 20%, var(--accent-glow) 0%, transparent 55%),
+        radial-gradient(circle at 10% 90%, rgba(88,166,255,0.08) 0%, transparent 50%),
+        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+    border: 1px solid var(--border-accent);
+    box-shadow: var(--shadow-glow), var(--shadow-md);
+}
+.hero::after {
+    content: '';
+    position: absolute;
+    top: -60%; right: -8%;
+    width: 420px; height: 420px;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+}
+.hero-inner { position: relative; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1.25rem; }
+.hero h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em; margin: 0; background: linear-gradient(135deg, var(--text), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.hero p { color: var(--text-dim); margin: 0.35rem 0 0; font-size: 0.92rem; }
+.hero-status { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+.status-pill { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 999px; font-weight: 600; font-size: 0.85rem; border: 1px solid; transition: all var(--t-med); }
+.status-pill .dot { width: 9px; height: 9px; border-radius: 50%; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.55; transform: scale(0.85); } }
+.status-pill.healthy  { background: var(--green-bg);  color: var(--green);  border-color: rgba(63,185,80,0.35); }
+.status-pill.healthy  .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.status-pill.degraded { background: var(--yellow-bg); color: var(--yellow); border-color: rgba(210,153,29,0.35); }
+.status-pill.degraded .dot { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+.status-pill.offline  { background: var(--red-bg);    color: var(--red);    border-color: rgba(248,81,73,0.35); }
+.status-pill.offline  .dot { background: var(--red); box-shadow: 0 0 8px var(--red); animation: none; }
+.hero-meta { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-top: 0.35rem; }
+.hero-meta span { font-size: 0.78rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 0.3rem; }
+
+/* ── Premium stat cards ── */
+.pstat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.pstat {
+    position: relative;
+    background: linear-gradient(160deg, var(--bg-card) 0%, var(--bg-elevated) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 1.35rem 1.25rem 1.1rem;
+    overflow: hidden;
+    transition: transform var(--t-med), box-shadow var(--t-med), border-color var(--t-med);
+    cursor: default;
+}
+.pstat::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent), var(--blue), var(--accent)); opacity: 0; transition: opacity var(--t-med); }
+.pstat:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--border-accent); }
+.pstat:hover::before { opacity: 1; }
+.pstat .icon { font-size: 1.35rem; line-height: 1; margin-bottom: 0.5rem; display: block; }
+.pstat .num {
+    font-size: 2.1rem; font-weight: 800; line-height: 1.1;
+    background: linear-gradient(135deg, var(--accent), var(--blue));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.pstat .label { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.3rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.pstat.is-danger .num { background: linear-gradient(135deg, var(--red), var(--orange)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.pstat.is-danger::before { background: linear-gradient(90deg, var(--red), var(--orange), var(--red)); }
+.pstat.is-clickable { cursor: pointer; }
+
+/* ── Section heading ── */
+.section-title { display: flex; align-items: center; gap: 0.5rem; font-size: 1.05rem; font-weight: 700; margin: 0 0 0.85rem; letter-spacing: -0.01em; }
+.section-title .bar { width: 4px; height: 1.1rem; border-radius: 2px; background: linear-gradient(180deg, var(--accent), var(--accent-dim)); }
+
+/* ── Provider health cards ── */
+.prov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.prov-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 1.15rem 1.25rem;
+    transition: all var(--t-med);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+.prov-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--border-light); }
+.prov-card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
+.prov-card .name { font-weight: 700; font-size: 1rem; }
+.prov-card .slug { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); }
+.prov-card .keys { display: flex; align-items: baseline; gap: 0.35rem; margin-top: 0.85rem; }
+.prov-card .keys b { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+.prov-card .keys span { font-size: 0.75rem; color: var(--text-dim); }
+.prov-card .ptype { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.15rem; }
+.prov-card .stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+.stripe-claude   { background: var(--accent); }
+.stripe-mistral  { background: var(--orange); }
+.stripe-cohere   { background: var(--green); }
+.stripe-sambanova{ background: var(--blue); }
+.stripe-fireworks{ background: var(--yellow); }
+.stripe-unknown  { background: var(--border-light); }
+
+/* ── Model chips ── */
+.model-grid { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.model-chip {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    font-size: 0.8rem;
+    transition: all var(--t-fast);
+    cursor: default;
+}
+.model-chip:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); border-color: var(--border-light); }
+.model-chip code { background: none; padding: 0; font-weight: 600; font-size: 0.78rem; }
+.model-chip .ctx { font-size: 0.65rem; color: var(--text-muted); padding-left: 0.5rem; border-left: 1px solid var(--border); }
+.model-chip .tag { font-size: 0.62rem; padding: 0.1rem 0.4rem; border-radius: 999px; font-weight: 600; }
+.tag-reasoning { background: var(--yellow-bg); color: var(--yellow); }
+.tag-direct    { background: var(--green-bg);  color: var(--green); }
+/* provider tint via left border accent */
+.mc-claude    { border-left: 3px solid var(--accent); }
+.mc-mistral   { border-left: 3px solid var(--orange); }
+.mc-cohere    { border-left: 3px solid var(--green); }
+.mc-sambanova { border-left: 3px solid var(--blue); }
+.mc-fireworks { border-left: 3px solid var(--yellow); }
+.mc-unknown   { border-left: 3px solid var(--border-light); }
+.mc-claude code    { color: #c4b5fd; }
+.mc-mistral code   { color: #ff9b6b; }
+.mc-cohere code    { color: #7ee787; }
+.mc-sambanova code { color: #79c0ff; }
+.mc-fireworks code { color: #e3b341; }
+
+/* ── Recent activity ── */
+.activity-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.activity-row { display: flex; align-items: center; gap: 0.85rem; padding: 0.6rem 0.85rem; border-radius: var(--r-md); background: var(--bg-input); border: 1px solid var(--border); transition: border-color var(--t-fast); flex-wrap: wrap; }
+.activity-row:hover { border-color: var(--border-light); }
+.activity-row .a-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.activity-row .a-model { font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600; }
+.activity-row .a-meta { color: var(--text-muted); font-size: 0.72rem; margin-left: auto; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+    .hero { padding: 1.5rem 1.25rem; }
+    .hero h1 { font-size: 1.5rem; }
+    .hero-inner { flex-direction: column; }
+    .hero-status { align-items: flex-start; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 
 <!-- ═══════════ HERO ═══════════ -->
-<div class="card card-accent" style="margin-bottom:2rem;overflow:hidden;position:relative;">
-    <div style="position:absolute;top:-50%;right:-5%;width:400px;height:400px;background:radial-gradient(circle,var(--accent-glow) 0%,transparent 70%);border-radius:50%;pointer-events:none;"></div>
-    <div style="position:relative;">
-        <h2 style="margin:0 0 0.25rem 0;font-size:1.75rem;letter-spacing:-0.02em;">📊 Dashboard</h2>
-        <p style="color:var(--text-dim);margin:0;font-size:0.9rem;">System overview — providers, keys, cookies, and health status</p>
+<div class="hero">
+    <div class="hero-inner">
+        <div>
+            <h1>📊 Dashboard</h1>
+            <p>System overview — providers, keys, cookies, models &amp; health status</p>
+            <div class="hero-meta">
+                <span>🔗 <a href="/v1/health" target="_blank" style="color:var(--text-dim);text-decoration:none;">/v1/health</a></span>
+                <span>📦 <a href="/docs" style="color:var(--text-dim);text-decoration:none;">API Docs</a></span>
+                <span>🔑 <a href="/keys" style="color:var(--text-dim);text-decoration:none;">Manage Keys</a></span>
+            </div>
+        </div>
+        <div class="hero-status">
+            <span id="heroStatus" class="status-pill degraded">
+                <span class="dot"></span>
+                <span id="heroStatusText">Checking…</span>
+            </span>
+            <span id="heroStatusDetails" class="text-xs text-dim"></span>
+        </div>
     </div>
-</div>
-
-<!-- ═══════════ HEALTH BADGE ═══════════ -->
-<div class="flex items-center gap-1 mb-3">
-    <a href="/v1/health" target="_blank" class="btn btn-sm" id="healthBtn">🩺 Health Check</a>
-    <span id="healthStatus" class="badge badge-green">● Checking…</span>
-    <span id="healthDetails" class="text-xs text-dim"></span>
 </div>
 
 <!-- ═══════════ DEAD KEYS ALERT ═══════════ -->
@@ -34,19 +192,70 @@
 </div>
 {% endif %}
 
-<!-- ═══════════ API PROVIDERS ═══════════ -->
-<h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🔑 API Keys by Provider</h3>
-<div class="stats">
+<!-- ═══════════ PREMIUM STAT CARDS ═══════════ -->
+<div class="pstat-grid">
+    {% set ns_keys = namespace(total=0) %}
+    {% for p in providers %}{% set ns_keys.total = ns_keys.total + p.key_count %}{% endfor %}
+
+    <div class="pstat is-clickable" onclick="location.href='/keys'">
+        <span class="icon">🏢</span>
+        <div class="num">{{ providers|length }}</div>
+        <div class="label">Providers</div>
+    </div>
+    <div class="pstat is-clickable" onclick="location.href='/keys'">
+        <span class="icon">🔑</span>
+        <div class="num">{{ ns_keys.total }}</div>
+        <div class="label">Active Keys</div>
+    </div>
+    <div class="pstat is-clickable" onclick="location.href='/upload'">
+        <span class="icon">🤖</span>
+        <div class="num">{{ claude_count }}</div>
+        <div class="label">Claude Sessions</div>
+    </div>
+    <div class="pstat is-clickable" onclick="location.href='/docs'">
+        <span class="icon">🧠</span>
+        <div class="num">{{ models|length }}</div>
+        <div class="label">Models</div>
+    </div>
+    <div class="pstat is-clickable" onclick="location.href='/upload'">
+        <span class="icon">📦</span>
+        <div class="num">{{ files|length }}</div>
+        <div class="label">Cookie Uploads</div>
+    </div>
+    <div class="pstat is-danger">
+        <span class="icon">💀</span>
+        <div class="num">{{ dead_keys }}</div>
+        <div class="label">Dead Keys</div>
+    </div>
+</div>
+
+<!-- ═══════════ PROVIDER HEALTH OVERVIEW ═══════════ -->
+<h3 class="section-title"><span class="bar"></span>Provider Health Overview</h3>
+<div class="prov-grid">
     {% for p in providers %}
-    <div class="stat-card" style="cursor:pointer;" onclick="location.href='/keys'">
-        <div class="number">{{ p.key_count }}</div>
-        <div class="label">{{ p.name }}</div>
+    <div class="prov-card" onclick="location.href='/keys'">
+        <div class="stripe stripe-{{ p.slug|default('unknown') }}"></div>
+        <div class="top">
+            <div>
+                <div class="name">{{ p.name }}</div>
+                <div class="slug">{{ p.slug }}</div>
+            </div>
+            {% if p.key_count and p.key_count > 0 %}
+            <span class="badge badge-green">● Healthy</span>
+            {% else %}
+            <span class="badge badge-yellow">● Degraded</span>
+            {% endif %}
+        </div>
+        <div class="keys">
+            <b>{{ p.key_count }}</b><span>active key{{ '' if p.key_count == 1 else 's' }}</span>
+        </div>
+        <div class="ptype">{{ p.provider_type|default('free') }} provider</div>
     </div>
     {% endfor %}
     {% if not providers %}
-    <div class="stat-card">
-        <div class="number">0</div>
-        <div class="label">No providers loaded</div>
+    <div class="prov-card">
+        <div class="name" style="color:var(--text-dim);">No providers configured</div>
+        <div class="ptype" style="margin-top:0.6rem;"><a href="/keys" class="btn btn-sm btn-primary">➕ Add Provider</a></div>
     </div>
     {% endif %}
 </div>
@@ -54,18 +263,7 @@
 <a href="/keys" class="btn btn-primary mb-3">🔑 Manage API Keys</a>
 
 <!-- ═══════════ COOKIES (Claude-focused) ═══════════ -->
-<h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🤖 Claude Cookie Sessions</h3>
-
-<div class="stats">
-    <div class="stat-card" style="cursor:pointer;" onclick="location.href='/upload'">
-        <div class="number">{{ claude_count }}</div>
-        <div class="label">🤖 Claude Cookie Sets</div>
-    </div>
-    <div class="stat-card">
-        <div class="number">{{ files|length }}</div>
-        <div class="label">📦 Total Uploads</div>
-    </div>
-</div>
+<h3 class="section-title"><span class="bar"></span>Claude Cookie Sessions</h3>
 
 {% if not files %}
 <div class="card">
@@ -99,25 +297,19 @@
 </div>
 {% endif %}
 
-<!-- ═══════════ MODELS SUMMARY ═══════════ -->
-<h3 class="mb-2" style="font-size:1.1rem;font-weight:600;">🤖 Available Models ({{ models|length }})</h3>
+<!-- ═══════════ MODELS — provider-colored chip grid ═══════════ -->
+<h3 class="section-title"><span class="bar"></span>Available Models <span class="text-dim" style="font-weight:500;font-size:0.85rem;">({{ models|length }})</span></h3>
 <div class="card">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.75rem;">
+    <div class="model-grid">
         {% for slug, info in models.items() %}
-        <div style="padding:0.85rem;border:1px solid var(--border);border-radius:var(--r-md);transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-            <div class="flex items-center justify-between mb-1">
-                <code style="font-size:0.8rem;color:var(--accent);font-weight:600;">{{ slug }}</code>
-                {% if info.style == 'reasoning' %}
-                <span class="badge badge-yellow" style="font-size:0.65rem;">🧠 Reasoning</span>
-                {% else %}
-                <span class="badge badge-green" style="font-size:0.65rem;">⚡ Direct</span>
-                {% endif %}
-            </div>
-            <div class="text-sm text-dim">{{ info.desc }}</div>
-            <div class="text-xs text-muted mt-2" style="display:flex;gap:0.75rem;">
-                <span>🏢 {{ info.provider }}</span>
-                <span>📏 {{ (info.tokens or 0)|int // 1000 }}K ctx</span>
-            </div>
+        <div class="model-chip mc-{{ info.provider|default('unknown') }}" title="{{ info.desc }}">
+            <code>{{ slug }}</code>
+            {% if info.style == 'reasoning' %}
+            <span class="tag tag-reasoning">🧠</span>
+            {% else %}
+            <span class="tag tag-direct">⚡</span>
+            {% endif %}
+            <span class="ctx">{{ (info.tokens or 0)|int // 1000 }}K</span>
         </div>
         {% endfor %}
     </div>
@@ -125,29 +317,53 @@
     <a href="/docs" class="btn btn-sm">📚 Full API Documentation</a>
 </div>
 
+<!-- ═══════════ RECENT ACTIVITY (only if proxy_requests passed) ═══════════ -->
+{% if proxy_requests is defined and proxy_requests %}
+<h3 class="section-title"><span class="bar"></span>Recent Activity</h3>
+<div class="card">
+    <div class="activity-list">
+        {% for r in proxy_requests[:12] %}
+        <div class="activity-row">
+            <span class="a-status" style="background:{% if r.status == 'success' or r.status == 200 %}var(--green){% elif r.status == 'error' or r.status >= 500 %}var(--red){% else %}var(--yellow){% endif %};"></span>
+            <span class="a-model mc-{{ r.provider_slug|default('unknown') }}" style="border:none;padding:0;">{{ r.model_slug|default('unknown') }}</span>
+            <span class="text-xs text-dim">{{ r.provider_slug|default('—') }}</span>
+            <span class="a-meta">
+                {% if r.latency_ms %}<span>⏱ {{ r.latency_ms }}ms</span>{% endif %}
+                {% if r.proxy_country %}<span>🌍 {{ r.proxy_country }}</span>{% endif %}
+                <span>🕒 {{ r.created_at[:16]|replace('T', ' ') if r.created_at else '' }}</span>
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <script>
-// Health check
+// ── Health check → drives hero status pill ──
 (async () => {
+    const pill = document.getElementById('heroStatus');
+    const txt  = document.getElementById('heroStatusText');
+    const det  = document.getElementById('heroStatusDetails');
     try {
         const r = await fetch('/v1/health');
         const d = await r.json();
-        const el = document.getElementById('healthStatus');
-        const det = document.getElementById('healthDetails');
         if (d.status === 'healthy') {
-            el.textContent = '● Healthy';
-            el.className = 'badge badge-green';
+            pill.className = 'status-pill healthy';
+            txt.textContent = 'Healthy';
             det.textContent = `${d.models_available} models · ${d.active_api_keys} keys · ${d.claude_sessions} Claude sessions`;
         } else {
-            el.textContent = '● ' + d.status;
-            el.className = 'badge badge-yellow';
+            pill.className = 'status-pill degraded';
+            txt.textContent = d.status ? d.status.charAt(0).toUpperCase() + d.status.slice(1) : 'Degraded';
+            det.textContent = `${d.models_available || 0} models · ${d.active_api_keys || 0} keys`;
         }
     } catch (e) {
-        document.getElementById('healthStatus').textContent = '● Offline';
-        document.getElementById('healthStatus').className = 'badge badge-red';
+        pill.className = 'status-pill offline';
+        txt.textContent = 'Offline';
+        det.textContent = 'Health endpoint unreachable';
     }
 })();
 
-// Revive form
+// ── Revive form ──
 const reviveForm = document.getElementById('reviveForm');
 if (reviveForm) {
     reviveForm.addEventListener('submit', async (e) => {

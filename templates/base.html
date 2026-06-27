@@ -550,6 +550,160 @@
             border-top: 1px solid var(--border);
             margin: 1.5rem 0;
         }
+        /* ═══════════════════════════════════════════════════════════════════
+           PREMIUM UPGRADES — v5.4
+           Glassmorphism, animations, micro-interactions, toast system
+           ═══════════════════════════════════════════════════════════════════ */
+
+        /* ── Gradient mesh background ── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 600px 400px at 15% 10%, rgba(139,92,246,0.06), transparent 70%),
+                radial-gradient(ellipse 500px 300px at 85% 20%, rgba(88,166,255,0.04), transparent 70%),
+                radial-gradient(ellipse 400px 500px at 50% 80%, rgba(139,92,246,0.03), transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        nav, .container { position: relative; z-index: 1; }
+
+        /* ── Premium navbar glassmorphism ── */
+        nav {
+            backdrop-filter: blur(16px) saturate(1.5);
+            background: rgba(17,23,33,0.72);
+            border-bottom: 1px solid rgba(42,52,65,0.6);
+        }
+        nav::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), var(--blue), var(--accent), transparent);
+            opacity: 0.5;
+        }
+
+        /* ── Card hover lift ── */
+        .card {
+            transition: transform var(--t-med), border-color var(--t-med), box-shadow var(--t-med);
+        }
+        .card:hover {
+            border-color: var(--border-light);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        /* ── Page load fade-in ── */
+        .container {
+            animation: pageFadeIn 0.4s ease-out;
+        }
+        @keyframes pageFadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Button glow on primary ── */
+        .btn-primary {
+            box-shadow: 0 0 0 rgba(139,92,246,0);
+            transition: all var(--t-fast), box-shadow var(--t-med);
+        }
+        .btn-primary:hover {
+            box-shadow: 0 4px 16px rgba(139,92,246,0.35);
+        }
+        .btn:active { transform: scale(0.96); }
+
+        /* ── Premium stat cards ── */
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), var(--blue));
+            opacity: 0;
+            transition: opacity var(--t-med);
+        }
+        .stat-card:hover::before { opacity: 1; }
+        .stat-card .value {
+            background: linear-gradient(135deg, var(--accent), var(--blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ── Toast notification system ── */
+        .toast-container {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .toast {
+            padding: 0.85rem 1.25rem;
+            border-radius: var(--r-md);
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            animation: toastIn 0.3s ease, toastOut 0.3s ease 3.7s forwards;
+            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(12px);
+            max-width: 360px;
+        }
+        .toast.success { background: rgba(63,185,80,0.15);  color: var(--green);  border: 1px solid rgba(63,185,80,0.3); }
+        .toast.danger  { background: rgba(248,81,73,0.15);  color: var(--red);    border: 1px solid rgba(248,81,73,0.3); }
+        .toast.warning { background: rgba(210,153,29,0.15); color: var(--yellow); border: 1px solid rgba(210,153,29,0.3); }
+        .toast.info    { background: rgba(88,166,255,0.15); color: var(--blue);   border: 1px solid rgba(88,166,255,0.3); }
+        @keyframes toastIn  { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes toastOut { to   { opacity: 0; transform: translateX(100%); } }
+
+        /* ── Skeleton shimmer ── */
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-hover) 50%, var(--bg-card) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: var(--r-sm);
+        }
+        @keyframes shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* ── Badge / chip system ── */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.2rem 0.6rem;
+            border-radius: 100px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        .badge-green  { background: var(--green-bg);  color: var(--green);  border: 1px solid rgba(63,185,80,0.2); }
+        .badge-red    { background: var(--red-bg);    color: var(--red);    border: 1px solid rgba(248,81,73,0.2); }
+        .badge-yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(210,153,29,0.2); }
+        .badge-blue   { background: var(--blue-bg);   color: var(--blue);   border: 1px solid rgba(88,166,255,0.2); }
+        .badge-accent { background: var(--accent-glow); color: var(--accent); border: 1px solid rgba(139,92,246,0.2); }
+
+        /* ── Section dividers ── */
+        .section-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin: 1.5rem 0 0.75rem;
+        }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -583,5 +737,23 @@
     </div>
 
     {% block scripts %}{% endblock %}
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toastContainer"></div>
+    <script>
+    // Auto-convert flash messages to toasts
+    (function() {
+        const flashes = document.querySelectorAll('.flash');
+        const container = document.getElementById('toastContainer');
+        flashes.forEach(f => {
+            const toast = document.createElement('div');
+            toast.className = 'toast ' + (f.className.replace('flash','').trim() || 'info');
+            toast.textContent = f.textContent.trim();
+            container.appendChild(toast);
+            f.remove();
+            setTimeout(() => toast.remove(), 4200);
+        });
+    })();
+    </script>
 </body>
 </html>

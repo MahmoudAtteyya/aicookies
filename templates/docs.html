@@ -1009,6 +1009,133 @@ cryptography>=42.0</code></pre>
     AI Proxy Gateway v3.0.0 · Built with Flask + curl_cffi · <a href="https://github.com/MahmoudAtteyya/aicookies" target="_blank" style="color:var(--accent);">GitHub</a> · <a href="/" style="color:var(--accent);">Dashboard</a>
 </p>
 
+<!-- ═════════════════════════════════════════════════════════════════════════
+     SECTION 9: FRONTEND IMPROVEMENT PLAN
+═════════════════════════════════════════════════════════════════════════ -->
+<h2 id="frontend-plan" class="section-title">🎨 Frontend Improvement Plan & Security</h2>
+
+<div class="card" style="margin-bottom:2rem;">
+<h3>Architecture Overview</h3>
+<p>The frontend consists of 7 Jinja2 templates served by Flask with a dark-themed, CSS-variable-driven design system. All pages extend <code>base.html</code> which provides the navigation bar, flash messages, and consistent styling.</p>
+
+<div style="background:#0d1117;padding:1rem;border-radius:8px;margin:1rem 0;font-family:monospace;font-size:0.8rem;overflow-x:auto;">
+<pre>base.html (nav + flash + CSS vars)
+├── login.html         → Username/password auth
+├── dashboard.html     → Overview + dead-key alerts + revive
+├── keys.html          → API key CRUD + per-key revive
+├── tokens.html        → API token management (sk-aic-*)
+├── cookies.html       → View uploaded Claude cookie sets
+├── upload.html        → Upload Claude cookie files
+└── docs.html          → This page (comprehensive API docs)</pre>
+</div>
+</div>
+
+<div class="card" style="margin-bottom:2rem;">
+<h3>Security Layers (Implemented)</h3>
+<table>
+<thead><tr><th>Layer</th><th>Mechanism</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td><strong>Authentication</strong></td><td>Username + bcrypt hash, session-based</td><td>✅</td></tr>
+<tr><td><strong>Session Timeout</strong></td><td>30 min inactivity → auto-logout</td><td>✅</td></tr>
+<tr><td><strong>Login Rate Limit</strong></td><td>5 attempts / 10 min per IP</td><td>✅</td></tr>
+<tr><td><strong>CSRF Protection</strong></td><td>Per-session token, all POST forms + API</td><td>✅</td></tr>
+<tr><td><strong>Cookie Security</strong></td><td>HttpOnly, SameSite=Lax, Secure in prod</td><td>✅</td></tr>
+<tr><td><strong>API Key Encryption</strong></td><td>Fernet at-rest encryption</td><td>✅</td></tr>
+<tr><td><strong>API Token Hashing</strong></td><td>SHA-256, constant-time verify</td><td>✅</td></tr>
+<tr><td><strong>Proxy Auth</strong></td><td>Bearer token (sk-aic-*) on all /v1/* routes</td><td>✅</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card" style="margin-bottom:2rem;">
+<h3>Frontend Improvement Roadmap</h3>
+
+<h4 style="color:var(--green);">Phase 1 — Token Management UI ✅ Done</h4>
+<ul>
+<li><code>/tokens</code> page: create, list, pause, activate, revoke API tokens</li>
+<li>Copy-to-clipboard with one-click</li>
+<li>Usage statistics per token (request count, last used)</li>
+<li>CSRF-protected forms with confirm dialogs</li>
+</ul>
+
+<h4 style="color:var(--green);">Phase 2 — Dead Key Management ✅ Done</h4>
+<ul>
+<li>Dashboard red alert banner when dead keys exist</li>
+<li>"Revive All Dead Keys" button (checks account status via /models)</li>
+<li>Per-key revive button on keys page</li>
+<li>Status indicators: ✅ Active / ⏸ Paused / 💀 Dead</li>
+</ul>
+
+<h4 style="color:var(--blue);">Phase 3 — Real-time Monitoring (Next)</h4>
+<ul>
+<li>Live request log (WebSocket / SSE) showing proxy requests in real-time</li>
+<li>Per-provider latency charts (Chart.js)</li>
+<li>Key health dashboard: success rate, error breakdown, last 100 requests</li>
+<li>Auto-refresh dashboard stats every 30s</li>
+</ul>
+
+<h4 style="color:var(--blue);">Phase 4 — Enhanced Security (Next)</h4>
+<ul>
+<li>2FA (TOTP) for admin login</li>
+<li>IP allowlist for admin panel</li>
+<li>Audit log: track all admin actions (key add/delete/revive)</li>
+<li>API token scopes (read-only / full access)</li>
+<li>Rate limiting per API token (not just global)</li>
+</ul>
+
+<h4 style="color:var(--blue);">Phase 5 — UX Polish (Next)</h4>
+<ul>
+<li>Toast notifications instead of alert() dialogs</li>
+<li>Dark/light theme toggle</li>
+<li>Responsive mobile layout</li>
+<li>Keyboard shortcuts (Ctrl+K for search, etc.)</li>
+<li>Searchable key/token tables with pagination</li>
+</ul>
+
+<h4 style="color:var(--blue);">Phase 6 — API Key Management Enhancement (Next)</h4>
+<ul>
+<li>Bulk key import (CSV/JSON)</li>
+<li>Key rotation reminders (expiry tracking)</li>
+<li>Provider health check (ping all keys on demand)</li>
+<li>Key grouping by account (Fireworks account A, B, C...)</li>
+<li>Automatic failover testing: simulate 412 to verify rotation works</li>
+</ul>
+</div>
+
+<div class="card" style="margin-bottom:2rem;">
+<h3>Fireworks AI Failover — How It Works</h3>
+<div style="background:#0d1117;padding:1rem;border-radius:8px;margin:1rem 0;font-family:monospace;font-size:0.8rem;overflow-x:auto;">
+<pre>Request → /v1/fireworks-deepseek/chat/completions
+  │
+  ▼
+proxy_to_provider("fireworks", ...)
+  │
+  ├─ get_provider_keys("fireworks") → [key1, key2, key3, ...]
+  │   (ordered by usage_count ASC — least used first)
+  │
+  ├─ Try key1:
+  │   ├─ HTTP 200 → return response ✅
+  │   ├─ HTTP 412 (suspended) → mark_key_dead(key1) → continue to key2
+  │   ├─ HTTP 402 (depleted) → mark_key_dead(key1) → continue to key2
+  │   ├─ HTTP 429 (rate limit) → mark_key_rate_limited(key1) → continue to key2
+  │   └─ HTTP 401/403 (auth) → mark_key_dead(key1) → continue to key2
+  │
+  ├─ Try key2:
+  │   ├─ HTTP 200 → return response ✅
+  │   └─ ... same logic
+  │
+  ├─ Try key3: ...
+  │
+  └─ All keys failed → 503 with failover details
+      {
+        "error": "Service Unavailable",
+        "tried_keys": 3,
+        "errors": ["ACCOUNT_SUSPENDED", "RATE_LIMITED", "ACCOUNT_SUSPENDED"]
+      }</pre>
+</div>
+<p><strong>Dead Key Recovery:</strong> Dead keys are <strong>never</strong> auto-revived. Admin must click "🔄 Revive" in the dashboard or keys page. The system sends a lightweight <code>GET /models</code> request to check if the account is active again. If 200 → key is restored to active.</p>
+</div>
+
 <script>
 function switchCode(evt, id) {
     document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));

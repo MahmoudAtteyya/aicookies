@@ -402,24 +402,122 @@ def check_login_rate_limit(ip):
 
 MODELS = {
     # Claude (cookie-based — special handling)
-    "claude-sonnet-4-6":  {"provider": "claude",  "real_model": "claude-sonnet-4-6",  "desc": "Claude Sonnet 4 — 200K context", "style": "direct", "tokens": 200000},
+    "claude-sonnet-4-6": {
+        "provider": "claude", "real_model": "claude-sonnet-4-6",
+        "desc": "Claude Sonnet 4 — 200K context", "style": "direct", "tokens": 200000,
+        "developer": "Anthropic", "display_name": "Claude Sonnet 4",
+        "max_output": 8192, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$3.00", "out": "$15.00"},
+    },
     # Mistral
-    "mistral-small":     {"provider": "mistral", "real_model": "mistral-small-latest",     "desc": "Mistral Small — fast, efficient", "tokens": 32000},
-    "mistral-medium":    {"provider": "mistral", "real_model": "mistral-medium-latest",    "desc": "Mistral Medium — balanced", "tokens": 32000},
-    "mistral-nemo":      {"provider": "mistral", "real_model": "open-mistral-nemo",        "desc": "Open Mistral Nemo — 12B", "tokens": 128000},
-    "codestral":         {"provider": "mistral", "real_model": "codestral-latest",         "desc": "Codestral — code generation", "tokens": 256000},
-    "ministral-8b":      {"provider": "mistral", "real_model": "ministral-8b-latest",      "desc": "Ministral 8B — lightweight", "tokens": 128000},
+    "mistral-small": {
+        "provider": "mistral", "real_model": "mistral-small-latest",
+        "desc": "Mistral Small 4 — hybrid reasoning+coding, multimodal, Apache 2.0", "style": "reasoning", "tokens": 128000,
+        "developer": "Mistral AI", "display_name": "Mistral Small 4",
+        "max_output": 128000, "params": "~24B",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$0.15", "out": "$0.60"},
+    },
+    "mistral-medium": {
+        "provider": "mistral", "real_model": "mistral-medium-latest",
+        "desc": "Mistral Medium 3.5 — frontier multimodal, agentic+coding", "style": "reasoning", "tokens": 128000,
+        "developer": "Mistral AI", "display_name": "Mistral Medium 3.5",
+        "max_output": 128000, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$1.50", "out": "$7.50"},
+    },
+    "mistral-nemo": {
+        "provider": "mistral", "real_model": "open-mistral-nemo",
+        "desc": "Mistral NeMo — 12B, multilingual, code tasks (legacy)", "style": "direct", "tokens": 128000,
+        "developer": "Mistral AI × NVIDIA", "display_name": "Mistral NeMo",
+        "max_output": 128000, "params": "12B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$0.15", "out": "$0.15"},
+    },
+    "codestral": {
+        "provider": "mistral", "real_model": "codestral-latest",
+        "desc": "Codestral — 22B code gen, FIM, 80+ languages, 256K ctx", "style": "direct", "tokens": 256000,
+        "developer": "Mistral AI", "display_name": "Codestral",
+        "max_output": 256000, "params": "22B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$0.30", "out": "$0.90"},
+    },
+    "ministral-8b": {
+        "provider": "mistral", "real_model": "ministral-8b-latest",
+        "desc": "Ministral 8B — edge model, multimodal, 128K ctx", "style": "direct", "tokens": 128000,
+        "developer": "Mistral AI", "display_name": "Ministral 3 8B",
+        "max_output": 128000, "params": "8B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$0.15", "out": "$0.15"},
+    },
     # Cohere
-    "command-a":         {"provider": "cohere",  "real_model": "command-a-03-2025",        "desc": "Command A — latest flagship", "tokens": 256000},
-    "command-r7b":       {"provider": "cohere",  "real_model": "command-r7b-12-2024",      "desc": "Command R7B — fast & capable", "tokens": 128000},
-    "command-r-plus":    {"provider": "cohere",  "real_model": "command-r-plus-08-2024",   "desc": "Command R+ — most powerful", "tokens": 128000},
+    "command-a": {
+        "provider": "cohere", "real_model": "command-a-03-2025",
+        "desc": "Command A — flagship, 256K ctx, RAG+agents, web search", "style": "direct", "tokens": 256000,
+        "developer": "Cohere", "display_name": "Command A",
+        "max_output": 8000, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "$2.50", "out": "$10.00"},
+    },
+    "command-r7b": {
+        "provider": "cohere", "real_model": "command-r7b-12-2024",
+        "desc": "Command R7B — 7B, fast RAG+tools, cheapest Cohere", "style": "direct", "tokens": 128000,
+        "developer": "Cohere", "display_name": "Command R7B",
+        "max_output": 4000, "params": "7B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "$0.0375", "out": "$0.15"},
+    },
+    "command-r-plus": {
+        "provider": "cohere", "real_model": "command-r-plus-08-2024",
+        "desc": "Command R+ — 104B MoE, RAG+multi-step tools, web search", "style": "direct", "tokens": 128000,
+        "developer": "Cohere", "display_name": "Command R+ (08-2024)",
+        "max_output": 4000, "params": "~104B MoE",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "$2.50", "out": "$10.00"},
+    },
     # SambaNova
-    "llama-3.3-70b":     {"provider": "sambanova", "real_model": "Meta-Llama-3.3-70B-Instruct",          "desc": "Llama 3.3 70B — powerful", "style": "direct", "tokens": 131072},
+    "llama-3.3-70b": {
+        "provider": "sambanova", "real_model": "Meta-Llama-3.3-70B-Instruct",
+        "desc": "Llama 3.3 70B — open-weight, 128K ctx, free dev tier", "style": "direct", "tokens": 131072,
+        "developer": "Meta", "display_name": "Meta Llama 3.3 70B Instruct",
+        "max_output": 131072, "params": "70B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free (dev tier)", "out": "Free (dev tier)"},
+    },
     # Fireworks
-    "glm-5p2":           {"provider": "fireworks", "real_model": "accounts/fireworks/models/glm-5p2",          "desc": "GLM 5P2 — general reasoning", "style": "reasoning", "tokens": 131072},
-    "kimi-k2p7-code":    {"provider": "fireworks", "real_model": "accounts/fireworks/models/kimi-k2p7-code",   "desc": "Kimi K2.7 — code generation", "style": "direct", "tokens": 32768},
-    "qwen3p7-plus":      {"provider": "fireworks", "real_model": "accounts/fireworks/models/qwen3p7-plus",     "desc": "Qwen 3.7 Plus — multimodal reasoning", "style": "reasoning", "tokens": 4000},
-    "deepseek-v4-pro":   {"provider": "fireworks", "real_model": "accounts/fireworks/models/deepseek-v4-pro",  "desc": "DeepSeek V4 Pro — deep reasoning", "style": "reasoning", "tokens": 131072},
+    "glm-5p2": {
+        "provider": "fireworks", "real_model": "accounts/fireworks/models/glm-5p2",
+        "desc": "GLM 5.2 — Opus-level reasoning, 131K ctx, interleaved thinking", "style": "reasoning", "tokens": 131072,
+        "developer": "Zhipu AI / Z.AI", "display_name": "GLM 5.2",
+        "max_output": 131072, "params": "Undisclosed (MoE)",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$1.40", "out": "$4.40", "cached_in": "$0.14"},
+    },
+    "kimi-k2p7-code": {
+        "provider": "fireworks", "real_model": "accounts/fireworks/models/kimi-k2p7-code",
+        "desc": "Kimi K2.7 Code — agentic coding specialist, 32K ctx", "style": "direct", "tokens": 32768,
+        "developer": "Moonshot AI / Kimi", "display_name": "Kimi K2.7 Code",
+        "max_output": 32768, "params": "~1T MoE",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$0.95", "out": "$4.00", "cached_in": "$0.19"},
+    },
+    "qwen3p7-plus": {
+        "provider": "fireworks", "real_model": "accounts/fireworks/models/qwen3p7-plus",
+        "desc": "Qwen 3.7 Plus — affordable reasoning model, 4K ctx", "style": "reasoning", "tokens": 4000,
+        "developer": "Alibaba / Qwen", "display_name": "Qwen 3.7 Plus",
+        "max_output": 4000, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$0.40", "out": "$1.60", "cached_in": "$0.08"},
+    },
+    "deepseek-v4-pro": {
+        "provider": "fireworks", "real_model": "accounts/fireworks/models/deepseek-v4-pro",
+        "desc": "DeepSeek V4 Pro — deep reasoning, 131K ctx, interleaved thinking", "style": "reasoning", "tokens": 131072,
+        "developer": "DeepSeek", "display_name": "DeepSeek V4 Pro",
+        "max_output": 131072, "params": "Undisclosed (MoE)",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$1.74", "out": "$3.48", "cached_in": "$0.145"},
+    },
 }
 
 # ── Cookie parser ───────────────────────────────────────────────────────
@@ -3100,6 +3198,8 @@ def list_models():
             WHERE p.slug = ? AND k.is_active = 1 AND k.dead = 0
         """, (info["provider"],)).fetchone()[0]
         conn.close()
+        caps = info.get("capabilities", {})
+        pricing = info.get("pricing", {})
         models.append({
             "id": slug,
             "object": "model",
@@ -3107,6 +3207,28 @@ def list_models():
             "description": info["desc"],
             "active_keys": key_count,
             "endpoint": f"/v1/{slug}/chat/completions",
+            # ── Extended metadata ──
+            "display_name": info.get("display_name", slug),
+            "developer": info.get("developer", info["provider"]),
+            "context_window": info.get("tokens", 0),
+            "max_output_tokens": info.get("max_output", info.get("tokens", 0)),
+            "parameters": info.get("params", "Undisclosed"),
+            "style": info.get("style", "direct"),
+            "capabilities": {
+                "text_generation": caps.get("text", False),
+                "code_generation": caps.get("code", False),
+                "reasoning_thinking": caps.get("thinking", False),
+                "tool_function_calling": caps.get("tools", False),
+                "vision_image_input": caps.get("vision", False),
+                "web_search": caps.get("web_search", False),
+                "json_mode": caps.get("json", False),
+                "streaming": caps.get("stream", False),
+            },
+            "pricing": {
+                "input_per_million": pricing.get("in", "N/A"),
+                "output_per_million": pricing.get("out", "N/A"),
+                "cached_input_per_million": pricing.get("cached_in"),
+            },
         })
     return jsonify({"object": "list", "data": models})
 

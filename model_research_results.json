@@ -1,0 +1,607 @@
+{
+  "mistral-small-latest": {
+    "display_name": "Mistral Small 4",
+    "developer": "Mistral AI",
+    "provider": "Mistral",
+    "context_window": 128000,
+    "max_output_tokens": 128000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": true,
+      "tool_function_calling": true,
+      "vision_image_input": true,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "~24B (hybrid instruct/reasoning/coding)",
+    "release_date": "2026-03 (v26.03)",
+    "pricing": {
+      "input_per_million": "$0.15",
+      "output_per_million": "$0.60"
+    },
+    "pros": [
+      "Hybrid model unifying instruct, reasoning, and coding in a single efficient model",
+      "Very cost-effective pricing",
+      "Multimodal (text + image input)",
+      "Open-weight (Apache 2.0)",
+      "Multilingual support",
+      "Good for high-volume production workloads"
+    ],
+    "cons": [
+      "Less capable than larger frontier models for complex reasoning",
+      "May not match Mistral Medium/Large on difficult tasks"
+    ],
+    "special_features": "Hybrid reasoning model — can toggle between standard and thinking modes. Supports structured outputs and function calling. Open weights under Apache 2.0.",
+    "supports_thinking": true,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "mistral-small-latest",
+    "license": "Open (Apache 2.0)",
+    "notes": "Listed in AICookies registry with 32K token context (app config), but Mistral docs show 128K context window for the latest version."
+  },
+
+  "mistral-medium-latest": {
+    "display_name": "Mistral Medium 3.5",
+    "developer": "Mistral AI",
+    "provider": "Mistral",
+    "context_window": 128000,
+    "max_output_tokens": 128000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": true,
+      "tool_function_calling": true,
+      "vision_image_input": true,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "Not publicly disclosed (frontier-class)",
+    "release_date": "2026-04 (v26.04)",
+    "pricing": {
+      "input_per_million": "$1.50",
+      "output_per_million": "$7.50"
+    },
+    "pros": [
+      "Frontier-class multimodal model optimized for agentic and coding use cases",
+      "State-of-the-art performance",
+      "Simplified enterprise deployments",
+      "Cost-efficient for its capability tier",
+      "Strong at agentic workflows and tool use"
+    ],
+    "cons": [
+      "More expensive than Mistral Small",
+      "Proprietary (not open-weight)",
+      "Parameter count not disclosed"
+    ],
+    "special_features": "Mistral's flagship frontier model. Optimized for agentic use cases and coding. Multimodal (text + image). Supports function calling, structured outputs, and JSON mode. Latest featured model on Mistral's platform.",
+    "supports_thinking": true,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "mistral-medium-latest",
+    "license": "Open-weight (but frontier-class)",
+    "notes": "Listed in AICookies registry with 32K token context (app config), but Mistral docs show 128K context window."
+  },
+
+  "open-mistral-nemo": {
+    "display_name": "Mistral NeMo",
+    "developer": "Mistral AI (in collaboration with NVIDIA)",
+    "provider": "Mistral",
+    "context_window": 128000,
+    "max_output_tokens": 128000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": false,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "12B",
+    "release_date": "2024-07 (v24.07)",
+    "pricing": {
+      "input_per_million": "$0.15",
+      "output_per_million": "$0.15"
+    },
+    "pros": [
+      "Large 128K context window",
+      "Very affordable (same input/output pricing)",
+      "Open-weight model (Apache 2.0)",
+      "Good for code tasks",
+      "Multilingual with Tekken tokenizer supporting 100+ languages"
+    ],
+    "cons": [
+      "Now listed as legacy/deprecated by Mistral (retirement 7/31/2026, replacement: Ministral 3 8B)",
+      "Smaller model — less capable than frontier models",
+      "No vision/image input",
+      "No dedicated reasoning/thinking mode"
+    ],
+    "special_features": "Built in collaboration with NVIDIA. Uses the Tekken tokenizer for efficient multilingual encoding. Designed for code tasks. Part of the open-weight lineup.",
+    "supports_thinking": false,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "open-mistral-nemo",
+    "license": "Open (Apache 2.0)",
+    "notes": "Listed in AICookies registry with 128K token context. Marked as legacy on Mistral docs with deprecation date 5/22/2026 and retirement 7/31/2026."
+  },
+
+  "codestral-latest": {
+    "display_name": "Codestral",
+    "developer": "Mistral AI",
+    "provider": "Mistral",
+    "context_window": 256000,
+    "max_output_tokens": 256000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": false,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "22B",
+    "release_date": "2025-07 (v25.08, latest Codestral release)",
+    "pricing": {
+      "input_per_million": "$0.30",
+      "output_per_million": "$0.90"
+    },
+    "pros": [
+      "Specialized for code generation, completion, and fill-in-the-middle (FIM)",
+      "Large 256K context window",
+      "Low latency — optimized for high-frequency code completion",
+      "Supports 80+ programming languages",
+      "Excellent for IDE integrations and coding assistants"
+    ],
+    "cons": [
+      "Specialized model — not a general-purpose chat model",
+      "Premier license (not open-weight; commercial use restricted)",
+      "No vision/image input",
+      "No dedicated reasoning/thinking mode"
+    ],
+    "special_features": "Cutting-edge code generation model. Supports fill-in-the-middle (FIM), code completion, and instruction following. Trained on 80+ programming languages. Premier-tier model. Has a dedicated Codestral API endpoint separate from the chat API.",
+    "supports_thinking": false,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "codestral-latest",
+    "license": "Premier (commercial, not open-weight)",
+    "notes": "Listed in AICookies registry with 256K token context. Latest version is v25.08. Previous Codestral v25.01 was deprecated 11/6/2025."
+  },
+
+  "ministral-8b-latest": {
+    "display_name": "Ministral 3 8B (Ministral 8B)",
+    "developer": "Mistral AI",
+    "provider": "Mistral",
+    "context_window": 128000,
+    "max_output_tokens": 128000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": false,
+      "tool_function_calling": true,
+      "vision_image_input": true,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "8B",
+    "release_date": "2024-10 (v24.1); updated to Ministral 3 8B (v25.12)",
+    "pricing": {
+      "input_per_million": "$0.15",
+      "output_per_million": "$0.15"
+    },
+    "pros": [
+      "Very lightweight and efficient — runs on edge devices",
+      "Best-in-class text and vision capabilities for its size",
+      "Extremely cost-effective (same input/output price)",
+      "Open-weight",
+      "128K context window",
+      "Good for on-device / edge AI applications"
+    ],
+    "cons": [
+      "Small model — limited on complex reasoning and difficult tasks",
+      "No dedicated reasoning/thinking mode",
+      "Original Ministral 8B (v24.1) deprecated 12/31/2025; replaced by Ministral 3 8B"
+    ],
+    "special_features": "Part of the Ministral 3 family — edge-optimized models with best-in-class text and vision. Supports agentic workflows. Designed for low-latency, resource-constrained environments. Multimodal (text + image).",
+    "supports_thinking": false,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "ministral-8b-latest",
+    "license": "Open-weight",
+    "notes": "Listed in AICookies registry with 128K token context. The 'ministral-8b-latest' alias now points to Ministral 3 8B (v25.12)."
+  },
+
+  "command-a-03-2025": {
+    "display_name": "Command A",
+    "developer": "Cohere",
+    "provider": "Cohere",
+    "context_window": 256000,
+    "max_output_tokens": 8000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": false,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": true,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "Not publicly disclosed (described as efficient — runs on only 2 GPUs)",
+    "release_date": "2025-03 (03-2025)",
+    "pricing": {
+      "input_per_million": "$2.50",
+      "output_per_million": "$10.00"
+    },
+    "pros": [
+      "Cohere's most performant model to date",
+      "Excellent at tool use, agents, and RAG (retrieval augmented generation)",
+      "Large 256K context window",
+      "Strong multilingual capabilities",
+      "150% higher throughput compared to Command R+ 08-2024",
+      "Only requires two GPUs to run — cost-efficient deployment",
+      "Built-in web search capability via Cohere's connectors"
+    ],
+    "cons": [
+      "Max output limited to 8K tokens",
+      "No vision/image input (use Command A Vision for that)",
+      "No dedicated reasoning/thinking mode (use Command A Reasoning for that)",
+      "Proprietary model"
+    ],
+    "special_features": "Flagship Command model. Excels at agentic workflows, RAG, and multilingual tasks. 256K context. Supports tool use and structured outputs. Cohere also offers Command A Reasoning (reasoning variant, 256K context, 32K output) and Command A Vision (image input, 128K context) as separate models.",
+    "supports_thinking": false,
+    "can_generate_code": true,
+    "can_search_web": true,
+    "api_slug": "command-a-03-2025",
+    "license": "Proprietary",
+    "notes": "Listed in AICookies registry with 256K token context. Pricing based on Cohere's standard Command A pricing tier."
+  },
+
+  "command-r7b-12-2024": {
+    "display_name": "Command R7B",
+    "developer": "Cohere",
+    "provider": "Cohere",
+    "context_window": 128000,
+    "max_output_tokens": 4000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": false,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": true,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "7B",
+    "release_date": "2024-12 (12-2024)",
+    "pricing": {
+      "input_per_million": "$0.0375",
+      "output_per_million": "$0.15"
+    },
+    "pros": [
+      "Small, fast, and cost-effective",
+      "Excels at RAG, tool use, and agents",
+      "Good for complex reasoning and multi-step tasks despite small size",
+      "128K context window",
+      "Lowest-priced Cohere Command model"
+    ],
+    "cons": [
+      "Small model — less capable than Command A or R+ on complex tasks",
+      "Max output limited to 4K tokens",
+      "No vision/image input",
+      "No dedicated reasoning/thinking mode"
+    ],
+    "special_features": "Compact model designed for speed and efficiency. Good at RAG and agentic workflows. Supports tool use and structured outputs. Ideal for high-throughput, low-latency applications.",
+    "supports_thinking": false,
+    "can_generate_code": true,
+    "can_search_web": true,
+    "api_slug": "command-r7b-12-2024",
+    "license": "Proprietary (CC-BY-NC-4.0 for weights, commercial API available)",
+    "notes": "Listed in AICookies registry with 128K token context."
+  },
+
+  "command-r-plus-08-2024": {
+    "display_name": "Command R+ (08-2024)",
+    "developer": "Cohere",
+    "provider": "Cohere",
+    "context_window": 128000,
+    "max_output_tokens": 4000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": false,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": true,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "~104B (sparse MoE architecture)",
+    "release_date": "2024-08 (08-2024)",
+    "pricing": {
+      "input_per_million": "$2.50",
+      "output_per_million": "$10.00"
+    },
+    "pros": [
+      "Best suited for complex RAG workflows and multi-step tool use",
+      "Strong instruction-following and conversational capabilities",
+      "128K context window",
+      "Good multilingual support",
+      "Higher quality than Command R and R7B"
+    ],
+    "cons": [
+      "Superseded by Command A (which has 150% higher throughput and 256K context)",
+      "Max output limited to 4K tokens",
+      "No vision/image input",
+      "No dedicated reasoning/thinking mode",
+      "More expensive than smaller models"
+    ],
+    "special_features": "Instruction-following conversational model optimized for RAG and multi-step tool use. Supports structured outputs. Predecessor to Command A. Part of the Command R family.",
+    "supports_thinking": false,
+    "can_generate_code": true,
+    "can_search_web": true,
+    "api_slug": "command-r-plus-08-2024",
+    "license": "Proprietary (CC-BY-NC-4.0 for weights, commercial API available)",
+    "notes": "Listed in AICookies registry with 128K token context. Update of the original Command R+ (04-2024)."
+  },
+
+  "Meta-Llama-3.3-70B-Instruct": {
+    "display_name": "Meta Llama 3.3 70B Instruct",
+    "developer": "Meta (hosted on SambaNova)",
+    "provider": "SambaNova",
+    "context_window": 128000,
+    "max_output_tokens": 128000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": false,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "70B",
+    "release_date": "2024-12 (Llama 3.3 release)",
+    "pricing": {
+      "input_per_million": "Free on SambaNova developer tier; ~$0.50-$1.00 estimated for paid tiers",
+      "output_per_million": "Free on SambaNova developer tier; ~$1.00-$2.00 estimated for paid tiers"
+    },
+    "pros": [
+      "Open-weight model from Meta — widely adopted and well-supported",
+      "70B parameters — strong general-purpose capabilities",
+      "128K context window on SambaNova",
+      "Excellent instruction following",
+      "Good at code generation and reasoning tasks",
+      "SambaNova's RDU architecture provides fast inference",
+      "Available free on SambaNova's developer tier"
+    ],
+    "cons": [
+      "No native vision/image input (text-only)",
+      "No dedicated reasoning/thinking mode (standard instruct model)",
+      "No built-in web search (must use external tools)",
+      "Llama 3.x is now older generation compared to Llama 4"
+    ],
+    "special_features": "Hosted on SambaNova's RDU (Reconfigurable Dataflow Unit) infrastructure for high-speed inference. Open-weight model. Supports tool calling and structured outputs. Part of Meta's Llama 3.3 family — matches Llama 3.1 405B quality at 70B size. Available on SambaNova Cloud.",
+    "supports_thinking": false,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "Meta-Llama-3.3-70B-Instruct",
+    "license": "Open (Llama 3.3 Community License)",
+    "notes": "Listed in AICookies registry with 131,072 token context. SambaNova docs confirm 128K context, text-only modality."
+  },
+
+  "glm-5p2": {
+    "display_name": "GLM 5.2 (GLM-5P2)",
+    "developer": "Zhipu AI / Z.AI (hosted on Fireworks AI)",
+    "provider": "Fireworks AI",
+    "context_window": 131072,
+    "max_output_tokens": 131072,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": true,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "Not publicly disclosed (large MoE, estimated 300B+ range)",
+    "release_date": "2026 (banner says 'GLM 5.2 is live')",
+    "pricing": {
+      "standard_input_per_million": "$1.40",
+      "standard_cached_input_per_million": "$0.14",
+      "standard_output_per_million": "$4.40",
+      "priority_input_per_million": "$1.75",
+      "priority_cached_input_per_million": "$0.18",
+      "priority_output_per_million": "$5.50",
+      "fast_input_per_million": "$2.10",
+      "fast_cached_input_per_million": "$0.21",
+      "fast_output_per_million": "$6.60"
+    },
+    "pros": [
+      "Opus-level intelligence at open-source rates (per Fireworks banner)",
+      "Strong reasoning/thinking capabilities with reasoning_content field",
+      "Supports interleaved thinking for multi-step agentic workflows",
+      "Supports preserved thinking across conversation turns",
+      "Tool calling and structured outputs",
+      "Multiple serving tiers (Standard, Priority, Fast)",
+      "Prompt caching at 50% discount on cached input tokens"
+    ],
+    "cons": [
+      "Can be expensive at Priority/Fast tiers",
+      "No vision/image input",
+      "No built-in web search (must use tools)",
+      "Parameter count not disclosed",
+      "Can produce very long reasoning traces (need to set max_tokens)"
+    ],
+    "special_features": "Reasoning model with thinking/reasoning_content support. Supports reasoning_effort parameter (low/medium/high) and Anthropic-compatible thinking parameter. Supports interleaved thinking (reasoning between tool calls) and preserved thinking (reasoning retained across turns). Featured on Fireworks AI homepage. Uses GLM (General Language Model) architecture from Zhipu AI / Z.AI.",
+    "supports_thinking": true,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "accounts/fireworks/models/glm-5p2",
+    "style": "reasoning",
+    "license": "Proprietary (served via Fireworks AI)",
+    "notes": "Listed in AICookies registry with 131,072 token context, style='reasoning'. This is the model this Hermes instance is running on. Previous version GLM 5.1 also available on Fireworks."
+  },
+
+  "kimi-k2p7-code": {
+    "display_name": "Kimi K2.7 Code",
+    "developer": "Moonshot AI / Kimi (hosted on Fireworks AI)",
+    "provider": "Fireworks AI",
+    "context_window": 32768,
+    "max_output_tokens": 32768,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": false,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "~1T (MoE architecture, part of Kimi K2 family which is >300B for fine-tuning tier)",
+    "release_date": "2026 (Kimi K2.7 Code)",
+    "pricing": {
+      "standard_input_per_million": "$0.95",
+      "standard_cached_input_per_million": "$0.19",
+      "standard_output_per_million": "$4.00",
+      "priority_input_per_million": "$1.425",
+      "priority_cached_input_per_million": "$0.285",
+      "priority_output_per_million": "$6.00",
+      "fast_input_per_million": "$1.90",
+      "fast_cached_input_per_million": "$0.38",
+      "fast_output_per_million": "$8.00"
+    },
+    "pros": [
+      "Specialized for code generation and agentic coding workflows",
+      "Part of the Kimi K2 family — strong agentic capabilities",
+      "Excellent tool-calling performance",
+      "Multiple serving tiers available",
+      "Good for coding agents in terminal, IDE, and background"
+    ],
+    "cons": [
+      "Limited to 32K context window (smallest context in the registry)",
+      "No dedicated reasoning/thinking mode",
+      "No vision/image input",
+      "No built-in web search",
+      "Can produce very long output — must set max_tokens explicitly",
+      "Inference can be slow on large inputs (10-30 min timeout recommended for agentic loops)"
+    ],
+    "special_features": "Code-specialized variant of the Kimi K2 family. Optimized for agentic coding workflows. Fireworks recommends setting max_tokens explicitly (256-512 for tool calls, 512-1024 for short text, 1024-2048 for JSON, 4096+ for long-form). Tool schemas should have clearly distinct names and descriptions. Part of the Kimi K2 family that includes K2.5, K2.6, and K2.7 variants.",
+    "supports_thinking": false,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "accounts/fireworks/models/kimi-k2p7-code",
+    "style": "direct",
+    "license": "Proprietary (served via Fireworks AI)",
+    "notes": "Listed in AICookies registry with 32,768 token context, style='direct'. Part of Kimi K2 family on Fireworks."
+  },
+
+  "qwen3p7-plus": {
+    "display_name": "Qwen 3.7 Plus",
+    "developer": "Alibaba / Qwen (hosted on Fireworks AI)",
+    "provider": "Fireworks AI",
+    "context_window": 4000,
+    "max_output_tokens": 4000,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": true,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "Not publicly disclosed (Plus-tier, likely MoE)",
+    "release_date": "2026 (Qwen 3.7 Plus)",
+    "pricing": {
+      "standard_input_per_million": "$0.40",
+      "standard_cached_input_per_million": "$0.08",
+      "standard_output_per_million": "$1.60"
+    },
+    "pros": [
+      "Reasoning/thinking model at a very affordable price point",
+      "Lowest-priced reasoning model in the registry",
+      "Supports reasoning_effort and thinking parameters",
+      "Good value for multimodal reasoning tasks",
+      "Part of the popular Qwen model family"
+    ],
+    "cons": [
+      "Extremely limited context window — only 4,000 tokens (smallest in registry)",
+      "No Priority or Fast serving tier available",
+      "No vision/image input despite being described as 'multimodal reasoning'",
+      "No built-in web search",
+      "May struggle with long documents or extended conversations"
+    ],
+    "special_features": "Reasoning model from the Qwen 3.7 Plus generation. Supports reasoning_content field, reasoning_effort parameter, and Anthropic-compatible thinking parameter. Very cost-effective for reasoning tasks. Previous version Qwen 3.6 Plus also available ($0.50/$0.10/$3.00).",
+    "supports_thinking": true,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "accounts/fireworks/models/qwen3p7-plus",
+    "style": "reasoning",
+    "license": "Proprietary (served via Fireworks AI)",
+    "notes": "Listed in AICookies registry with 4,000 token context (very limited), style='reasoning'. Described as 'multimodal reasoning' in app config but text-only on Fireworks."
+  },
+
+  "deepseek-v4-pro": {
+    "display_name": "DeepSeek V4 Pro",
+    "developer": "DeepSeek (hosted on Fireworks AI)",
+    "provider": "Fireworks AI",
+    "context_window": 131072,
+    "max_output_tokens": 131072,
+    "capabilities": {
+      "text_generation": true,
+      "code_generation": true,
+      "reasoning_thinking": true,
+      "tool_function_calling": true,
+      "vision_image_input": false,
+      "web_search": false,
+      "json_mode": true,
+      "streaming": true
+    },
+    "parameter_count": "Not publicly disclosed (large MoE, >300B for fine-tuning tier, likely 600B+ range)",
+    "release_date": "2026 (DeepSeek V4 Pro)",
+    "pricing": {
+      "standard_input_per_million": "$1.74",
+      "standard_cached_input_per_million": "$0.145",
+      "standard_output_per_million": "$3.48",
+      "priority_input_per_million": "$2.61",
+      "priority_cached_input_per_million": "$0.218",
+      "priority_output_per_million": "$5.22"
+    },
+    "pros": [
+      "Deep reasoning capabilities with thinking/reasoning_content support",
+      "Large 131K context window",
+      "Strong code generation and general reasoning",
+      "Supports interleaved and preserved thinking",
+      "DeepSeek models known for excellent price/performance ratio",
+      "Prompt caching at significant discount (~8% of input price)"
+    ],
+    "cons": [
+      "No Fast serving tier available",
+      "No vision/image input",
+      "No built-in web search",
+      "Parameter count not disclosed",
+      "Can produce very long reasoning traces"
+    ],
+    "special_features": "Deep reasoning model from DeepSeek's V4 Pro generation. Supports reasoning_effort, thinking parameter, interleaved thinking, and preserved thinking. Part of the DeepSeek V4 family which also includes DeepSeek V4 Flash (a faster, cheaper variant at $0.14/$0.028/$0.28). MoE architecture. Known for strong coding and mathematical reasoning.",
+    "supports_thinking": true,
+    "can_generate_code": true,
+    "can_search_web": false,
+    "api_slug": "accounts/fireworks/models/deepseek-v4-pro",
+    "style": "reasoning",
+    "license": "Proprietary (served via Fireworks AI)",
+    "notes": "Listed in AICookies registry with 131,072 token context, style='reasoning'. DeepSeek V4 Flash (cheaper variant) also available on Fireworks at $0.14 input / $0.028 cached / $0.28 output per million tokens."
+  }
+}

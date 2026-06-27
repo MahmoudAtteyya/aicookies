@@ -146,7 +146,12 @@
             <tr class="kp-key-row" id="row-{{ k.id }}">
                 <td><span class="badge badge-{{ k.provider_slug|default('unknown') }}">{{ k.provider_name }}</span></td>
                 <td class="text-sm">{{ k.label or '—' }}</td>
-                <td><code class="text-xs" style="color:var(--text-muted);">{{ k.key_value[:12] }}…{{ k.key_value[-4:] }}</code></td>
+                <td>
+                    <div style="display:flex;align-items:center;gap:0.3rem;">
+                        <code class="text-xs key-display" id="key-{{ k.id }}" data-full="{{ k.key_value }}" style="color:var(--text-muted);cursor:pointer;" onclick="toggleKeyVisibility({{ k.id }})" title="Click to reveal/hide">{{ k.key_value[:12] }}…{{ k.key_value[-4:] }}</code>
+                        <button class="btn btn-sm key-copy-btn" style="font-size:0.7rem;padding:0.15rem 0.35rem;" onclick="copyKey({{ k.id }})" title="Copy key">📋</button>
+                    </div>
+                </td>
                 <td class="text-sm">{{ k.usage_count }} uses</td>
                 <td>
                     {% if k.dead %}
@@ -205,6 +210,33 @@
 
 {% block scripts %}
 <script>
+// ── Key visibility toggle + copy ──
+function toggleKeyVisibility(keyId) {
+    const el = document.getElementById('key-' + keyId);
+    if (!el) return;
+    if (el.dataset.revealed === '1') {
+        const full = el.dataset.full;
+        el.textContent = full.substring(0, 12) + '…' + full.substring(full.length - 4);
+        el.dataset.revealed = '0';
+        el.style.color = 'var(--text-muted)';
+    } else {
+        el.textContent = el.dataset.full;
+        el.dataset.revealed = '1';
+        el.style.color = 'var(--accent)';
+    }
+}
+
+function copyKey(keyId) {
+    const el = document.getElementById('key-' + keyId);
+    if (!el) return;
+    const key = el.dataset.full;
+    navigator.clipboard.writeText(key).then(() => {
+        showToast('success', 'Key copied to clipboard');
+        const btn = el.nextElementSibling;
+        if (btn) { btn.textContent = '✅'; setTimeout(() => btn.textContent = '📋', 1500); }
+    }).catch(() => showToast('error', 'Failed to copy'));
+}
+
 // ── Fetch account info for a single key ──
 function fetchAccountInfo(keyId) {
     const btn = document.getElementById('acc-btn-' + keyId);

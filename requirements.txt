@@ -1,4 +1,4 @@
 flask>=3.1
 werkzeug>=3.1
 httpx>=0.28
-playwright>=1.50
+curl-cffi>=0.15.0

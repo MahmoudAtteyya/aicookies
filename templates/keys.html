@@ -11,6 +11,7 @@
 <div class="card" style="margin-bottom:2rem;">
     <h3 style="margin-bottom:1rem;">➕ Add API Key</h3>
     <form method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
             <div class="form-group">
                 <label for="provider_id">Provider</label>
@@ -82,20 +83,29 @@
                 </td>
                 <td>{{ k.usage_count }}×</td>
                 <td>
-                    {% if k.is_active %}
+                    {% if k.dead %}
+                    <span style="color:var(--red);" title="{{ k.last_error_msg or '' }}">💀 Dead</span>
+                    {% elif k.is_active %}
                     <span style="color:var(--green);">✅ Active</span>
                     {% else %}
-                    <span style="color:var(--red);">🚫 Paused</span>
+                    <span style="color:var(--yellow);">⏸ Paused</span>
                     {% endif %}
                 </td>
                 <td>
+                    {% if k.dead %}
+                    <button class="btn" style="padding:0.25rem 0.6rem;font-size:0.75rem;color:var(--green);"
+                            onclick="reviveKey({{ k.id }}, this)">🔄 Revive</button>
+                    {% else %}
                     <form method="POST" action="/toggle-key/{{ k.id }}" style="display:inline;">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                         <button class="btn" style="padding:0.25rem 0.6rem;font-size:0.75rem;">
                             {{ '⏸ Pause' if k.is_active else '▶ Activate' }}
                         </button>
                     </form>
-                    <form method="POST" action="/delete-key/{{ k.id }}" style="display:inline;" 
+                    {% endif %}
+                    <form method="POST" action="/delete-key/{{ k.id }}" style="display:inline;"
                           onsubmit="return confirm('Delete this API key?')">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                         <button class="btn btn-danger" style="padding:0.25rem 0.6rem;font-size:0.75rem;">🗑️</button>
                     </form>
                 </td>
@@ -105,5 +115,27 @@
     </table>
 </div>
 {% endif %}
+
+<script>
+async function reviveKey(keyId, btn) {
+    btn.textContent = '🔄...'; btn.disabled = true;
+    try {
+        const res = await fetch('/api/keys/revive/' + keyId, {
+            method: 'POST',
+            headers: {'X-CSRF-Token': '{{ csrf_token() }}'}
+        });
+        const data = await res.json();
+        if (data.revived) {
+            alert('✅ Key revived! Account is active again.');
+            location.reload();
+        } else {
+            alert('⚠️ Key still dead: ' + (data.error || 'HTTP ' + data.http_code || 'account still suspended'));
+        }
+    } catch(err) {
+        alert('❌ Error: ' + err.message);
+    }
+    btn.textContent = '🔄 Revive'; btn.disabled = false;
+}
+</script>
 
 {% endblock %}

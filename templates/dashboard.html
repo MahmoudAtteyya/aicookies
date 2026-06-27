@@ -4,6 +4,22 @@
 
 <h2 style="margin-bottom:1.5rem;">📊 Dashboard</h2>
 
+<!-- ═══════════ DEAD KEYS ALERT ═══════════ -->
+{% if dead_keys and dead_keys > 0 %}
+<div class="card" style="border-left:4px solid var(--red);margin-bottom:1.5rem;background:rgba(239,68,68,0.08);">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+        <div>
+            <strong style="color:var(--red);">⚠️ {{ dead_keys }} Dead Key(s)</strong>
+            <p style="margin:0.3rem 0 0;font-size:0.85rem;color:var(--text-dim);">Suspended or depleted accounts. Revive them after resolving billing.</p>
+        </div>
+        <form method="POST" action="/api/keys/revive" id="reviveForm">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary" onclick="reviveAllKeys(event)">🔄 Revive All Dead Keys</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 <!-- ═══════════ API PROVIDERS ═══════════ -->
 <h3 style="margin-bottom:1rem;">🔑 API Keys</h3>
 <div class="stats">
@@ -73,5 +89,30 @@
 <div style="margin-top:1.5rem;">
     <a href="/upload" class="btn">⬆️ Upload More Cookies</a>
 </div>
+
+<script>
+async function reviveAllKeys(e) {
+    e.preventDefault();
+    const form = e.target.closest('form');
+    const btn = form.querySelector('button');
+    btn.textContent = '🔄 Checking...'; btn.disabled = true;
+    try {
+        const res = await fetch('/api/keys/revive', {
+            method: 'POST',
+            headers: {'X-CSRF-Token': form.querySelector('[name=_csrf_token]').value}
+        });
+        const data = await res.json();
+        if (data.revived > 0) {
+            alert('✅ Revived ' + data.revived + ' key(s)! They are now active.');
+            location.reload();
+        } else {
+            alert('⚠️ No keys could be revived. Check if billing is resolved.');
+        }
+    } catch(err) {
+        alert('❌ Error: ' + err.message);
+    }
+    btn.textContent = '🔄 Revive All Dead Keys'; btn.disabled = false;
+}
+</script>
 
 {% endblock %}

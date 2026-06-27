@@ -13,6 +13,17 @@ from curl_cffi import requests as curl_requests
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
+# ── Production security settings ──
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") == "production"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = 1800  # 30 min
+
+# ── Jinja context processor: inject CSRF token into all templates ──
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf_token)
+
 # ═══════════════════════════════════════════════════════════════════════════
 # SECURITY LAYER — Fernet cookie encryption + API key minting + validation
 # (Adapted from zlexdev/claude-webapi gateway/features/auth/)
@@ -253,8 +264,64 @@ def login_required(f):
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Unauthorized"}), 401
             return redirect(url_for("login_page"))
+        # ── Session timeout (30 min inactivity) ──
+        last_activity = session.get("_last_activity")
+        if last_activity:
+            import time as _t
+            if _t.time() - float(last_activity) > 1800:
+                session.clear()
+                flash("⏰ Session expired — please login again", "warning")
+                return redirect(url_for("login_page"))
+        session["_last_activity"] = str(time.time())
         return f(*args, **kwargs)
     return decorated
+
+# ── CSRF Protection ──────────────────────────────────────────────────────
+def generate_csrf_token():
+    """Generate and store a CSRF token in the session."""
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(32)
+    return session["_csrf_token"]
+
+def validate_csrf_token(token):
+    """Validate a CSRF token against the session token."""
+    if not token or not session.get("_csrf_token"):
+        return False
+    return _hmac.compare_digest(str(token), str(session["_csrf_token"]))
+
+def csrf_protect(f):
+    """Decorator for CSRF protection on POST/PUT/DELETE routes."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.method in ("POST", "PUT", "DELETE"):
+            token = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token")
+            if not validate_csrf_token(token):
+                app.logger.warning(f"[csrf] Blocked request to {request.path} from {request.remote_addr}")
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "CSRF token missing or invalid"}), 403
+                flash("❌ Security token expired — please try again", "danger")
+                return redirect(request.referrer or url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+# ── Login Rate Limiter ───────────────────────────────────────────────────
+_login_attempts = {}  # {ip: [(timestamp, ...)]}
+_login_lock = threading.Lock()
+
+def check_login_rate_limit(ip):
+    """Allow max 5 login attempts per IP per 10 minutes. Returns (allowed, remaining, wait_s)."""
+    now = time.time()
+    with _login_lock:
+        if ip not in _login_attempts:
+            _login_attempts[ip] = []
+        # Remove attempts older than 600s
+        _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < 600]
+        if len(_login_attempts[ip]) >= 5:
+            wait = int(600 - (now - _login_attempts[ip][0]))
+            return False, 0, max(wait, 1)
+        _login_attempts[ip].append(now)
+        remaining = 5 - len(_login_attempts[ip])
+        return True, remaining, 0
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MODEL REGISTRY — maps model slugs to providers
@@ -403,11 +470,63 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             proxy = get_proxy_url()  # Rotating proxy, no session ID for API keys
             with httpx.Client(proxy=proxy, timeout=120.0, verify=False) as client:
                 resp = client.post(url, content=payload, headers=headers)
-            
+
             latency = int((time.time() - start) * 1000)
+
+            # ── Check response status BEFORE recording success ──
+            # If status >= 400, handle error and try next key
+            if resp.status_code >= 400:
+                code = resp.status_code
+                try: body_err = resp.text[:500]
+                except: body_err = ""
+                body_err_lower = body_err.lower()
+
+                # ── Determine error type and handle accordingly ──
+                # 412 = Account suspended (Fireworks-specific — permanent death)
+                # 402 = Payment required / depleted
+                # "suspended" / "spending limit" / "failure to pay" = permanent
+                # 429 = Rate limited (temporary)
+                # 401/403 = Auth error (permanent for prepaid, temp for free)
+
+                is_permanent = (
+                    code == 412 or
+                    code == 402 or
+                    "insufficient" in body_err_lower or
+                    "quota" in body_err_lower or
+                    "suspended" in body_err_lower or
+                    "spending limit" in body_err_lower or
+                    "failure to pay" in body_err_lower or
+                    "billing" in body_err_lower and "limit" in body_err_lower
+                )
+
+                if is_permanent:
+                    # Permanent death — account suspended/depleted, won't recover
+                    mark_key_dead(key_id, f"{code} Account suspended/depleted: {body_err[:200]}")
+                    error_msg = "ACCOUNT_SUSPENDED"
+                    app.logger.warning(f"[proxy] Key #{key_id} ({provider_slug}) marked DEAD — {code}: {body_err[:100]}")
+                elif code == 429:
+                    # Temporary rate limit — rotate to back
+                    mark_key_rate_limited(key_id, f"429: {body_err[:200]}")
+                    error_msg = "RATE_LIMITED"
+                elif code in (401, 403):
+                    if provider_type == "prepaid" or provider_slug == "fireworks":
+                        mark_key_dead(key_id, f"{code} Auth failed: {body_err[:200]}")
+                        error_msg = "DEAD_AUTH"
+                    else:
+                        mark_key_error(key_id, f"{code}: {body_err[:200]}")
+                        error_msg = "AUTH_ERROR"
+                else:
+                    mark_key_error(key_id, f"{code}: {body_err[:200]}")
+                    error_msg = f"HTTP_{code}"
+
+                record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
+                tried_keys.append({"key_id": key_id, "error": error_msg, "code": code})
+                continue  # ← Try next key!
+
+            # ── Success — record and return ──
             bump_key_usage(key_id)
             record_proxy_request(model_slug, provider_slug, key_id, "ok", latency)
-            
+
             if is_streaming:
                 def generate():
                     for chunk in resp.iter_bytes(8192):
@@ -428,20 +547,23 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             latency = int((time.time() - start) * 1000)
             code = e.response.status_code
             body_err = e.response.text[:500]
-            
-            if code == 402 or "insufficient" in body_err.lower() or "quota" in body_err.lower():
-                if provider_type == "prepaid" or provider_slug == "fireworks":
-                    mark_key_dead(key_id, f"402 Depleted: {body_err[:200]}")
-                    error_msg = "DEPLETED"
-                else:
-                    mark_key_rate_limited(key_id, f"402: {body_err[:200]}")
-                    error_msg = "RATE_LIMITED_402"
+            # ── Same logic as above — handle all error codes ──
+            body_err_lower = body_err.lower()
+            is_permanent = (
+                code == 412 or code == 402 or
+                "insufficient" in body_err_lower or "quota" in body_err_lower or
+                "suspended" in body_err_lower or "spending limit" in body_err_lower or
+                "failure to pay" in body_err_lower
+            )
+            if is_permanent:
+                mark_key_dead(key_id, f"{code} Account suspended/depleted: {body_err[:200]}")
+                error_msg = "ACCOUNT_SUSPENDED"
             elif code == 429:
                 mark_key_rate_limited(key_id, f"429: {body_err[:200]}")
                 error_msg = "RATE_LIMITED"
             elif code in (401, 403):
-                if provider_type == "prepaid":
-                    mark_key_dead(key_id, f"{code}: {body_err[:200]}")
+                if provider_type == "prepaid" or provider_slug == "fireworks":
+                    mark_key_dead(key_id, f"{code} Auth failed: {body_err[:200]}")
                     error_msg = "DEAD_AUTH"
                 else:
                     mark_key_error(key_id, f"{code}: {body_err[:200]}")
@@ -449,7 +571,6 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             else:
                 mark_key_error(key_id, f"{code}: {body_err[:200]}")
                 error_msg = f"HTTP_{code}"
-            
             record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
             tried_keys.append({"key_id": key_id, "error": error_msg, "code": code})
             continue
@@ -462,11 +583,15 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             tried_keys.append({"key_id": key_id, "error": error_msg})
             continue
     
-    # All keys failed — return clean error without exposing provider internals
+    # All keys failed — return clean error with failover details
+    app.logger.warning(f"[proxy] All {len(tried_keys)} keys failed for {provider_slug}/{model_slug}: {tried_keys}")
     return jsonify({
         "error": "Service Unavailable",
-        "message": "All providers are currently busy. Please try again in a moment.",
+        "message": f"All {len(tried_keys)} provider key(s) are currently unavailable. Failover exhausted.",
         "model": model_slug,
+        "provider": provider_slug,
+        "tried_keys": len(tried_keys),
+        "errors": [t.get("error", "unknown") for t in tried_keys],
         "retry_after_ms": 5000,
     }), 503
 
@@ -2019,18 +2144,69 @@ def inject_model_into_body(body, real_model, provider_slug):
 # PROXY AUTH — check API key on /v1/* if configured
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _verify_token_in_db(raw_key):
+    """Check if a generated sk-aic- token exists and is active in the DB.
+    Returns (is_valid, token_row_or_None)."""
+    try:
+        conn = get_db()
+        conn.execute("""CREATE TABLE IF NOT EXISTS proxy_api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key_hash TEXT UNIQUE NOT NULL,
+            label TEXT DEFAULT 'default',
+            is_active INTEGER DEFAULT 1,
+            usage_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used_at TIMESTAMP
+        )""")
+        key_hash = hash_api_key(raw_key)
+        row = conn.execute("SELECT * FROM proxy_api_keys WHERE key_hash=? AND is_active=1", (key_hash,)).fetchone()
+        if row:
+            conn.execute("UPDATE proxy_api_keys SET usage_count=usage_count+1, last_used_at=CURRENT_TIMESTAMP WHERE id=?", (row["id"],))
+            conn.commit()
+        conn.close()
+        return (row is not None), row
+    except Exception:
+        return False, None
+
 def check_proxy_auth():
-    """If PROXY_API_KEY_HASH is set, require Bearer token on all /v1/* routes.
+    """If PROXY_API_KEY_HASH is set or proxy_api_keys table has tokens, require Bearer token.
+    Checks: 1) legacy env hash, 2) generated tokens in DB.
     Uses constant-time comparison to prevent timing attacks."""
     if not PROXY_API_KEY_HASH:
-        return None
+        # Check if any generated tokens exist in DB — if none, no auth required
+        try:
+            conn = get_db()
+            conn.execute("""CREATE TABLE IF NOT EXISTS proxy_api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key_hash TEXT UNIQUE NOT NULL,
+                label TEXT DEFAULT 'default',
+                is_active INTEGER DEFAULT 1,
+                usage_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP
+            )""")
+            count = conn.execute("SELECT COUNT(*) FROM proxy_api_keys WHERE is_active=1").fetchone()[0]
+            conn.close()
+            if count == 0:
+                return None  # No auth configured at all
+        except Exception:
+            return None
+
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return jsonify({"error": "Unauthorized — valid API key required", "hint": "Use Authorization: Bearer <key>"}), 401
     raw_key = auth[7:]
-    if not verify_api_key(raw_key, PROXY_API_KEY_HASH):
-        return jsonify({"error": "Unauthorized — invalid API key"}), 401
-    return None
+
+    # 1) Check legacy env hash
+    if PROXY_API_KEY_HASH and verify_api_key(raw_key, PROXY_API_KEY_HASH):
+        return None
+
+    # 2) Check generated tokens in DB
+    is_valid, _ = _verify_token_in_db(raw_key)
+    if is_valid:
+        return None
+
+    return jsonify({"error": "Unauthorized — invalid API key"}), 401
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PROXY ROUTES
@@ -2200,12 +2376,21 @@ def list_models():
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
     if request.method == "POST":
+        # ── Login rate limiting ──
+        allowed, remaining, wait_s = check_login_rate_limit(request.remote_addr)
+        if not allowed:
+            flash(f"⏰ Too many login attempts. Please wait {wait_s}s.", "danger")
+            return render_template("login.html"), 429
         if request.form.get("username") == AUTH_USERNAME and check_password_hash(AUTH_PASSWORD_HASH, request.form.get("password", "")):
             session["logged_in"] = True
             session["username"] = AUTH_USERNAME
+            session["_last_activity"] = str(time.time())
+            # Clear failed attempts on successful login
+            with _login_lock:
+                _login_attempts.pop(request.remote_addr, None)
             flash("✅ Login successful", "success")
             return redirect(url_for("dashboard"))
-        flash("❌ Invalid credentials", "danger")
+        flash(f"❌ Invalid credentials ({remaining} attempts remaining)", "danger")
     return render_template("login.html")
 
 @app.route("/logout")
@@ -2261,13 +2446,99 @@ def generate_key_page():
         raw_key, key_hash = generate_api_key()
         # Store the hash in the DB (cookie_files table repurposed as generic kv)
         conn = get_db()
-        conn.execute("CREATE TABLE IF NOT EXISTS proxy_api_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, key_hash TEXT UNIQUE NOT NULL, label TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_used_at TIMESTAMP)")
+        conn.execute("""CREATE TABLE IF NOT EXISTS proxy_api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key_hash TEXT UNIQUE NOT NULL,
+            label TEXT DEFAULT 'default',
+            is_active INTEGER DEFAULT 1,
+            usage_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used_at TIMESTAMP
+        )""")
         conn.execute("INSERT OR IGNORE INTO proxy_api_keys (key_hash, label) VALUES (?, ?)", (key_hash, request.form.get("label", "default")))
         conn.commit()
         conn.close()
         flash(f"🔑 API Key generated: {raw_key}", "success")
         return render_template("key_generated.html", api_key=raw_key)
     return render_template("key_generated.html", api_key=None)
+
+# ── Token Management UI ────────────────────────────────────────────────
+@app.route("/tokens")
+@login_required
+def tokens_page():
+    """Token management dashboard — list all generated API tokens."""
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS proxy_api_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_hash TEXT UNIQUE NOT NULL,
+        label TEXT DEFAULT 'default',
+        is_active INTEGER DEFAULT 1,
+        usage_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_used_at TIMESTAMP
+    )""")
+    tokens = conn.execute("SELECT * FROM proxy_api_keys ORDER BY created_at DESC").fetchall()
+    total_requests = conn.execute("SELECT COALESCE(SUM(usage_count),0) FROM proxy_api_keys").fetchone()[0]
+    conn.close()
+    return render_template("tokens.html", tokens=tokens, total_requests=total_requests)
+
+@app.route("/tokens/create", methods=["POST"])
+@login_required
+def tokens_create():
+    """Create a new API token. Returns JSON for the modal UI."""
+    if request.is_json:
+        label = (request.json.get("label") or "").strip()
+    else:
+        label = (request.form.get("label") or "").strip()
+    raw_key, key_hash = generate_api_key()
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS proxy_api_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_hash TEXT UNIQUE NOT NULL,
+        label TEXT DEFAULT 'default',
+        is_active INTEGER DEFAULT 1,
+        usage_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_used_at TIMESTAMP
+    )""")
+    conn.execute("INSERT OR IGNORE INTO proxy_api_keys (key_hash, label) VALUES (?, ?)", (key_hash, label or "default"))
+    conn.commit()
+    conn.close()
+    app.logger.info(f"[tokens] New API key minted with label '{label}'")
+    return jsonify({"api_key": raw_key, "label": label or "default"})
+
+@app.route("/tokens/pause/<int:token_id>", methods=["POST"])
+@login_required
+def tokens_pause(token_id):
+    """Pause a token — it stops working immediately but can be reactivated."""
+    conn = get_db()
+    conn.execute("UPDATE proxy_api_keys SET is_active=0 WHERE id=?", (token_id,))
+    conn.commit()
+    conn.close()
+    flash("⏸ Token paused", "info")
+    return redirect(url_for("tokens_page"))
+
+@app.route("/tokens/activate/<int:token_id>", methods=["POST"])
+@login_required
+def tokens_activate(token_id):
+    """Reactivate a paused token."""
+    conn = get_db()
+    conn.execute("UPDATE proxy_api_keys SET is_active=1 WHERE id=?", (token_id,))
+    conn.commit()
+    conn.close()
+    flash("▶ Token activated", "success")
+    return redirect(url_for("tokens_page"))
+
+@app.route("/tokens/revoke/<int:token_id>", methods=["POST"])
+@login_required
+def tokens_revoke(token_id):
+    """Permanently revoke (delete) a token."""
+    conn = get_db()
+    conn.execute("DELETE FROM proxy_api_keys WHERE id=?", (token_id,))
+    conn.commit()
+    conn.close()
+    flash("🗑 Token revoked permanently", "danger")
+    return redirect(url_for("tokens_page"))
 
 # ── Cookie routes ───────────────────────────────────────────────────────
 @app.route("/upload", methods=["GET", "POST"])
@@ -2434,6 +2705,41 @@ def api_next_key(provider):
 @login_required
 def api_mark_rl(key_id): mark_key_rate_limited(key_id, "manual"); return jsonify({"status": "ok"})
 
+@app.route("/api/keys/revive", methods=["POST"])
+@login_required
+def api_revive_keys():
+    """Manually trigger revive of dead keys. Returns count revived."""
+    count = revive_dead_keys()
+    return jsonify({"status": "ok", "revived": count})
+
+@app.route("/api/keys/revive/<int:key_id>", methods=["POST"])
+@login_required
+def api_revive_single(key_id):
+    """Manually revive a single dead key — useful after billing resolved."""
+    conn = get_db()
+    key = conn.execute("SELECT k.*, p.base_url, p.slug FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE k.id=?", (key_id,)).fetchone()
+    if not key:
+        conn.close()
+        return jsonify({"error": "Key not found"}), 404
+    key = dict(key)
+    try:
+        url = f"{key['base_url']}/models"
+        headers = {"Authorization": f"Bearer {key['key_value']}"}
+        with httpx.Client(timeout=10.0, verify=False) as c:
+            r = c.get(url, headers=headers)
+        if r.status_code == 200:
+            conn.execute("UPDATE api_keys SET dead=0, is_active=1, error_count=0, last_error_msg=NULL WHERE id=?", (key_id,))
+            conn.commit()
+            conn.close()
+            app.logger.info(f"[revive] Key #{key_id} manually revived by admin")
+            return jsonify({"status": "ok", "revived": True})
+        else:
+            conn.close()
+            return jsonify({"status": "ok", "revived": False, "http_code": r.status_code})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "ok", "revived": False, "error": str(e)[:200]})
+
 @app.route("/api/keys/reset-usage/<provider>", methods=["POST"])
 @login_required
 def api_reset_usage(provider):
@@ -2544,6 +2850,47 @@ def unhandled_exception(e):
     if isinstance(e, httpx.HTTPStatusError):
         return jsonify({"error": "Upstream HTTP Error", "message": str(e)[:200]}), 502
     return jsonify({"error": "Internal Server Error", "message": str(e)[:200], "type": type(e).__name__}), 500
+
+# ── Key Revival (manual only — triggered by admin from UI) ────────────────
+_revive_lock = threading.Lock()
+
+def revive_dead_keys():
+    """Check if 'dead' keys can be revived. Sends a lightweight /models request
+    to each dead key. If it returns 200, the account has been reactivated and
+    the key is restored. Called ONLY manually by admin — no auto-revive."""
+    with _revive_lock:
+        conn = get_db()
+        dead = conn.execute("""
+            SELECT k.id, k.key_value, k.last_error_msg, p.base_url, p.slug
+            FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
+            WHERE k.dead = 1
+        """).fetchall()
+        if not dead:
+            conn.close()
+            return 0
+        revived = 0
+        for k in dead:
+            k = dict(k)
+            try:
+                url = f"{k['base_url']}/models"
+                headers = {"Authorization": f"Bearer {k['key_value']}"}
+                with httpx.Client(timeout=10.0, verify=False) as c:
+                    r = c.get(url, headers=headers)
+                if r.status_code == 200:
+                    conn.execute(
+                        "UPDATE api_keys SET dead=0, is_active=1, error_count=0, "
+                        "last_error_msg=NULL WHERE id=?",
+                        (k["id"],),
+                    )
+                    conn.commit()
+                    revived += 1
+                    app.logger.info(f"[revive] Key #{k['id']} ({k['slug']}) revived — account reactivated")
+            except Exception:
+                pass  # Still dead, skip
+        conn.close()
+        if revived:
+            app.logger.info(f"[revive] Revived {revived}/{len(dead)} dead keys (manual trigger)")
+        return revived
 
 # ── Main ──────────────────────────────────────────────────────────────────
 if __name__ == "__main__":

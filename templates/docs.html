@@ -268,6 +268,187 @@ data: [DONE]</code></pre>
 <p><strong>Rate limits:</strong> Claude uses session-based limits (per 5 hours / 7 days). The proxy automatically rotates between uploaded cookie sets when one hits the limit. Cloudflare challenges trigger a cooldown (not permanent death) — the token auto-recovers after 5 minutes.</p>
 
 <!-- ═══════════════════════════════════════════ -->
+<h2>🔒 Security Features (v3.0)</h2>
+
+<h3>🔐 Fernet Cookie Encryption</h3>
+<p>Uploaded Claude cookies are encrypted at rest using <strong>Fernet symmetric encryption</strong> (AES-128-CBC + HMAC-SHA256). Set <code>COOKIE_ENCRYPTION_KEY</code> environment variable to enable. If not set, the system gracefully falls back to plaintext storage.</p>
+<pre><code># Generate a Fernet key for your deployment
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Set in docker-compose.yml:
+COOKIE_ENCRYPTION_KEY=your-generated-key-here</code></pre>
+
+<h3>🔑 API Key Minting</h3>
+<p>Generate multiple API keys with <code>sk-aic-</code> prefix for different clients/services. Keys are stored as SHA-256 hashes (never plaintext) and verified using constant-time comparison to prevent timing attacks.</p>
+<div class="endpoint-box">POST https://aicookies.elliaa.com/generate-key (admin only)</div>
+<pre><code># Generate a new API key
+curl -X POST https://aicookies.elliaa.com/generate-key \
+  -H "Authorization: Bearer ADMIN_KEY"
+
+# Response — save the raw key (shown only once!)
+{"api_key": "sk-aic-a1b2c3d4...", "key_hash": "e5f6..."}</code></pre>
+
+<h3>🛡️ Additional Security</h3>
+<ul>
+    <li><strong>Cookie name validation</strong> — only safe characters accepted in cookie names</li>
+    <li><strong>XSRF auto-extraction</strong> — XSRF-TOKEN extracted from cookies and set as header automatically</li>
+    <li><strong>Constant-time API key verification</strong> — <code>hmac.compare_digest</code> prevents timing attacks</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>♻️ Reliability Features (v3.0)</h2>
+
+<h3>🔄 Retry Middleware</h3>
+<p>Failed requests to Claude automatically retry with <strong>exponential backoff + jitter</strong>. The middleware respects <code>Retry-After</code> headers from Claude's API and caps maximum delay at 60 seconds.</p>
+<pre><code># Retry behavior (automatic, no client config needed)
+Attempt 1: ~2s delay (if failed)
+Attempt 2: ~4s delay + jitter
+Attempt 3: ~8s delay + jitter
+→ Max 3 attempts, then return error to client</code></pre>
+
+<h3>⏱️ Rate Limiting</h3>
+<p>Per-client-IP rate limiting using a <strong>token bucket algorithm</strong> (60 requests/minute with burst capacity). Returns <code>429 Too Many Requests</code> with <code>Retry-After</code> header when exceeded.</p>
+<pre><code>// 429 — Rate limit exceeded
+{"error": "Rate limit exceeded", "retry_after": 15}
+// Headers: X-RateLimit-Remaining: 0</code></pre>
+
+<h3>🚫 Proxy Blacklist</h3>
+<p>The gateway automatically blacklists proxy IPs that fail repeatedly. After 3 consecutive failures, a proxy is blacklisted for 5 minutes — subsequent requests skip blacklisted proxies automatically.</p>
+<pre><code># Check proxy blacklist status
+curl https://aicookies.elliaa.com/v1/health
+# → "proxy_blacklist": {"blacklisted_count": 0, "entries": []}</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>🧠 Orchestration Features (v3.0)</h2>
+
+<h3>📌 Conversation Affinity</h3>
+<p>Multi-turn conversations are <strong>pinned to the same Claude cookie</strong> using a SHA-256 fingerprint of the first user message. This preserves conversation context across turns — Claude sees the same session for follow-up questions.</p>
+<pre><code># Turn 1 → cookie #5 is selected → affinity pin set
+{"messages": [{"role": "user", "content": "What is Python?"}]}
+# X-Proxy-Rotation: token 5 (used 1x)
+
+# Turn 2 → SAME cookie #5 is used (affinity pin)
+{"messages": [
+  {"role": "user", "content": "What is Python?"},
+  {"role": "assistant", "content": "Python is..."},
+  {"role": "user", "content": "Show me an example"}
+]}
+# X-Proxy-Rotation: token 5 (used 2x) ← same cookie!</code></pre>
+
+<h3>📊 Session Tier System</h3>
+<p>Claude cookies are automatically classified into tiers based on subscription level. Higher-tier cookies are prioritized for complex requests:</p>
+<ul>
+    <li><strong>Max tier</strong> — highest priority, most capacity</li>
+    <li><strong>Pro tier</strong> — medium priority</li>
+    <li><strong>Free tier</strong> — lowest priority, rate-limited</li>
+</ul>
+
+<h3>🏥 Availability State Tracking</h3>
+<p>Each cookie has an availability state that determines if it's usable:</p>
+<ul>
+    <li><span style="color:#7ee787;">● Active</span> — ready to serve requests</li>
+    <li><span style="color:#d2991d;">● Parked</span> — temporarily rate-limited (auto-recovers after cooldown)</li>
+    <li><span style="color:#f85149;">● Quarantined</span> — dead/expired (needs manual intervention)</li>
+</ul>
+<pre><code># Check orchestration status
+curl https://aicookies.elliaa.com/v1/health
+# → "claude_orchestration": {
+#     "active": 3, "parked": 1, "quarantined": 0,
+#     "affinity_pins": 12
+#   }</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>🛠️ Tool Calling & Multimodal (v3.0)</h2>
+
+<h3>🔧 Custom Function Calling (Path B Emulation)</h3>
+<p>The gateway supports OpenAI-compatible <code>tools</code> and <code>tool_choice</code> parameters. When you send function definitions, the gateway injects them as a natural preamble — Claude knows what tools are available and calls them using <code>&lt;function_calls&gt;</code> XML format. The gateway parses the XML and returns standard OpenAI <code>tool_calls</code> in the response.</p>
+<pre><code>curl -X POST https://aicookies.elliaa.com/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_AICOOKIES_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-6",
+    "messages": [{"role": "user", "content": "What is the weather in Cairo?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": {"city": {"type": "string", "description": "City name"}},
+          "required": ["city"]
+        }
+      }
+    }],
+    "tool_choice": "auto"
+  }'
+
+# Response — standard OpenAI tool_calls format
+{
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [{
+        "id": "call_abc123",
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": "{\"city\": \"Cairo\"}"}
+      }]
+    },
+    "finish_reason": "tool_calls"
+  }]
+}</code></pre>
+
+<h3>📋 Tool History (Multi-Turn Tool Calls)</h3>
+<p>Follow-up messages with <code>role: "tool"</code> results are rendered naturally so Claude understands the tool execution context:</p>
+<pre><code>{"messages": [
+  {"role": "user", "content": "Weather in Cairo?"},
+  {"role": "assistant", "content": null, "tool_calls": [...]},
+  {"role": "tool", "tool_call_id": "call_abc", "content": "Sunny, 32°C"},
+  {"role": "user", "content": "What about tomorrow?"}
+]}</code></pre>
+
+<h3>🖼️ Multimodal Content Support</h3>
+<p>Messages with content as a list of blocks (text + image URLs) are handled natively. Image URLs are described as placeholders since Claude.ai's web interface doesn't accept image URLs in prompt text.</p>
+<pre><code>{"messages": [{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Describe this image"},
+    {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}}
+  ]
+}]}</code></pre>
+
+<h3>🎯 tool_choice Options</h3>
+<ul>
+    <li><code>"none"</code> — don't use any tools</li>
+    <li><code>"auto"</code> — Claude decides (default)</li>
+    <li><code>"required"</code> — must call at least one tool</li>
+    <li><code>{"function": {"name": "..."}}</code> — must call specific function</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>💬 Conversation Features (v3.0)</h2>
+
+<h3>🏷️ Title Generation</h3>
+<p>After each non-streaming Claude response, the gateway generates a <strong>conversation title</strong> via Claude's title API endpoint. The title is included in the response as a <code>title</code> field when available.</p>
+<pre><code>// Response with title
+{
+  "id": "claude-a1b2c3d4",
+  "title": "Python Programming Basics",
+  "choices": [...]
+}</code></pre>
+
+<h3>💾 Response Caching</h3>
+<p>Identical requests (same affinity key + prompt hash) are cached for 5 minutes. Cached responses include <code>"cached": true</code> and the <code>X-Cache-Hit: true</code> header — zero latency, zero Claude API calls.</p>
+<pre><code># First request — hits Claude, caches response
+curl ... -d '{"model":"claude-sonnet-4-6","messages":[...]}'
+# X-Cache-Hit: false
+
+# Identical request within 5 min — served from cache
+curl ... -d '{"model":"claude-sonnet-4-6","messages":[...]}'
+# X-Cache-Hit: true
+# {"cached": true, "choices": [...]}</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
 <h2>🔄 Smart Key Rotation</h2>
 <ol>
     <li>Request → least-used active key → real provider API</li>

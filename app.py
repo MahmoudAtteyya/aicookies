@@ -671,7 +671,7 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                             "Content-Type": fb_resp.headers.get("Content-Type", "text/event-stream"),
                             "X-Proxy-Provider": fb_provider, "X-Proxy-Key": str(fb_key_id),
                             "X-Proxy-Latency": str(fb_latency), "X-Proxy-Model": fb_model,
-                            "X-Proxy-Fallback": f"{provider_slug}→{fb_provider}",
+                            "X-Proxy-Fallback": f"{provider_slug}->{fb_provider}",
                             "X-Proxy-Fallback-Reason": "Primary provider exhausted",
                         })
                     else:
@@ -679,7 +679,7 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                             "Content-Type": fb_resp.headers.get("Content-Type", "application/json"),
                             "X-Proxy-Provider": fb_provider, "X-Proxy-Key": str(fb_key_id),
                             "X-Proxy-Latency": str(fb_latency),
-                            "X-Proxy-Fallback": f"{provider_slug}→{fb_provider}",
+                            "X-Proxy-Fallback": f"{provider_slug}->{fb_provider}",
                             "X-Proxy-Fallback-Reason": "Primary provider exhausted",
                         }
                 else:
@@ -2844,11 +2844,13 @@ def proxy_health():
 
 @app.after_request
 def add_cors_headers(response):
-    """Add permissive CORS headers so API works from any frontend."""
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
-    response.headers["Access-Control-Max-Age"] = "86400"
+    """Add CORS headers for API endpoints only. Frontend pages are protected."""
+    # Only allow CORS on API endpoints (/v1/*) — frontend pages should not be CORS-accessible
+    if request.path.startswith("/v1/"):
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+        response.headers["Access-Control-Max-Age"] = "86400"
     # Add rate limit headers so clients can adapt
     response.headers["X-RateLimit-Limit"] = "100"
     response.headers["X-RateLimit-Remaining"] = "99"
@@ -2957,11 +2959,28 @@ def dashboard():
     conn.close()
     return render_template("dashboard.html", files=cookie_files, claude_count=claude_count, providers=providers, dead_keys=dead_keys, models=MODELS)
 
+@app.route("/dashboard")
+@login_required
+def dashboard_alias():
+    """Alias for / — redirects to main dashboard."""
+    return redirect(url_for("dashboard"))
+
+@app.route("/cookies")
+@login_required
+def cookies_page():
+    """Cookie files list page."""
+    conn = get_db()
+    cookie_files = conn.execute("SELECT id, platform, filename, cookie_count, uploaded_at FROM cookie_files ORDER BY uploaded_at DESC").fetchall()
+    conn.close()
+    return render_template("cookies.html", files=cookie_files)
+
 @app.route("/docs")
+@login_required
 def docs_page():
     return render_template("docs.html", models=MODELS)
 
 @app.route("/docs.md")
+@login_required
 def docs_md():
     """Generate downloadable markdown documentation."""
     md = []

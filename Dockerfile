@@ -30,4 +30,5 @@ EXPOSE 5050
 ENV PYTHONUNBUFFERED=1
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 
-CMD ["python3", "app.py"]
+# Production WSGI with gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]

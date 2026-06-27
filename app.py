@@ -173,10 +173,11 @@ def get_current_proxy_ip():
         return None, None
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 def init_db():
@@ -2594,15 +2595,27 @@ def delete_file(file_id):
 def keys_page():
     conn = get_db()
     if request.method == "POST":
-        pid = request.form.get("provider_id")
-        label = request.form.get("label", "").strip()
-        key_val = request.form.get("key_value", "").strip()
-        if pid and key_val:
-            conn.execute("INSERT INTO api_keys (provider_id, label, key_value) VALUES (?,?,?)", (int(pid), label, key_val))
-            conn.commit()
-            flash("✅ Key added", "success")
-        else:
-            flash("❌ Provider and key required", "danger")
+        try:
+            pid = request.form.get("provider_id")
+            label = request.form.get("label", "").strip()
+            key_val = request.form.get("key_value", "").strip()
+            if pid and key_val:
+                # Validate provider exists before insert (prevent FK violation)
+                prov = conn.execute("SELECT id FROM api_providers WHERE id=?", (int(pid),)).fetchone()
+                if not prov:
+                    flash("❌ Invalid provider", "danger")
+                    conn.close()
+                    return redirect(url_for("keys_page"))
+                conn.execute("INSERT INTO api_keys (provider_id, label, key_value) VALUES (?,?,?)", (int(pid), label, key_val))
+                conn.commit()
+                flash("✅ Key added", "success")
+            else:
+                flash("❌ Provider and key required", "danger")
+        except Exception as e:
+            conn.rollback()
+            flash(f"❌ Error: {str(e)[:100]}", "danger")
+        finally:
+            conn.close()
         return redirect(url_for("keys_page"))
     
     providers = conn.execute("SELECT * FROM api_providers ORDER BY name").fetchall()

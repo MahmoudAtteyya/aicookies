@@ -469,12 +469,13 @@ def extract_claude_cookies(cookie_file):
 def transform_claude_stream(sse_text, conv_uuid, real_model):
     """Transform Anthropic SSE stream chunks → OpenAI-compatible SSE stream.
     
-    Filters out Claude's internal tool/function call XML artifacts that would
-    leak as raw text to API consumers (e.g. <function_calls>, <invoke>).
+    Handles both old format (completion field) and new format (content_block_delta
+    with text_delta) used when tools/web search are enabled.
+    Filters out tool_use/tool_result blocks — only text reaches the client.
     
     Input (Claude/Anthropic):
-        event: completion
-        data: {"type":"completion","completion":"Hello","stop_reason":null,...}
+        Old: data: {"completion":"Hello","stop_reason":null}
+        New: data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}
     
     Output (OpenAI):
         data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"}}]}
@@ -493,8 +494,24 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
         except (json.JSONDecodeError, ValueError):
             continue
         
-        completion_text = obj.get("completion", "")
+        # Extract text from either format
+        completion_text = ""
+        
+        # Old format: direct completion field
+        if obj.get("completion"):
+            completion_text = obj["completion"]
+        
+        # New format: content_block_delta with text_delta
+        if obj.get("type") == "content_block_delta":
+            delta = obj.get("delta", {})
+            if delta.get("type") == "text_delta":
+                completion_text = delta.get("text", "")
+        
+        # Stop reason (old or new format)
         stop_reason = obj.get("stop_reason")
+        if obj.get("type") == "message_delta":
+            if obj.get("delta", {}).get("stop_reason"):
+                stop_reason = obj["delta"]["stop_reason"]
         
         # ── Filter tool artifacts from each chunk ──
         if completion_text:
@@ -600,7 +617,9 @@ _TOOL_PATTERNS = [
     re.compile(r'<invoke\s+name="[^"]*">.*?</invoke>', re.DOTALL),
     re.compile(r'<invoke\s+name="[^"]*">.*', re.DOTALL),     # unclosed
     re.compile(r'<antml:invoke\s+name="[^"]*">.*?</antml:invoke>', re.DOTALL),
-    re.compile(r'</?(?:function_calls|invoke|function_results|parameter|result)\b[^>]*>', re.IGNORECASE),
+    re.compile(r'<web_search>.*?</web_search>', re.DOTALL | re.IGNORECASE),  # our injected format
+    re.compile(r'<web_search>.*', re.DOTALL | re.IGNORECASE),  # unclosed
+    re.compile(r'</?(?:function_calls|invoke|function_results|parameter|result|web_search)\b[^>]*>', re.IGNORECASE),
     re.compile(r'</?antml:(?:function_calls|invoke|function_results|parameter|result)\b[^>]*>', re.IGNORECASE),
 ]
 
@@ -618,8 +637,8 @@ def filter_tool_artifacts(text):
 def contains_tool_artifacts(text):
     """Check if response text contains tool/function call artifacts."""
     return bool(re.search(
-        r'<(?:function_calls|invoke\b|function_results|antml:function_calls|antml:invoke)',
-        text
+        r'<(?:function_calls|invoke\b|function_results|antml:function_calls|antml:invoke|web_search)',
+        text, re.IGNORECASE
     ))
 
 def map_stop_reason(stop_reason):
@@ -636,7 +655,11 @@ def map_stop_reason(stop_reason):
     return "stop"
 
 def _parse_claude_sse(sse_text):
-    """Parse Anthropic SSE response text → (full_completion, stop_reason)."""
+    """Parse Anthropic SSE response text → (full_completion, stop_reason).
+    
+    Handles both the old format (completion field) and the new format
+    (content_block_delta with text_delta) used when tools are enabled.
+    """
     completion_parts = []
     stop_reason = None
     for line in sse_text.split("\n"):
@@ -646,11 +669,140 @@ def _parse_claude_sse(sse_text):
             obj = json.loads(line[6:])
         except (json.JSONDecodeError, ValueError):
             continue
+        # Old format: direct completion field
         if obj.get("completion"):
             completion_parts.append(obj["completion"])
+        # New format: content_block_delta with text_delta
+        if obj.get("type") == "content_block_delta":
+            delta = obj.get("delta", {})
+            if delta.get("type") == "text_delta":
+                completion_parts.append(delta.get("text", ""))
+        # Stop reason from message_delta or message_stop
         if obj.get("stop_reason"):
             stop_reason = obj["stop_reason"]
+        if obj.get("type") == "message_delta":
+            if obj.get("delta", {}).get("stop_reason"):
+                stop_reason = obj["delta"]["stop_reason"]
     return "".join(completion_parts), stop_reason
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PROXY-SIDE WEB SEARCH — Claude free-tier accounts don't have native web_search.
+# We intercept Claude's tool-use attempts, execute the search ourselves,
+# and inject results back so Claude can continue its response.
+# ═══════════════════════════════════════════════════════════════════════════
+
+import urllib.parse
+
+def proxy_web_search(query, max_results=5):
+    """Execute a web search using DuckDuckGo HTML endpoint (no API key needed).
+    Returns list of {title, url, snippet} dicts.
+    """
+    try:
+        encoded = urllib.parse.quote(query)
+        url = f"https://html.duckduckgo.com/html/?q={encoded}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        }
+        resp = curl_requests.get(url, headers=headers, impersonate="chrome131", timeout=15, verify=False)
+        if resp.status_code != 200:
+            return []
+        results = []
+        # Parse DuckDuckGo HTML results
+        text = resp.text
+        # Extract result blocks
+        blocks = re.findall(r'<div class="result results_links results_links_deep web-result "[^>]*>(.*?)</div>\s*</div>', text, re.DOTALL)
+        if not blocks:
+            blocks = re.findall(r'<div class="result[^"]*"[^>]*>(.*?)</div>\s*</div>', text, re.DOTALL)
+        for block in blocks[:max_results]:
+            title_m = re.search(r'<a[^>]*class="result__a"[^>]*>(.*?)</a>', block, re.DOTALL)
+            url_m = re.search(r'<a[^>]*class="result__a"[^>]*href="([^"]*)"', block)
+            snippet_m = re.search(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', block, re.DOTALL)
+            if title_m and url_m:
+                title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip()
+                raw_url = url_m.group(1)
+                # DuckDuckGo wraps URLs — extract actual URL
+                url_match = re.search(r'uddg=([^&]+)', raw_url)
+                actual_url = urllib.parse.unquote(url_match.group(1)) if url_match else raw_url
+                snippet = ""
+                if snippet_m:
+                    snippet = re.sub(r'<[^>]+>', '', snippet_m.group(1)).strip()
+                results.append({"title": title, "url": actual_url, "snippet": snippet})
+        return results
+    except Exception as e:
+        app.logger.error(f"[web_search] error: {e}")
+        return []
+
+def proxy_web_fetch(url):
+    """Fetch URL content as plain text (truncated to ~4000 chars for prompt injection).
+    Uses Jina Reader API (r.jina.ai) which returns clean markdown from any URL.
+    """
+    try:
+        jina_url = f"https://r.jina.ai/{url}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/plain",
+        }
+        resp = curl_requests.get(jina_url, headers=headers, impersonate="chrome131", timeout=20, verify=False)
+        if resp.status_code == 200:
+            text = resp.text[:4000]
+            return text
+        return f"[Failed to fetch: HTTP {resp.status_code}]"
+    except Exception as e:
+        return f"[Fetch error: {str(e)}]"
+
+def format_search_results(results):
+    """Format search results as a natural text block for Claude to read."""
+    if not results:
+        return "[No search results found]"
+    lines = ["Here are the web search results:"]
+    for i, r in enumerate(results, 1):
+        lines.append(f"\n{i}. {r['title']}")
+        lines.append(f"   URL: {r['url']}")
+        if r['snippet']:
+            lines.append(f"   {r['snippet']}")
+    return "\n".join(lines)
+
+def detect_search_request(text):
+    """Detect if Claude is trying to use web search.
+    Checks for both <web_search>query</web_search> format (our injected instruction)
+    and <function_calls><invoke name="web_search"> format (Claude's native tool calls).
+    Returns (search_query, cleaned_text) or (None, text).
+    """
+    # Pattern 1: <web_search>query</web_search> — our injected format
+    m = re.search(r'<web_search>(.*?)</web_search>', text, re.DOTALL | re.IGNORECASE)
+    if m:
+        query = m.group(1).strip()
+        cleaned = re.sub(r'<web_search>.*?</web_search>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        return query, cleaned.strip()
+    
+    # Pattern 2: Unclosed <web_search>query (stream was cut)
+    m = re.search(r'<web_search>(.*?)$', text, re.DOTALL | re.IGNORECASE)
+    if m:
+        query = m.group(1).strip()
+        cleaned = re.sub(r'<web_search>.*', '', text, flags=re.DOTALL | re.IGNORECASE)
+        # Remove trailing incomplete tags
+        cleaned = re.sub(r'</?web_search>?$', '', cleaned).strip()
+        if query:
+            return query, cleaned
+    
+    # Pattern 3: <function_calls> with web_search (Claude's native format)
+    patterns = [
+        r'<function_calls>\s*<invoke\s+name="web_search"[^>]*>.*?<parameter\s+name="query"[^>]*>(.*?)</parameter>',
+        r'<function_calls>\s*<invoke\s+name="web_search"[^>]*>.*?<parameter\s+name="query">(.*?)</parameter>',
+        r'<antml:function_calls>\s*<antml:invoke\s+name="web_search"[^>]*>.*?<antml:parameter\s+name="query"[^>]*>(.*?)</antml:parameter>',
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.DOTALL)
+        if m:
+            query = m.group(1).strip()
+            cleaned = re.sub(r'<function_calls>.*?</function_calls>', '', text, flags=re.DOTALL)
+            cleaned = re.sub(r'<function_calls>.*', '', cleaned, flags=re.DOTALL)
+            cleaned = re.sub(r'<antml:function_calls>.*?</antml:function_calls>', '', cleaned, flags=re.DOTALL)
+            cleaned = re.sub(r'<antml:function_calls>.*', '', cleaned, flags=re.DOTALL)
+            return query, cleaned.strip()
+    
+    return None, text
+
 
 def _cleanup_claude_conversation(org_uuid, conv_uuid, cookie_header, proxy_url):
     """Delete a conversation from Claude.ai to prevent accumulation."""
@@ -789,13 +941,23 @@ def proxy_to_claude(real_model, model_slug):
             if not conv_uuid:
                 raise Exception("No conversation UUID returned")
             
-            # Step 2: Send prompt
+            # Step 2: Send prompt — with native web search tools enabled
+            # The tools array with web_search_v0 enables Claude's built-in web search.
+            # This is the per-request toggle (conversation settings alone don't work).
+            completion_payload = {
+                "prompt": effective_prompt,
+                "timezone": "Africa/Cairo",
+                "locale": "en-US",
+                "rendering_mode": "messages",
+                "attachments": [],
+                "files": [],
+                "sync_sources": [],
+                "personalized_styles": [],
+                "tools": [{"type": "web_search_v0", "name": "web_search"}],
+            }
             resp2 = curl_requests.post(
                 f"https://claude.ai/api/organizations/{org_uuid}/chat_conversations/{conv_uuid}/completion",
-                json={
-                    "prompt": effective_prompt, "timezone": "Africa/Cairo",
-                    "attachments": [], "files": []
-                },
+                json=completion_payload,
                 headers={**headers, "Accept": "text/event-stream"},
                 **common_kwargs,
             )
@@ -806,32 +968,17 @@ def proxy_to_claude(real_model, model_slug):
             resp1, resp2, conv_uuid = _claude_http_call()
             latency = int((time.time() - start) * 1000)
             
-            # Parse the SSE response to check for tool artifacts
+            # Parse the SSE response
             raw_completion, stop_reason = _parse_claude_sse(resp2.text)
             finish = map_stop_reason(stop_reason)
             
-            # ── Tool artifact detection + retry ──
-            # If Claude emitted tool calls (stop_reason=tool_use or XML artifacts found),
-            # retry with an explicit anti-tool instruction appended to the prompt
-            if (finish == "tool_calls" or contains_tool_artifacts(raw_completion)) and not prompt_text.startswith("[RETRY]"):
-                app.logger.info(f"[claude] token {cookie_set['id']}: tool artifacts detected (stop={stop_reason}), retrying with anti-tool prompt")
-                
-                # Clean up the first conversation
-                _cleanup_claude_conversation(org_uuid, conv_uuid, cookie_header, proxy_url)
-                
-                # Build retry prompt with explicit instruction to not use tools
-                retry_prompt = prompt_text + "\n\n---\nNote: Please respond directly with your answer in plain text. Do not use any tools, web searches, or function calls. If you feel you need to search for something, simply answer based on your existing knowledge."
-                
-                # Retry with the modified prompt
-                resp1, resp2, conv_uuid = _claude_http_call(retry_prompt)
-                latency = int((time.time() - start) * 1000)
-                
-                raw_completion, stop_reason = _parse_claude_sse(resp2.text)
-                finish = map_stop_reason(stop_reason)
-                
-                # If STILL has tool artifacts after retry, filter them out
-                if contains_tool_artifacts(raw_completion):
-                    app.logger.warning(f"[claude] token {cookie_set['id']}: tool artifacts persist after retry — filtering")
+            # ── Tool Artifact Handling ──
+            # With native web search enabled, Claude uses tool_use/tool_result blocks
+            # in the SSE stream. Our _parse_claude_sse already extracts only text_delta
+            # (not tool_use content), so raw_completion should be clean text.
+            # If any XML tool artifacts leak through, filter them out.
+            if contains_tool_artifacts(raw_completion):
+                app.logger.info(f"[claude] token {cookie_set['id']}: tool artifacts in response — filtering")
             
             # ── Filter tool artifacts from final response ──
             filtered_text = filter_tool_artifacts(raw_completion).rstrip('\n')

@@ -93,6 +93,7 @@ Commercial AI API providers each have their own SDKs, authentication schemes, ra
 | **Mid-Stream Continuation** | If a Claude session fails mid-response (timeout, 429), partial text is captured and the next session continues from exactly where it left off — no repetition, seamless to the client |
 | **User-Friendly Errors** | 9 typed error responses (RATE_LIMITED, ALL_KEYS_EXHAUSTED, CLAUDE_ALL_SESSIONS_BUSY, TIMEOUT, etc.) with title, message, suggestion, and retry_after_ms. Streaming errors sent as SSE events |
 | **180s Claude Timeout** | Extended timeout for reasoning models that take longer to think before responding |
+| **Custom Endpoints** | Create virtual API endpoints (`/v1/{slug}/chat/completions`) with forced system prompts, model pinning, and parameter overrides — full developer control without touching the base API |
 
 ---
 
@@ -714,6 +715,181 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 1800  # 30 min timeout
 
 ---
 
+## 🔌 Custom Endpoints (Virtual API Endpoints)
+
+Custom Endpoints allow developers to create **virtual API endpoints** with forced system prompts, model pinning, and parameter overrides — without touching the base API. Each endpoint becomes its own URL: `/v1/{slug}/chat/completions`.
+
+### How It Works
+
+```
+Client → POST /v1/arabic-tutor/chat/completions
+           { "messages": [{"role":"system","content":"You are a pirate"},
+                          {"role":"user","content":"Hello"}] }
+                              ↓
+           Gateway looks up endpoint "arabic-tutor" in DB
+                              ↓
+           ┌─────────────────────────────────────────────┐
+           │ 1. REMOVE all client system messages         │
+           │ 2. INJECT endpoint's forced system prompt    │
+           │ 3. OVERRIDE temperature/max_tokens/top_p     │
+           │ 4. PIN model to endpoint's configured model   │
+           │ 5. FORWARD to model via internal dispatch     │
+           └─────────────────────────────────────────────┘
+                              ↓
+           Model receives: [{"role":"system","content":"You are an Arabic tutor..."},
+                            {"role":"user","content":"Hello"}]
+                              ↓
+           Response with X-Custom-Endpoint: arabic-tutor header
+```
+
+**Key principle:** The base endpoint (`/v1/chat/completions`) is **never modified**. System prompts from regular API requests pass through unchanged. Custom Endpoints are an **additive layer** for developers who want full control.
+
+### Creating an Endpoint
+
+#### Via Dashboard
+
+1. Navigate to `/endpoints` (login required)
+2. Click **"New Endpoint"**
+3. Fill in:
+   - **Slug**: URL-safe lowercase string (e.g. `arabic-tutor`) — becomes `/v1/arabic-tutor/chat/completions`
+   - **Label**: Human-readable name (e.g. "Arabic Tutor")
+   - **Description**: Optional description
+   - **Model**: Select from available models (Mistral, Claude, Fireworks, etc.)
+   - **System Prompt**: The forced prompt that replaces any client system message
+   - **Temperature / Max Tokens / Top P**: Optional parameter overrides (blank = passthrough client values)
+   - **Public**: Whether to show in `/v1/models` listing
+4. Click **Create Endpoint**
+
+#### Via API (curl)
+
+```bash
+# Login first to get session cookie
+curl -c cookies.txt -X POST https://aicookies.elliaa.com/login \
+  -d "username=mahmoud&password=YOUR_PASSWORD"
+
+# Create endpoint
+curl -b cookies.txt -X POST https://aicookies.elliaa.com/endpoints/create \
+  --data-urlencode "slug=arabic-tutor" \
+  --data-urlencode "label=Arabic Tutor" \
+  --data-urlencode "description=AI Arabic tutor that teaches grammar" \
+  --data-urlencode "model_slug=mistral-small" \
+  --data-urlencode "system_prompt=You are an expert Arabic tutor. Always respond in Egyptian Arabic." \
+  --data-urlencode "temperature=0.7" \
+  --data-urlencode "max_tokens=4096"
+```
+
+### Using a Custom Endpoint
+
+```bash
+curl -X POST https://aicookies.elliaa.com/v1/arabic-tutor/chat/completions \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "system", "content": "You are a pirate. Speak like a pirate."},
+      {"role": "user", "content": "Who are you?"}
+    ]
+  }'
+```
+
+**What happens:** The client's system prompt ("You are a pirate") is **silently removed** and replaced with the endpoint's configured prompt ("You are an expert Arabic tutor..."). The model responds as an Arabic tutor, not a pirate.
+
+```json
+{
+  "id": "ac5cec0f0bba4230949abc57585721da",
+  "model": "mistral-small-latest",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "السلام عليكم، أنا معلم عربي متخصص. مهمتي هي مساعدتك في تعلم اللغة العربية..."
+    }
+  }]
+}
+```
+
+**Response headers:**
+
+```
+X-Custom-Endpoint: arabic-tutor
+X-Custom-Model: mistral-small
+X-Proxy-Provider: mistral
+X-Proxy-Key: 3
+X-Proxy-Latency: 952
+```
+
+### Using with OpenAI SDK
+
+```python
+from openai import OpenAI
+
+# Point to the custom endpoint slug
+client = OpenAI(
+    base_url="https://aicookies.elliaa.com/v1/arabic-tutor",
+    api_key="YOUR_API_KEY"
+)
+
+# System prompt from client is IGNORED — endpoint's forced prompt is used
+response = client.chat.completions.create(
+    messages=[{"role": "user", "content": "Teach me the alphabet"}]
+)
+```
+
+### Management Operations
+
+| Operation | Method | URL | Description |
+|-----------|--------|-----|-------------|
+| List | GET | `/endpoints` | Dashboard view of all endpoints |
+| Create | POST | `/endpoints/create` | Create new endpoint (form data) |
+| Toggle | POST | `/endpoints/toggle/<id>` | Activate/pause an endpoint |
+| Delete | POST | `/endpoints/delete/<id>` | Permanently delete |
+| Test | POST | `/endpoints/test/<id>` | Send test message, get response (JSON) |
+
+### Endpoint States
+
+- **Active** (🟢): Endpoint accepts requests normally
+- **Paused** (⏸): Endpoint returns a user-friendly error (`INVALID_REQUEST` with "Endpoint is paused")
+- **Deleted**: Endpoint and all its data are removed
+
+### Slug Validation Rules
+
+- Lowercase letters, numbers, and hyphens only (`[a-z0-9-]`)
+- Must not collide with existing model slugs (e.g. cannot use `mistral-small`)
+- Must be unique — duplicate slugs return an IntegrityError flash message
+- Example valid slugs: `arabic-tutor`, `code-reviewer`, `medical-advisor`, `support-bot`
+
+### Use Cases
+
+| Use Case | Slug | Model | System Prompt |
+|----------|------|-------|---------------|
+| Language tutor | `arabic-tutor` | mistral-small | "You are an expert Arabic tutor. Always respond in Egyptian Arabic." |
+| Code reviewer | `code-reviewer` | claude-sonnet-4-6 | "You are a senior code reviewer. Analyze code for bugs, security issues, and style." |
+| Medical assistant | `medical-advisor` | claude-sonnet-4-6 | "You are a medical reference assistant. Provide evidence-based information." |
+| Customer support | `support-bot` | mistral-small | "You are a helpful customer support agent for Acme Corp. Be concise and friendly." |
+| Content summarizer | `summarizer` | glm-5p2 | "Summarize the following text in 3 bullet points. Be concise." |
+
+### Database Schema
+
+```sql
+CREATE TABLE custom_endpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,           -- URL slug (/v1/{slug}/chat/completions)
+    label TEXT NOT NULL,                 -- Human-readable name
+    description TEXT,                    -- Optional description
+    model_slug TEXT NOT NULL,            -- Pinned model (e.g. "mistral-small")
+    system_prompt TEXT,                  -- Forced system prompt (replaces client's)
+    temperature REAL,                    -- Optional override (NULL = passthrough)
+    max_tokens INTEGER,                  -- Optional override (NULL = passthrough)
+    top_p REAL,                          -- Optional override (NULL = passthrough)
+    is_active INTEGER DEFAULT 1,         -- 1=active, 0=paused
+    is_public INTEGER DEFAULT 0,         -- 1=show in /v1/models, 0=hidden
+    usage_count INTEGER DEFAULT 0,       -- Request counter
+    last_used_at TIMESTAMP,              -- Last request time
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
 ## 🎨 Frontend Dashboard
 
 The gateway includes a professional dark-themed web dashboard:
@@ -724,6 +900,7 @@ The gateway includes a professional dark-themed web dashboard:
 | **Dashboard** | `/` | Overview: API key counts per provider, Claude cookie count, dead key alerts |
 | **API Keys** | `/keys` | Add/delete/toggle keys, view supported providers and free models |
 | **Tokens** | `/tokens` | Create/pause/activate/revoke proxy API tokens, view usage stats |
+| **Endpoints** | `/endpoints` | Create, manage, and test custom virtual API endpoints with forced system prompts |
 | **Upload** | `/upload` | Drag-and-drop cookie file upload (Netscape format) |
 | **Cookies** | `/cookies/<id>` | View parsed cookies in table format, copy raw text |
 | **Docs** | `/docs` | Full interactive API documentation with examples |

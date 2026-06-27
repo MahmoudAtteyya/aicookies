@@ -394,7 +394,8 @@ table.api tbody tr:last-child td { border-bottom: none; }
         <li><a href="#sdk-examples">12. SDK Examples</a></li>
         <li><a href="#health">13. Health Check</a></li>
         <li><a href="#flow">14. Request Flow</a></li>
-      </ul>
+        <li><a href="#custom-endpoints">15. Custom Endpoints</a></li>
+      </ol>
     </aside>
 
     <!-- ================= MAIN ================= -->
@@ -1281,9 +1282,213 @@ console.<span class="f">log</span>(resp.choices[<span class="n">0</span>].messag
         </div>
       </section>
 
-      <div class="divider"></div>
+      <!-- ============ CUSTOM ENDPOINTS ============ -->
+      <section class="section" id="custom-endpoints">
+        <div class="section-head">
+          <span class="num">15</span>
+          <h2>Custom Endpoints (Virtual API)</h2>
+          <a class="anchor" href="#custom-endpoints">#</a>
+        </div>
+        <p>
+          Custom Endpoints let you create <strong>virtual API URLs</strong> with forced system prompts,
+          model pinning, and parameter overrides. Each endpoint becomes
+          <code class="inline">/v1/{slug}/chat/completions</code> — a self-contained API URL that
+          always uses your configured behavior, regardless of what the client sends.
+        </p>
 
-      <div style="text-align:center; padding: 20px 0 10px;">
+        <h3>How It Works</h3>
+        <div class="code-block">
+          <button class="copy-btn">copy</button>
+<pre>Client → POST /v1/arabic-tutor/chat/completions
+           messages: [{"role":"system","content":"You are a pirate"},
+                      {"role":"user","content":"Hello"}]
+                            ↓
+         Gateway looks up endpoint "arabic-tutor" in DB
+                            ↓
+         ┌─────────────────────────────────────────────┐
+         │ 1. REMOVE all client system messages         │
+         │ 2. INJECT endpoint's forced system prompt    │
+         │ 3. OVERRIDE temperature / max_tokens / top_p │
+         │ 4. PIN model to endpoint's configured model   │
+         │ 5. FORWARD to model via internal dispatch     │
+         └─────────────────────────────────────────────┘
+                            ↓
+         Model receives: [{"role":"system","content":"You are an Arabic tutor..."},
+                          {"role":"user","content":"Hello"}]
+                            ↓
+         Response with X-Custom-Endpoint: arabic-tutor header</pre>
+        </div>
+
+        <p style="margin-top:16px;">
+          <strong>Key principle:</strong> The base endpoint
+          (<code class="inline">/v1/chat/completions</code>) is <strong>never modified</strong>.
+          System prompts from regular API requests pass through unchanged. Custom Endpoints are
+          an <em>additive layer</em> for developers who want full control.
+        </p>
+
+        <h3>Create an Endpoint</h3>
+
+        <p><strong>Via Dashboard:</strong> Navigate to <code class="inline">/endpoints</code>, click
+        "New Endpoint", fill in slug, label, model, system prompt, and optional parameter overrides.</p>
+
+        <p><strong>Via curl:</strong></p>
+        <div class="code-block">
+          <button class="copy-btn">copy</button>
+<pre>curl -c cookies.txt -X POST https://aicookies.elliaa.com/login \
+  -d "username=mahmoud&password=YOUR_PASSWORD"
+
+curl -b cookies.txt -X POST https://aicookies.elliaa.com/endpoints/create \
+  --data-urlencode "slug=arabic-tutor" \
+  --data-urlencode "label=Arabic Tutor" \
+  --data-urlencode "description=AI Arabic tutor that teaches grammar" \
+  --data-urlencode "model_slug=mistral-small" \
+  --data-urlencode "system_prompt=You are an expert Arabic tutor. Always respond in Egyptian Arabic." \
+  --data-urlencode "temperature=0.7" \
+  --data-urlencode "max_tokens=4096"</pre>
+        </div>
+
+        <h3>Using a Custom Endpoint</h3>
+        <div class="code-block">
+          <button class="copy-btn">copy</button>
+<pre>curl -X POST https://aicookies.elliaa.com/v1/arabic-tutor/chat/completions \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "system", "content": "You are a pirate. Speak like a pirate."},
+      {"role": "user", "content": "Who are you?"}
+    ]
+  }'</pre>
+        </div>
+
+        <p style="margin-top:12px;">
+          The client's system prompt ("You are a pirate") is <strong>silently removed</strong> and
+          replaced with the endpoint's forced prompt ("You are an expert Arabic tutor..."). The model
+          responds as an Arabic tutor.
+        </p>
+
+        <h4>Response</h4>
+        <div class="code-block">
+          <button class="copy-btn">copy</button>
+<pre>{
+  "id": "ac5cec0f0bba4230949abc57585721da",
+  "model": "mistral-small-latest",
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "السلام عليكم، أنا معلم عربي متخصص. مهمتي هي مساعدتك في تعلم اللغة العربية..."
+    }
+  }]
+}</pre>
+        </div>
+
+        <h4>Response Headers</h4>
+        <div class="code-block">
+          <button class="copy-btn">copy</button>
+<pre>X-Custom-Endpoint: arabic-tutor
+X-Custom-Model: mistral-small
+X-Proxy-Provider: mistral
+X-Proxy-Key: 3
+X-Proxy-Latency: 952</pre>
+        </div>
+
+        <h3>OpenAI SDK (Python)</h3>
+        <div class="code-block">
+          <button class="copy-btn">copy</button>
+<pre>from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://aicookies.elliaa.com/v1/arabic-tutor",
+    api_key="YOUR_API_KEY"
+)
+
+# System prompt from client is IGNORED — endpoint's forced prompt is used
+response = client.chat.completions.create(
+    messages=[{"role": "user", "content": "Teach me the alphabet"}]
+)
+print(response.choices[0].message.content)</pre>
+        </div>
+
+        <h3>Management Operations</h3>
+        <div class="table-wrap" style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; margin:16px 0;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border);">
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Operation</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Method</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">URL</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">List</td><td style="padding:8px 14px;"><code class="inline">GET</code></td><td style="padding:8px 14px;"><code class="inline">/endpoints</code></td><td style="padding:8px 14px; color:var(--text-dim);">Dashboard view of all endpoints</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Create</td><td style="padding:8px 14px;"><code class="inline">POST</code></td><td style="padding:8px 14px;"><code class="inline">/endpoints/create</code></td><td style="padding:8px 14px; color:var(--text-dim);">Create new endpoint (form data)</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Toggle</td><td style="padding:8px 14px;"><code class="inline">POST</code></td><td style="padding:8px 14px;"><code class="inline">/endpoints/toggle/&lt;id&gt;</code></td><td style="padding:8px 14px; color:var(--text-dim);">Activate / pause an endpoint</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Delete</td><td style="padding:8px 14px;"><code class="inline">POST</code></td><td style="padding:8px 14px;"><code class="inline">/endpoints/delete/&lt;id&gt;</code></td><td style="padding:8px 14px; color:var(--text-dim);">Permanently delete an endpoint</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Test</td><td style="padding:8px 14px;"><code class="inline">POST</code></td><td style="padding:8px 14px;"><code class="inline">/endpoints/test/&lt;id&gt;</code></td><td style="padding:8px 14px; color:var(--text-dim);">Send a test message, get response (JSON)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Slug Validation Rules</h3>
+        <ul style="color:var(--text-dim); margin:12px 0 12px 24px; line-height:1.8;">
+          <li>Lowercase letters, numbers, and hyphens only (<code class="inline">[a-z0-9-]</code>)</li>
+          <li>Must not collide with existing model slugs (e.g. cannot use <code class="inline">mistral-small</code>)</li>
+          <li>Must be unique — duplicates return a flash message</li>
+          <li>Valid examples: <code class="inline">arabic-tutor</code>, <code class="inline">code-reviewer</code>, <code class="inline">medical-advisor</code></li>
+        </ul>
+
+        <h3>Example Use Cases</h3>
+        <div class="table-wrap" style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; margin:16px 0;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border);">
+                <th style="text-align:left; padding:10px 14px;">Use Case</th>
+                <th style="text-align:left; padding:10px 14px;">Slug</th>
+                <th style="text-align:left; padding:10px 14px;">Model</th>
+                <th style="text-align:left; padding:10px 14px;">System Prompt</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Language tutor</td><td style="padding:8px 14px;"><code class="inline">arabic-tutor</code></td><td style="padding:8px 14px;">mistral-small</td><td style="padding:8px 14px; color:var(--text-dim);">"You are an expert Arabic tutor..."</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Code reviewer</td><td style="padding:8px 14px;"><code class="inline">code-reviewer</code></td><td style="padding:8px 14px;">claude-sonnet-4-6</td><td style="padding:8px 14px; color:var(--text-dim);">"You are a senior code reviewer..."</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Medical assistant</td><td style="padding:8px 14px;"><code class="inline">medical-advisor</code></td><td style="padding:8px 14px;">claude-sonnet-4-6</td><td style="padding:8px 14px; color:var(--text-dim);">"You are a medical reference assistant..."</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Support bot</td><td style="padding:8px 14px;"><code class="inline">support-bot</code></td><td style="padding:8px 14px;">mistral-small</td><td style="padding:8px 14px; color:var(--text-dim);">"You are a helpful customer support agent..."</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Summarizer</td><td style="padding:8px 14px;"><code class="inline">summarizer</code></td><td style="padding:8px 14px;">glm-5p2</td><td style="padding:8px 14px; color:var(--text-dim);">"Summarize the following text in 3 bullet points."</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Database Schema</h3>
+        <div class="code-block">
+          <button class="copy-btn">copy</button>
+<pre>CREATE TABLE custom_endpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    description TEXT,
+    model_slug TEXT NOT NULL,
+    system_prompt TEXT,
+    temperature REAL,
+    max_tokens INTEGER,
+    top_p REAL,
+    is_active INTEGER DEFAULT 1,
+    is_public INTEGER DEFAULT 0,
+    usage_count INTEGER DEFAULT 0,
+    last_used_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);</pre>
+        </div>
+
+        <p style="margin-top:16px; padding:12px 16px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--bg-card);">
+          <strong>Endpoint States:</strong><br>
+          🟢 <strong>Active</strong> — accepts requests normally<br>
+          ⏸ <strong>Paused</strong> — returns <code class="inline">INVALID_REQUEST</code> error with "Endpoint is paused"<br>
+          🗑 <strong>Deleted</strong> — endpoint and all data removed
+        </p>
+      </section>
+
+      <div class="divider"></div>
         <p style="color:var(--text-dim); font-size:13px; margin:0 0 16px;">
           Prefer Markdown? Grab the full docs in a single file.
         </p>

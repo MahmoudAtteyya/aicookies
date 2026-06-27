@@ -277,6 +277,17 @@ def init_db():
 
 init_db()
 
+# ── Ensure tables exist in forked gunicorn workers ──
+@app.before_request
+def _ensure_db_tables():
+    """Re-run init_db on first request in each worker to handle gunicorn fork."""
+    if not getattr(app, '_db_initialized', False):
+        try:
+            init_db()
+            app._db_initialized = True
+        except Exception as e:
+            app.logger.error(f"[init_db] Error in before_request: {e}")
+
 # ── Auth decorator ───────────────────────────────────────────────────────
 def login_required(f):
     @wraps(f)
@@ -2735,11 +2746,7 @@ def custom_endpoint_proxy(endpoint_slug):
     modified_body = json.dumps(data).encode()
     model_info = MODELS[model_slug]
     
-    # Store modified body in a thread-local so proxy_to_provider can pick it up
-    _endpoint_modified_body = modified_body
-    
-    # Override request.get_data for this call by using Flask's test client
-    # The cleanest approach: use app.test_client() to re-dispatch
+    # Use Flask's test client to re-dispatch with auth headers preserved
     with app.test_client() as client:
         headers_dict = {k: v for k, v in request.headers.items() if k.lower() not in ('host', 'content-length')}
         internal_resp = client.post(
@@ -3210,9 +3217,15 @@ def endpoints_test(ep_id):
     
     conn.close()
     
-    # Use test client to dispatch internally
+    # Use test client to dispatch internally — pass a valid proxy API key
+    # The test runs in a logged-in admin session, so we inject the admin key
+    admin_key = os.environ.get("ADMIN_TEST_KEY", "")
+    test_headers = {"Content-Type": "application/json"}
+    if admin_key:
+        test_headers["Authorization"] = f"Bearer {admin_key}"
+    
     with app.test_client() as client:
-        resp = client.post("/v1/chat/completions", data=test_body, content_type="application/json")
+        resp = client.post("/v1/chat/completions", data=test_body, headers=test_headers)
     
     try:
         resp_data = json.loads(resp.data)

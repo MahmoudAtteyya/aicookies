@@ -25,6 +25,32 @@
 
 .kp-key-row { transition: background var(--t-fast); }
 .kp-key-row:hover { background: var(--bg-hover); }
+
+/* Account info badge */
+.acc-badge { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: var(--r-sm); font-weight: 600; }
+.acc-active { background: rgba(34,197,94,0.15); color: #22c55e; }
+.acc-suspended { background: rgba(239,68,68,0.15); color: #ef4444; }
+.acc-unknown { background: rgba(148,163,184,0.15); color: #94a3b8; }
+.acc-fetching { background: rgba(59,130,246,0.15); color: #3b82f6; animation: pulse 1s infinite; }
+
+/* Account info modal */
+.acc-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); z-index: 9999; display: none; align-items: center; justify-content: center; padding: 2rem; }
+.acc-modal-overlay.show { display: flex; animation: fadeIn 0.2s ease; }
+.acc-modal { background: var(--bg-card); border: 1px solid var(--border-accent); border-radius: var(--r-xl); max-width: 600px; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-glow), var(--shadow-lg); }
+.acc-modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.acc-modal-header h3 { margin: 0; font-size: 1.2rem; font-weight: 700; }
+.acc-modal-body { padding: 1.5rem; }
+.acc-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+.acc-info-item { background: var(--bg-input); border-radius: var(--r-md); padding: 0.75rem 1rem; }
+.acc-info-item .label { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.acc-info-item .value { font-size: 0.95rem; font-weight: 600; color: var(--text); word-break: break-all; }
+.acc-info-full { grid-column: 1 / -1; }
+.acc-progress-bar { height: 8px; background: var(--bg-input); border-radius: 4px; overflow: hidden; margin-top: 0.5rem; }
+.acc-progress-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+.acc-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 </style>
 {% endblock %}
 
@@ -89,6 +115,12 @@
 <!-- ═══════════ STORED KEYS ═══════════ -->
 <h3 class="kp-section-title"><span class="bar"></span>🗄️ Stored Keys <span class="text-dim" style="font-weight:500;font-size:0.85rem;">({{ keys|length }})</span></h3>
 
+<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+    <button class="btn btn-sm btn-primary" onclick="bulkFetchAccountInfo()" id="bulkFetchBtn">
+        🔍 Fetch All Fireworks Accounts
+    </button>
+</div>
+
 {% if not keys %}
 <div class="card empty-state">
     <div class="icon">🔑</div>
@@ -105,12 +137,13 @@
                 <th>Key</th>
                 <th>Usage</th>
                 <th>Status</th>
+                <th>Account</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
         {% for k in keys %}
-            <tr class="kp-key-row">
+            <tr class="kp-key-row" id="row-{{ k.id }}">
                 <td><span class="badge badge-{{ k.provider_slug|default('unknown') }}">{{ k.provider_name }}</span></td>
                 <td class="text-sm">{{ k.label or '—' }}</td>
                 <td><code class="text-xs" style="color:var(--text-muted);">{{ k.key_value[:12] }}…{{ k.key_value[-4:] }}</code></td>
@@ -122,6 +155,15 @@
                         <span class="badge badge-green">✅ Active</span>
                     {% else %}
                         <span class="badge badge-yellow">⏸ Paused</span>
+                    {% endif %}
+                </td>
+                <td id="acc-cell-{{ k.id }}">
+                    {% if k.provider_slug == 'fireworks' %}
+                        <button class="btn btn-sm" style="font-size:0.75rem;padding:0.2rem 0.5rem;" onclick="fetchAccountInfo({{ k.id }})" id="acc-btn-{{ k.id }}">
+                            🔍 Info
+                        </button>
+                    {% else %}
+                        <span class="text-dim text-xs">—</span>
                     {% endif %}
                 </td>
                 <td>
@@ -143,4 +185,216 @@
 </div>
 {% endif %}
 
+<!-- Account Info Modal -->
+<div class="acc-modal-overlay" id="accModal">
+    <div class="acc-modal">
+        <div class="acc-modal-header">
+            <h3 id="accModalTitle">Account Info</h3>
+            <button class="btn btn-sm" onclick="closeAccModal()">✕</button>
+        </div>
+        <div class="acc-modal-body" id="accModalBody">
+            <div style="text-align:center;padding:2rem;">
+                <div class="acc-spinner" style="width:24px;height:24px;"></div>
+                <p style="margin-top:0.5rem;color:var(--text-dim);">Fetching account info...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Fetch account info for a single key ──
+function fetchAccountInfo(keyId) {
+    const btn = document.getElementById('acc-btn-' + keyId);
+    if (btn) { btn.innerHTML = '<span class="acc-spinner"></span>'; btn.disabled = true; }
+    const cell = document.getElementById('acc-cell-' + keyId);
+    if (cell) cell.innerHTML = '<span class="acc-badge acc-fetching"><span class="acc-spinner"></span> Fetching...</span>';
+
+    fetch('/api/account-info/' + keyId + '/refresh', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                if (cell) cell.innerHTML = '<span class="acc-badge acc-unknown">❌ Error</span>';
+                showToast('error', 'Error: ' + data.error);
+                return;
+            }
+            const info = data.data || {};
+            displayAccountBadge(keyId, info);
+            showAccountModal(keyId, info);
+        })
+        .catch(err => {
+            if (cell) cell.innerHTML = '<span class="acc-badge acc-unknown">❌ Error</span>';
+            showToast('error', 'Network error: ' + err.message);
+        });
+}
+
+// ── Display account badge in table cell ──
+function displayAccountBadge(keyId, info) {
+    const cell = document.getElementById('acc-cell-' + keyId);
+    if (!cell) return;
+    const status = info.account_status || 'unknown';
+    const name = info.account_name ? info.account_name.substring(0, 20) : '';
+
+    let badgeClass = 'acc-unknown', badgeText = '—';
+    if (status === 'active') { badgeClass = 'acc-active'; badgeText = '✅ ' + (name || 'Active'); }
+    else if (status === 'suspended') { badgeClass = 'acc-suspended'; badgeText = '💀 ' + (name || 'Suspended'); }
+    else if (status === 'rate_limited') { badgeClass = 'acc-fetching'; badgeText = '⚠️ Rate Limited'; }
+    else if (status === 'invalid_key') { badgeClass = 'acc-suspended'; badgeText = '❌ Invalid'; }
+
+    cell.innerHTML = `<span class="acc-badge ${badgeClass}" title="${status}">${badgeText}</span>
+        <button class="btn btn-sm" style="font-size:0.65rem;padding:0.1rem 0.3rem;margin-left:0.25rem;" onclick="showAccountModal(${keyId}, null)">👁</button>`;
+}
+
+// ── Show account info modal ──
+function showAccountModal(keyId, info) {
+    const modal = document.getElementById('accModal');
+    const body = document.getElementById('accModalBody');
+    const title = document.getElementById('accModalTitle');
+
+    if (!info) {
+        // Fetch from cache
+        body.innerHTML = '<div style="text-align:center;padding:2rem;"><div class="acc-spinner" style="width:24px;height:24px;"></div><p style="margin-top:0.5rem;color:var(--text-dim);">Loading...</p></div>';
+        fetch('/api/account-info/' + keyId)
+            .then(r => r.json())
+            .then(data => { if (data.data) renderAccountModal(data.data); else renderAccountModal({account_status: 'no_data'}); })
+            .catch(() => renderAccountModal({account_status: 'error'}));
+        modal.classList.add('show');
+        return;
+    }
+    renderAccountModal(info);
+    modal.classList.add('show');
+}
+
+function renderAccountModal(info) {
+    const body = document.getElementById('accModalBody');
+    const title = document.getElementById('accModalTitle');
+    const status = info.account_status || 'unknown';
+    const name = info.account_name || 'Unknown';
+    title.textContent = '🔍 ' + name;
+
+    const statusColors = { active: '#22c55e', suspended: '#ef4444', rate_limited: '#f59e0b', invalid_key: '#ef4444', unknown: '#94a3b8' };
+    const statusColor = statusColors[status] || '#94a3b8';
+
+    let rateBar = '';
+    if (info.rate_limit_prompt && info.rate_limit_remaining_prompt) {
+        const pct = ((info.rate_limit_remaining_prompt / info.rate_limit_prompt) * 100).toFixed(1);
+        const barColor = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
+        rateBar = `<div class="acc-info-item acc-info-full">
+            <div class="label">Rate Limit (Prompt Tokens)</div>
+            <div class="value">${info.rate_limit_remaining_prompt?.toLocaleString()} / ${info.rate_limit_prompt?.toLocaleString()}</div>
+            <div class="acc-progress-bar"><div class="acc-progress-fill" style="width:${pct}%;background:${barColor};"></div></div>
+        </div>`;
+    }
+
+    let genBar = '';
+    if (info.rate_limit_generated && info.rate_limit_remaining_generated) {
+        const pct = ((info.rate_limit_remaining_generated / info.rate_limit_generated) * 100).toFixed(1);
+        const barColor = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
+        genBar = `<div class="acc-info-item acc-info-full">
+            <div class="label">Rate Limit (Generated Tokens)</div>
+            <div class="value">${info.rate_limit_remaining_generated?.toLocaleString()} / ${info.rate_limit_generated?.toLocaleString()}</div>
+            <div class="acc-progress-bar"><div class="acc-progress-fill" style="width:${pct}%;background:${barColor};"></div></div>
+        </div>`;
+    }
+
+    let modelsHtml = '';
+    if (info.models_available) {
+        try {
+            const models = JSON.parse(info.models_available);
+            if (models.length > 0) {
+                modelsHtml = `<div class="acc-info-item acc-info-full">
+                    <div class="label">Available Models (${models.length})</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.5rem;">
+                        ${models.slice(0, 15).map(m => `<code class="kp-model-chip">${m.replace('accounts/fireworks/models/', '')}</code>`).join('')}
+                        ${models.length > 15 ? `<span style="color:var(--text-dim);font-size:0.8rem;">+${models.length - 15} more</span>` : ''}
+                    </div>
+                </div>`;
+            }
+        } catch(e) {}
+    }
+
+    let reasonHtml = '';
+    if (info.suspension_reason) {
+        reasonHtml = `<div class="acc-info-item acc-info-full" style="border-left:3px solid #ef4444;">
+            <div class="label">Suspension Reason</div>
+            <div class="value" style="font-size:0.85rem;color:#ef4444;">${info.suspension_reason.substring(0, 300)}</div>
+        </div>`;
+    }
+
+    const fetchedDate = info.last_fetched_at ? new Date(info.last_fetched_at + 'Z').toLocaleString() : 'N/A';
+
+    body.innerHTML = `<div class="acc-info-grid">
+        <div class="acc-info-item">
+            <div class="label">Account Name</div>
+            <div class="value">${name}</div>
+        </div>
+        <div class="acc-info-item">
+            <div class="label">Status</div>
+            <div class="value" style="color:${statusColor};">● ${status.toUpperCase()}</div>
+        </div>
+        <div class="acc-info-item">
+            <div class="label">Plan Type</div>
+            <div class="value">${info.plan_type || '—'}</div>
+        </div>
+        <div class="acc-info-item">
+            <div class="label">Last Fetched</div>
+            <div class="value" style="font-size:0.85rem;">${fetchedDate}</div>
+        </div>
+        ${rateBar}
+        ${genBar}
+        ${reasonHtml}
+        ${modelsHtml}
+    </div>
+    <div style="margin-top:1rem;display:flex;gap:0.5rem;">
+        <a href="${info.billing_url || 'https://fireworks.ai/account/billing'}" target="_blank" class="btn btn-sm" style="text-decoration:none;">💳 Billing Page</a>
+        <button class="btn btn-sm btn-primary" onclick="fetchAccountInfo(${info.key_id || 0})">🔄 Refresh</button>
+    </div>`;
+}
+
+function closeAccModal() {
+    document.getElementById('accModal').classList.remove('show');
+}
+
+// Close on overlay click
+document.getElementById('accModal').addEventListener('click', function(e) {
+    if (e.target === this) closeAccModal();
+});
+
+// Close on ESC
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeAccModal();
+});
+
+// ── Bulk fetch all Fireworks accounts ──
+function bulkFetchAccountInfo() {
+    const btn = document.getElementById('bulkFetchBtn');
+    if (btn) { btn.innerHTML = '<span class="acc-spinner"></span> Fetching...'; btn.disabled = true; }
+
+    fetch('/api/account-info/bulk-fetch', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.results) {
+                data.results.forEach(r => {
+                    if (r.status) {
+                        // Update badge
+                        const cell = document.getElementById('acc-cell-' + r.key_id);
+                        if (cell) {
+                            let badgeClass = 'acc-unknown', badgeText = r.status;
+                            if (r.status === 'active') { badgeClass = 'acc-active'; badgeText = '✅ ' + (r.account_name || 'Active'); }
+                            else if (r.status === 'suspended') { badgeClass = 'acc-suspended'; badgeText = '💀 ' + (r.account_name || 'Suspended'); }
+                            cell.innerHTML = `<span class="acc-badge ${badgeClass}">${badgeText.substring(0, 25)}</span>`;
+                        }
+                    }
+                });
+                showToast('success', `Fetched ${data.fetched} account(s) — check badges in the Account column`);
+            }
+        })
+        .catch(err => showToast('error', 'Bulk fetch failed: ' + err.message))
+        .finally(() => {
+            if (btn) { btn.innerHTML = '🔍 Fetch All Fireworks Accounts'; btn.disabled = false; }
+        });
+}
+</script>
 {% endblock %}

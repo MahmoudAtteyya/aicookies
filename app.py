@@ -256,6 +256,31 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_endpoints_slug ON custom_endpoints(slug)")
 
+    # ── Key account metadata table ──
+    # Stores account info (name, plan, credits, rate limits) fetched from provider APIs.
+    # Populated automatically when a Fireworks key is added, and on-demand via UI button.
+    conn.execute("""CREATE TABLE IF NOT EXISTS key_account_info (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_id INTEGER NOT NULL UNIQUE,
+        provider_slug TEXT NOT NULL,
+        account_name TEXT,
+        account_email TEXT,
+        account_status TEXT,
+        plan_type TEXT,
+        credits_remaining TEXT,
+        credits_total TEXT,
+        rate_limit_prompt INTEGER,
+        rate_limit_generated INTEGER,
+        rate_limit_remaining_prompt INTEGER,
+        rate_limit_remaining_generated INTEGER,
+        models_available TEXT,
+        billing_url TEXT,
+        suspension_reason TEXT,
+        raw_response TEXT,
+        last_fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (key_id) REFERENCES api_keys(id) ON DELETE CASCADE)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_key_account_info_key ON key_account_info(key_id)")
+
     # ── Seed providers ──
     providers = [
         ("mistral", "Mistral AI", "https://api.mistral.ai/v1", "free",
@@ -464,6 +489,157 @@ def bump_key_usage(key_id):
     conn.execute("UPDATE api_keys SET usage_count=usage_count+1, last_used_at=CURRENT_TIMESTAMP WHERE id=?", (key_id,))
     conn.commit()
     conn.close()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ACCOUNT INFO FETCHER — Fireworks AI
+# ═══════════════════════════════════════════════════════════════════════════
+
+def fetch_fireworks_account_info(api_key):
+    """Fetch account info for a Fireworks AI key by making a minimal API call
+    and extracting account data from response headers + error messages.
+
+    Returns dict with: account_name, account_status, rate_limits, models, etc.
+    """
+    import json as _json
+    result = {
+        "provider_slug": "fireworks",
+        "account_name": None,
+        "account_status": "unknown",
+        "plan_type": None,
+        "credits_remaining": None,
+        "credits_total": None,
+        "rate_limit_prompt": None,
+        "rate_limit_generated": None,
+        "rate_limit_remaining_prompt": None,
+        "rate_limit_remaining_generated": None,
+        "models_available": None,
+        "billing_url": "https://fireworks.ai/account/billing",
+        "suspension_reason": None,
+        "raw_response": None,
+    }
+
+    base_url = "https://api.fireworks.ai/inference/v1"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    # ── Step 1: Make a minimal chat completion to extract rate-limit headers ──
+    try:
+        payload = {
+            "model": "accounts/fireworks/models/glm-5p2",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+            "temperature": 0,
+        }
+        # Use urllib to get raw headers
+        import urllib.request, urllib.error
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=_json.dumps(payload).encode(),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                resp_headers = dict(resp.headers)
+                body = _json.loads(resp.read().decode())
+
+                result["account_status"] = "active"
+                # Extract rate limit headers
+                result["rate_limit_prompt"] = int(resp_headers.get("x-ratelimit-limit-tokens-prompt", 0)) or None
+                result["rate_limit_generated"] = int(resp_headers.get("x-ratelimit-limit-tokens-generated", 0)) or None
+                result["rate_limit_remaining_prompt"] = int(resp_headers.get("x-ratelimit-remaining-tokens-prompt", 0)) or None
+                result["rate_limit_remaining_generated"] = int(resp_headers.get("x-ratelimit-remaining-tokens-generated", 0)) or None
+                result["raw_response"] = _json.dumps({"status": "ok", "headers": {k: v for k, v in resp_headers.items() if k.lower().startswith("x-ratelimit") or k.lower().startswith("fireworks")}})
+
+        except urllib.error.HTTPError as e:
+            body_text = e.read().decode()
+            result["raw_response"] = body_text[:2000]
+
+            if e.code == 403 or e.code == 422:
+                try:
+                    err = _json.loads(body_text)
+                    msg = err.get("error", {}).get("message", "")
+                    result["account_status"] = "suspended"
+                    result["suspension_reason"] = msg
+                    # Extract account name from error message
+                    # "Account mahmoud3034045-mo8sa is suspended..."
+                    import re
+                    name_match = re.search(r'Account\s+(\S+)\s+is\s+suspended', msg)
+                    if name_match:
+                        result["account_name"] = name_match.group(1)
+                except:
+                    result["account_status"] = "error"
+                    result["suspension_reason"] = body_text[:500]
+            elif e.code == 401:
+                result["account_status"] = "invalid_key"
+                result["suspension_reason"] = "Authentication failed — invalid API key"
+            elif e.code == 429:
+                result["account_status"] = "rate_limited"
+                result["suspension_reason"] = "Rate limit exceeded"
+            else:
+                result["account_status"] = "error"
+                result["suspension_reason"] = f"HTTP {e.code}: {body_text[:300]}"
+    except Exception as e:
+        result["account_status"] = "fetch_failed"
+        result["suspension_reason"] = str(e)[:500]
+
+    # ── Step 2: Fetch available models (works even for some suspended accounts) ──
+    try:
+        req2 = urllib.request.Request(
+            f"{base_url}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req2, timeout=10) as resp:
+            models_data = _json.loads(resp.read().decode())
+            model_ids = [m.get("id", "") for m in models_data.get("data", [])]
+            result["models_available"] = _json.dumps(model_ids[:50])  # cap at 50
+    except:
+        pass  # Models list is optional — don't fail if this doesn't work
+
+    # ── Step 3: Try to extract account name from successful responses ──
+    # If account_name is still None and status is active, try models endpoint headers
+    if not result["account_name"] and result["account_status"] == "active":
+        # The account name is sometimes in the request_id or response body
+        # We can also infer from rate limits (free tier vs paid)
+        if result["rate_limit_prompt"] and result["rate_limit_prompt"] >= 7000000:
+            result["plan_type"] = "standard"
+        else:
+            result["plan_type"] = "free"
+
+    return result
+
+
+def save_account_info(key_id, info):
+    """Save or update account info for a key in the database."""
+    conn = get_db()
+    conn.execute("""INSERT OR REPLACE INTO key_account_info
+        (key_id, provider_slug, account_name, account_status, plan_type,
+         credits_remaining, credits_total, rate_limit_prompt, rate_limit_generated,
+         rate_limit_remaining_prompt, rate_limit_remaining_generated,
+         models_available, billing_url, suspension_reason, raw_response, last_fetched_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)""",
+        (key_id, info.get("provider_slug"), info.get("account_name"),
+         info.get("account_status"), info.get("plan_type"),
+         info.get("credits_remaining"), info.get("credits_total"),
+         info.get("rate_limit_prompt"), info.get("rate_limit_generated"),
+         info.get("rate_limit_remaining_prompt"), info.get("rate_limit_remaining_generated"),
+         info.get("models_available"), info.get("billing_url"),
+         info.get("suspension_reason"), info.get("raw_response")))
+    conn.commit()
+    conn.close()
+
+
+def fetch_and_store_account_info(key_id, api_key, provider_slug="fireworks"):
+    """Fetch account info and store in DB. Returns the info dict."""
+    if provider_slug != "fireworks":
+        return {"error": f"Account info fetching not supported for provider: {provider_slug}"}
+
+    info = fetch_fireworks_account_info(api_key)
+    save_account_info(key_id, info)
+    return info
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PROXY ENGINE — try keys in rotation until one works
@@ -3339,8 +3515,27 @@ def keys_page():
                     conn.close()
                     return redirect(url_for("keys_page"))
                 conn.execute("INSERT INTO api_keys (provider_id, label, key_value) VALUES (?,?,?)", (int(pid), label, key_val))
+                new_key_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                 conn.commit()
                 flash("✅ Key added", "success")
+                # Auto-fetch account info for Fireworks keys
+                prov_row = conn.execute("SELECT slug FROM api_providers WHERE id=?", (int(pid),)).fetchone()
+                if prov_row and prov_row["slug"] == "fireworks":
+                    conn.close()  # close before fetch (fetch opens its own conn)
+                    try:
+                        info = fetch_and_store_account_info(new_key_id, key_val, "fireworks")
+                        status = info.get("account_status", "unknown")
+                        name = info.get("account_name", "")
+                        if status == "active":
+                            flash(f"✅ Account info fetched: {name or 'active'} — rate limit: {info.get('rate_limit_prompt', 'N/A')} prompt tokens", "info")
+                        elif status == "suspended":
+                            flash(f"⚠️ Account suspended: {name or 'unknown'} — {info.get('suspension_reason', '')[:100]}", "warning")
+                        else:
+                            flash(f"ℹ️ Account status: {status}", "info")
+                    except Exception as e:
+                        flash(f"ℹ️ Key added, but account info fetch failed: {str(e)[:100]}", "info")
+                else:
+                    conn.close()
             else:
                 flash("❌ Provider and key required", "danger")
         except Exception as e:
@@ -3379,6 +3574,84 @@ def toggle_key(key_id):
         conn.commit()
     conn.close()
     return redirect(url_for("keys_page"))
+
+# ── API: Account info ─────────────────────────────────────────────────────
+@app.route("/api/account-info/<int:key_id>")
+@login_required
+def api_account_info(key_id):
+    """Fetch (or return cached) account info for a specific key."""
+    conn = get_db()
+    key = conn.execute("""SELECT k.*, p.slug as provider_slug
+        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
+        WHERE k.id=?""", (key_id,)).fetchone()
+    if not key:
+        conn.close()
+        return jsonify({"error": "Key not found"}), 404
+
+    # Check if we have cached data
+    cached = conn.execute("SELECT * FROM key_account_info WHERE key_id=?", (key_id,)).fetchone()
+    conn.close()
+
+    if cached:
+        return jsonify({"status": "cached", "data": dict(cached)})
+
+    # No cached data — fetch fresh
+    if key["provider_slug"] == "fireworks":
+        try:
+            info = fetch_and_store_account_info(key_id, key["key_value"], "fireworks")
+            return jsonify({"status": "fresh", "data": info})
+        except Exception as e:
+            return jsonify({"error": str(e)[:200]}), 500
+
+    return jsonify({"error": f"Account info not supported for {key['provider_slug']}"}), 400
+
+
+@app.route("/api/account-info/<int:key_id>/refresh", methods=["POST"])
+@login_required
+def api_account_info_refresh(key_id):
+    """Force-refresh account info for a specific key."""
+    conn = get_db()
+    key = conn.execute("""SELECT k.*, p.slug as provider_slug
+        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
+        WHERE k.id=?""", (key_id,)).fetchone()
+    conn.close()
+    if not key:
+        return jsonify({"error": "Key not found"}), 404
+
+    if key["provider_slug"] == "fireworks":
+        try:
+            info = fetch_and_store_account_info(key_id, key["key_value"], "fireworks")
+            return jsonify({"status": "refreshed", "data": info})
+        except Exception as e:
+            return jsonify({"error": str(e)[:200]}), 500
+
+    return jsonify({"error": f"Account info not supported for {key['provider_slug']}"}), 400
+
+
+@app.route("/api/account-info/bulk-fetch", methods=["POST"])
+@login_required
+def api_account_info_bulk():
+    """Fetch account info for ALL Fireworks keys at once."""
+    conn = get_db()
+    keys = conn.execute("""SELECT k.id, k.key_value, k.dead, k.is_active
+        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
+        WHERE p.slug = 'fireworks'""").fetchall()
+    conn.close()
+
+    results = []
+    for k in keys:
+        try:
+            info = fetch_and_store_account_info(k["id"], k["key_value"], "fireworks")
+            results.append({
+                "key_id": k["id"],
+                "status": info.get("account_status"),
+                "account_name": info.get("account_name"),
+                "rate_limit_prompt": info.get("rate_limit_prompt"),
+            })
+        except Exception as e:
+            results.append({"key_id": k["id"], "status": "error", "error": str(e)[:100]})
+
+    return jsonify({"status": "ok", "fetched": len(results), "results": results})
 
 # ── API: keys ───────────────────────────────────────────────────────────
 @app.route("/api/login", methods=["POST"])

@@ -226,6 +226,26 @@ def init_db():
         try: conn.execute(f"ALTER TABLE proxy_requests ADD COLUMN {col} {col_type}")
         except: pass
 
+    # ── Custom Endpoints table ──
+    # Virtual API endpoints with forced system prompts and parameter overrides.
+    # Each endpoint has a unique slug that becomes its URL: /v1/{slug}/chat/completions
+    conn.execute("""CREATE TABLE IF NOT EXISTS custom_endpoints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        description TEXT,
+        model_slug TEXT NOT NULL,
+        system_prompt TEXT,
+        temperature REAL,
+        max_tokens INTEGER,
+        top_p REAL,
+        is_active INTEGER DEFAULT 1,
+        is_public INTEGER DEFAULT 0,
+        usage_count INTEGER DEFAULT 0,
+        last_used_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_endpoints_slug ON custom_endpoints(slug)")
+
     # ── Seed providers ──
     providers = [
         ("mistral", "Mistral AI", "https://api.mistral.ai/v1", "free",
@@ -2622,6 +2642,123 @@ def check_proxy_auth():
     return jsonify({"error": "Unauthorized — invalid API key"}), 401
 
 # ═══════════════════════════════════════════════════════════════════════════
+# CUSTOM ENDPOINTS — Virtual API endpoints with forced system prompts
+# Each endpoint becomes a URL: /v1/{slug}/chat/completions
+# The system prompt from the client is REPLACED with the endpoint's configured prompt
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/v1/<endpoint_slug>/chat/completions", methods=["POST"])
+def custom_endpoint_proxy(endpoint_slug):
+    """Route custom endpoint requests — replaces system prompt and forwards to the configured model.
+    
+    URL: /v1/{slug}/chat/completions
+    
+    If the slug matches a custom endpoint:
+    1. The system prompt from the client's messages is REMOVED
+    2. The endpoint's configured system_prompt is INJECTED at position 0
+    3. Temperature, max_tokens, top_p are overridden if set on the endpoint
+    4. The request is forwarded to the configured model
+    5. Rate limiting, auth, and all resilience features apply normally
+    
+    Falls through to the legacy model-slug route if no custom endpoint matches.
+    """
+    # ── Skip if this is a known model slug (handled by legacy route) ──
+    if endpoint_slug in MODELS:
+        return proxy_chat_legacy(endpoint_slug)
+    
+    # ── Look up custom endpoint ──
+    conn = get_db()
+    ep = conn.execute("SELECT * FROM custom_endpoints WHERE slug=?", (endpoint_slug,)).fetchone()
+    if not ep:
+        conn.close()
+        return format_error_response("MODEL_NOT_FOUND", endpoint_slug, detail=f"No custom endpoint or model found with slug '{endpoint_slug}'")
+    
+    if not ep["is_active"]:
+        conn.close()
+        return format_error_response("INVALID_REQUEST", endpoint_slug, detail=f"Endpoint '{endpoint_slug}' is paused. Activate it from the dashboard.")
+    
+    # ── Auth ──
+    auth_err = check_proxy_auth()
+    if auth_err:
+        conn.close()
+        return auth_err
+    
+    # ── Rate limiting ──
+    allowed, remaining, retry_after = check_rate_limit()
+    if not allowed:
+        conn.close()
+        return jsonify({"error": "Rate limit exceeded", "message": f"Too many requests. Retry in {retry_after}s.", "retry_after_seconds": retry_after}), 429, {"Retry-After": str(retry_after)}
+    
+    # ── Parse and modify the request body ──
+    body = request.get_data()
+    try:
+        data = json.loads(body)
+    except:
+        conn.close()
+        return format_error_response("INVALID_REQUEST", "", detail="Invalid JSON body")
+    
+    model_slug = ep["model_slug"]
+    if model_slug not in MODELS:
+        conn.close()
+        return format_error_response("MODEL_NOT_FOUND", model_slug, detail=f"Endpoint '{endpoint_slug}' is configured with model '{model_slug}' which is no longer available")
+    
+    # ── Replace system prompt ──
+    messages = data.get("messages", [])
+    forced_system_prompt = ep["system_prompt"] or ""
+    
+    # Remove ALL existing system messages from the client
+    messages = [m for m in messages if m.get("role") != "system"]
+    
+    # Inject the endpoint's system prompt at position 0
+    if forced_system_prompt.strip():
+        messages.insert(0, {"role": "system", "content": forced_system_prompt})
+    
+    data["messages"] = messages
+    data["model"] = model_slug  # Keep the slug for Claude routing
+    
+    # ── Override parameters if configured ──
+    if ep["temperature"] is not None:
+        data["temperature"] = ep["temperature"]
+    if ep["max_tokens"] is not None:
+        data["max_tokens"] = ep["max_tokens"]
+    if ep["top_p"] is not None:
+        data["top_p"] = ep["top_p"]
+    
+    # ── Update usage count ──
+    conn.execute("UPDATE custom_endpoints SET usage_count=usage_count+1, last_used_at=CURRENT_TIMESTAMP WHERE id=?", (ep["id"],))
+    conn.commit()
+    conn.close()
+    
+    # ── Forward to the model via internal dispatch ──
+    # We use Flask's test client to re-dispatch the modified request internally.
+    # This ensures proxy_to_provider reads the modified body correctly.
+    modified_body = json.dumps(data).encode()
+    model_info = MODELS[model_slug]
+    
+    # Store modified body in a thread-local so proxy_to_provider can pick it up
+    _endpoint_modified_body = modified_body
+    
+    # Override request.get_data for this call by using Flask's test client
+    # The cleanest approach: use app.test_client() to re-dispatch
+    with app.test_client() as client:
+        headers_dict = {k: v for k, v in request.headers.items() if k.lower() not in ('host', 'content-length')}
+        internal_resp = client.post(
+            "/v1/chat/completions",
+            data=modified_body,
+            headers=headers_dict,
+            content_type="application/json",
+        )
+    
+    # Build response with custom endpoint headers
+    resp_headers = dict(internal_resp.headers)
+    resp_headers["X-Custom-Endpoint"] = endpoint_slug
+    resp_headers["X-Custom-Model"] = model_slug
+    resp_headers["X-RateLimit-Remaining"] = str(remaining)
+    
+    return internal_resp.data, internal_resp.status_code, resp_headers
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # PROXY ROUTES
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -2942,6 +3079,151 @@ def tokens_revoke(token_id):
     conn.close()
     flash("🗑 Token revoked permanently", "danger")
     return redirect(url_for("tokens_page"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CUSTOM ENDPOINTS UI — Create, manage, test virtual API endpoints
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/endpoints")
+@login_required
+def endpoints_page():
+    """Custom endpoints management dashboard."""
+    conn = get_db()
+    endpoints = conn.execute("SELECT * FROM custom_endpoints ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return render_template("endpoints.html", endpoints=endpoints, models=MODELS)
+
+
+@app.route("/endpoints/create", methods=["POST"])
+@login_required
+def endpoints_create():
+    """Create a new custom endpoint."""
+    slug = request.form.get("slug", "").strip().lower()
+    label = request.form.get("label", "").strip()
+    description = request.form.get("description", "").strip()
+    model_slug = request.form.get("model_slug", "").strip()
+    system_prompt = request.form.get("system_prompt", "").strip()
+    temperature = request.form.get("temperature", "").strip()
+    max_tokens = request.form.get("max_tokens", "").strip()
+    top_p = request.form.get("top_p", "").strip()
+    is_public = 1 if request.form.get("is_public") else 0
+    
+    # ── Validation ──
+    if not slug or not label or not model_slug:
+        flash("⚠ Slug, label, and model are required", "danger")
+        return redirect(url_for("endpoints_page"))
+    
+    # Slug must be URL-safe and not collide with existing models
+    import re as _re
+    if not _re.match(r'^[a-z0-9]+(-[a-z0-9]+)*$', slug):
+        flash("⚠ Slug must be lowercase letters, numbers, and hyphens only", "danger")
+        return redirect(url_for("endpoints_page"))
+    
+    if slug in MODELS:
+        flash(f"⚠ Slug '{slug}' conflicts with an existing model name", "danger")
+        return redirect(url_for("endpoints_page"))
+    
+    if model_slug not in MODELS:
+        flash(f"⚠ Model '{model_slug}' not found", "danger")
+        return redirect(url_for("endpoints_page"))
+    
+    # Parse optional numeric fields
+    temp_val = float(temperature) if temperature else None
+    max_tok = int(max_tokens) if max_tokens else None
+    top_p_val = float(top_p) if top_p else None
+    
+    conn = get_db()
+    try:
+        conn.execute("""INSERT INTO custom_endpoints 
+            (slug, label, description, model_slug, system_prompt, temperature, max_tokens, top_p, is_active, is_public)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+            (slug, label, description, model_slug, system_prompt, temp_val, max_tok, top_p_val, is_public))
+        conn.commit()
+        flash(f"✅ Endpoint created: /v1/{slug}/chat/completions", "success")
+    except sqlite3.IntegrityError:
+        flash(f"⚠ Slug '{slug}' already exists", "danger")
+    finally:
+        conn.close()
+    return redirect(url_for("endpoints_page"))
+
+
+@app.route("/endpoints/toggle/<int:ep_id>", methods=["POST"])
+@login_required
+def endpoints_toggle(ep_id):
+    """Activate/pause a custom endpoint."""
+    conn = get_db()
+    ep = conn.execute("SELECT slug, is_active FROM custom_endpoints WHERE id=?", (ep_id,)).fetchone()
+    if ep:
+        new_state = 0 if ep["is_active"] else 1
+        conn.execute("UPDATE custom_endpoints SET is_active=? WHERE id=?", (new_state, ep_id))
+        conn.commit()
+        flash(f"{'▶ Activated' if new_state else '⏸ Paused'} endpoint /v1/{ep['slug']}/chat/completions", "info")
+    conn.close()
+    return redirect(url_for("endpoints_page"))
+
+
+@app.route("/endpoints/delete/<int:ep_id>", methods=["POST"])
+@login_required
+def endpoints_delete(ep_id):
+    """Delete a custom endpoint."""
+    conn = get_db()
+    ep = conn.execute("SELECT slug FROM custom_endpoints WHERE id=?", (ep_id,)).fetchone()
+    if ep:
+        conn.execute("DELETE FROM custom_endpoints WHERE id=?", (ep_id,))
+        conn.commit()
+        flash(f"🗑 Deleted endpoint /v1/{ep['slug']}/chat/completions", "danger")
+    conn.close()
+    return redirect(url_for("endpoints_page"))
+
+
+@app.route("/endpoints/test/<int:ep_id>", methods=["POST"])
+@login_required
+def endpoints_test(ep_id):
+    """Test a custom endpoint from the dashboard."""
+    conn = get_db()
+    ep = conn.execute("SELECT * FROM custom_endpoints WHERE id=?", (ep_id,)).fetchone()
+    if not ep:
+        conn.close()
+        return jsonify({"error": "Endpoint not found"}), 404
+    
+    test_message = request.form.get("test_message", "Hello, who are you?")
+    model_slug = ep["model_slug"]
+    
+    if model_slug not in MODELS:
+        conn.close()
+        return jsonify({"error": f"Model '{model_slug}' not available"}), 400
+    
+    # Build test request
+    messages = []
+    if ep["system_prompt"]:
+        messages.append({"role": "system", "content": ep["system_prompt"]})
+    messages.append({"role": "user", "content": test_message})
+    
+    test_body = json.dumps({
+        "model": model_slug,
+        "messages": messages,
+        "max_tokens": ep["max_tokens"] or 256,
+        "temperature": ep["temperature"] or 0.7,
+        "top_p": ep["top_p"] or 1.0,
+    }).encode()
+    
+    conn.close()
+    
+    # Use test client to dispatch internally
+    with app.test_client() as client:
+        resp = client.post("/v1/chat/completions", data=test_body, content_type="application/json")
+    
+    try:
+        resp_data = json.loads(resp.data)
+        if "choices" in resp_data:
+            content = resp_data["choices"][0]["message"]["content"]
+            return jsonify({"response": content, "model": resp_data.get("model", model_slug), "status": "success"})
+        else:
+            return jsonify({"error": resp_data.get("error", "Unknown error"), "status": "error"}), resp.status_code
+    except:
+        return jsonify({"error": "Failed to parse response", "raw": resp.data.decode()[:500]}), 500
+
 
 # ── Cookie routes ───────────────────────────────────────────────────────
 @app.route("/upload", methods=["GET", "POST"])

@@ -472,6 +472,8 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
     Handles both old format (completion field) and new format (content_block_delta
     with text_delta) used when tools/web search are enabled.
     Filters out tool_use/tool_result blocks — only text reaches the client.
+    Transforms <antArtifact> XML → standard Markdown code blocks (with buffering
+    for artifacts that span multiple SSE events).
     
     Input (Claude/Anthropic):
         Old: data: {"completion":"Hello","stop_reason":null}
@@ -485,43 +487,48 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
     chunk_id = f"chatcmpl-{conv_uuid[:8]}"
     created = int(_time.time())
     
+    # ── Phase 1: Extract all text and stop_reason from SSE events ──
+    all_text_parts = []
+    stop_reason = None
+    
     for line in sse_text.split("\n"):
         if not line.startswith("data: "):
             continue
-        
         try:
             obj = json.loads(line[6:])
         except (json.JSONDecodeError, ValueError):
             continue
         
-        # Extract text from either format
-        completion_text = ""
-        
         # Old format: direct completion field
         if obj.get("completion"):
-            completion_text = obj["completion"]
-        
+            all_text_parts.append(obj["completion"])
         # New format: content_block_delta with text_delta
         if obj.get("type") == "content_block_delta":
             delta = obj.get("delta", {})
             if delta.get("type") == "text_delta":
-                completion_text = delta.get("text", "")
-        
-        # Stop reason (old or new format)
-        stop_reason = obj.get("stop_reason")
+                all_text_parts.append(delta.get("text", ""))
+        # Stop reason
+        if obj.get("stop_reason"):
+            stop_reason = obj["stop_reason"]
         if obj.get("type") == "message_delta":
             if obj.get("delta", {}).get("stop_reason"):
                 stop_reason = obj["delta"]["stop_reason"]
-        
-        # ── Filter tool artifacts from each chunk ──
-        if completion_text:
-            completion_text = filter_tool_artifacts(completion_text)
-            if not completion_text.strip():
-                continue  # chunk was entirely tool XML — skip it
-        
-        finish_reason = map_stop_reason(stop_reason) if stop_reason else None
-        
-        if not completion_text and not finish_reason:
+    
+    full_text = "".join(all_text_parts)
+    
+    # ── Phase 2: Transform artifacts + filter tool XML on full text ──
+    # Doing this on the full text handles artifacts that span multiple chunks
+    full_text = transform_ant_artifacts(full_text)
+    full_text = filter_tool_artifacts(full_text)
+    
+    # ── Phase 3: Re-emit as streaming chunks ──
+    finish_reason = map_stop_reason(stop_reason) if stop_reason else None
+    
+    # Split into reasonable chunks for streaming feel (by lines, keeping newlines)
+    lines = full_text.split("\n")
+    for i, line in enumerate(lines):
+        chunk_text = line + ("\n" if i < len(lines) - 1 else "")
+        if not chunk_text:
             continue
         
         openai_chunk = {
@@ -531,13 +538,25 @@ def transform_claude_stream(sse_text, conv_uuid, real_model):
             "model": real_model,
             "choices": [{
                 "index": 0,
-                "delta": {"content": completion_text} if completion_text else {},
-                "finish_reason": finish_reason,
+                "delta": {"content": chunk_text},
+                "finish_reason": None,
             }],
         }
-        
         yield f"data: {json.dumps(openai_chunk, ensure_ascii=False)}\n\n".encode()
     
+    # Final chunk with finish_reason
+    final_chunk = {
+        "id": chunk_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": real_model,
+        "choices": [{
+            "index": 0,
+            "delta": {},
+            "finish_reason": finish_reason or "stop",
+        }],
+    }
+    yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n".encode()
     yield b"data: [DONE]\n\n"
 
 
@@ -594,6 +613,19 @@ def build_natural_prompt(messages):
 
     prompt_text = "\n\n".join(prompt_pieces)
 
+    # ── Artifact format instruction ──
+    # Tell Claude to use standard Markdown code blocks instead of <antArtifact> XML.
+    # This ensures any frontend (not just Claude.ai) can parse the output.
+    # We append it naturally so it doesn't look like an API system tag.
+    artifact_instruction = (
+        "\n\n---\n"
+        "Output format note: When writing code, UI components, HTML, SVG, or any "
+        "file content, use standard Markdown code blocks (```html, ```tsx, ```python, "
+        "```csv, etc.) with the appropriate language label. Do NOT use <antArtifact> "
+        "XML tags or <antThinking> tags — output everything as standard Markdown."
+    )
+    prompt_text = prompt_text + artifact_instruction
+
     # Transformation happened if we had system messages or multi-turn
     was_transformed = len(system_parts) > 0 or len(conv_parts) > 2
 
@@ -640,6 +672,117 @@ def contains_tool_artifacts(text):
         r'<(?:function_calls|invoke\b|function_results|antml:function_calls|antml:invoke|web_search)',
         text, re.IGNORECASE
     ))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ARTIFACT TRANSFORMATION — converts Claude.ai's <antArtifact> XML blocks
+# into standard Markdown code blocks that any frontend can parse.
+# Also strips <antThinking> blocks (Claude's internal reasoning).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Map Claude.ai artifact types → markdown code block languages
+_ARTIFACT_TYPE_MAP = {
+    "text/html": "html",
+    "application/vnd.ant.react": "tsx",
+    "text/react": "tsx",
+    "text/python": "python",
+    "text/javascript": "javascript",
+    "text/typescript": "typescript",
+    "text/markdown": "markdown",
+    "image/svg+xml": "svg",
+    "text/csv": "csv",
+    "text/css": "css",
+    "application/json": "json",
+    "text/xml": "xml",
+    "text/yaml": "yaml",
+    "text/sql": "sql",
+    "text/sh": "bash",
+    "text/bash": "bash",
+    "text/plain": "text",
+}
+
+_ARTIFACT_ATTRS_RE = re.compile(
+    r'(?P<attr>\w+)\s*=\s*"(?P<val>[^"]*)"'
+)
+
+_ANT_ARTIFACT_BLOCK_RE = re.compile(
+    r'<antArtifact(?P<attrs>[^>]*)>(?P<content>.*?)</antArtifact>',
+    re.DOTALL | re.IGNORECASE,
+)
+_ANT_ARTIFACT_UNCLOSED_RE = re.compile(
+    r'<antArtifact(?P<attrs>[^>]*)>(?P<content>.*)',
+    re.DOTALL | re.IGNORECASE,
+)
+_ANT_THINKING_RE = re.compile(
+    r'<antThinking>.*?</antThinking>', re.DOTALL | re.IGNORECASE
+)
+_ANT_THINKING_UNCLOSED_RE = re.compile(
+    r'<antThinking>.*', re.DOTALL | re.IGNORECASE
+)
+_ANT_ARTIFACT_TAG_RE = re.compile(
+    r'</?antArtifact[^>]*>', re.IGNORECASE
+)
+
+
+def _extract_artifact_lang(attrs_text):
+    """Parse attributes string and determine the markdown language."""
+    lang = "text"
+    has_lang = False
+    has_type = False
+    type_val = ""
+    for m in _ARTIFACT_ATTRS_RE.finditer(attrs_text):
+        key = m.group("attr").lower()
+        val = m.group("val")
+        if key == "language":
+            lang = val
+            has_lang = True
+        elif key == "type":
+            type_val = val
+            has_type = True
+    if has_lang:
+        return lang
+    if has_type:
+        return _ARTIFACT_TYPE_MAP.get(type_val, type_val.replace("text/", "") if type_val.startswith("text/") else "text")
+    return "text"
+
+
+def transform_ant_artifacts(text):
+    """Convert <antArtifact> XML blocks → standard Markdown code blocks.
+
+    Also strips <antThinking> reasoning blocks (not meant for the user).
+    Safe to run on any text — only touches antArtifact/antThinking tags,
+    never affects legitimate HTML/SVG/code the user asked for.
+    """
+    # 1. Strip <antThinking> blocks (complete and unclosed)
+    text = _ANT_THINKING_RE.sub("", text)
+    text = _ANT_THINKING_UNCLOSED_RE.sub("", text)
+
+    # 2. Transform complete <antArtifact>...</antArtifact> blocks
+    def _replace_block(m):
+        lang = _extract_artifact_lang(m.group("attrs"))
+        content = m.group("content").strip("\n")
+        # If content already starts with ``` we don't double-wrap
+        if content.startswith("```"):
+            return content
+        return f"```{lang}\n{content}\n```"
+
+    text = _ANT_ARTIFACT_BLOCK_RE.sub(_replace_block, text)
+
+    # 3. Handle unclosed <antArtifact> (stream was cut off)
+    def _replace_unclosed(m):
+        content = m.group("content").strip("\n")
+        if content.startswith("```"):
+            return content
+        return f"```\n{content}\n```"
+
+    text = _ANT_ARTIFACT_UNCLOSED_RE.sub(_replace_unclosed, text)
+
+    # 4. Clean up any orphaned antArtifact tags (self-closing, malformed)
+    text = _ANT_ARTIFACT_TAG_RE.sub("", text)
+
+    # 5. Normalize whitespace
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
 
 def map_stop_reason(stop_reason):
     """Map Anthropic stop_reason to OpenAI finish_reason."""
@@ -980,8 +1123,11 @@ def proxy_to_claude(real_model, model_slug):
             if contains_tool_artifacts(raw_completion):
                 app.logger.info(f"[claude] token {cookie_set['id']}: tool artifacts in response — filtering")
             
-            # ── Filter tool artifacts from final response ──
-            filtered_text = filter_tool_artifacts(raw_completion).rstrip('\n')
+            # ── Transform artifacts + filter tool XML ──
+            # Step 1: Convert <antArtifact> blocks → standard Markdown code blocks
+            transformed_text = transform_ant_artifacts(raw_completion)
+            # Step 2: Filter internal tool XML (function_calls, invoke, etc.)
+            filtered_text = filter_tool_artifacts(transformed_text).rstrip('\n')
             if not filtered_text and raw_completion:
                 # Response was entirely tool XML — use raw as fallback
                 filtered_text = raw_completion.rstrip('\n')

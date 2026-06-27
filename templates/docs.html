@@ -74,7 +74,7 @@ print(response.choices[0].message.content)</code></pre>
   -d '{"model":"mistral-small","stream":true,"messages":[{"role":"user","content":"Hello!"}]}'</code></pre>
 
 <!-- ═══════════════════════════════════════════ -->
-<h2>📋 Available Models <span style="font-size:0.7rem;color:var(--text-dim);">(13 models — all tested)</span></h2>
+<h2>📋 Available Models <span style="font-size:0.7rem;color:var(--text-dim);">(15 models — all tested)</span></h2>
 
 <div style="margin-bottom:1rem;">
     <span class="badge-direct">⚡ Direct</span> = replies immediately |
@@ -196,13 +196,59 @@ data: [DONE]</code></pre>
 <p>After each successful request, the gateway automatically deletes the conversation from Claude.ai to prevent accumulation. Conversations are created with an <strong>empty name</strong> — Claude auto-names them based on the first message content, just like a normal user conversation. This ensures the sessions look natural and don't trigger spam detection.</p>
 
 <h4>🔧 Tool Artifact Filtering (Anti-Leak Protection)</h4>
-<p>Claude.ai's web interface has tools (web search, MCP, etc.) enabled in its system prompt. When the model decides to use a tool, it emits XML tags like <code>&lt;function_calls&gt;</code> and <code>&lt;invoke name="..."&gt;</code> as plain text, then stops generation to wait for a tool result. Since our gateway doesn't execute tools, these artifacts would leak to the API consumer as raw text.</p>
+<p>Claude.ai's web interface has tools (web search, MCP, etc.) enabled in its system prompt. When the model decides to use a tool, it emits XML tags like <code>&lt;function_calls&gt;</code> and <code>&lt;invoke name="..."&gt;</code> as plain text, then stops generation to wait for a tool result. Since our gateway doesn't execute these internal tools, the artifacts would leak to the API consumer as raw text.</p>
 <p><strong>The gateway handles this in two layers:</strong></p>
 <ul>
     <li><strong>Layer 1 — Automatic Retry:</strong> If Claude's response contains tool artifacts or stops with <code>tool_use</code> reason, the gateway automatically retries with an anti-tool instruction appended to the prompt. This usually makes Claude answer directly.</li>
-    <li><strong>Layer 2 — Regex Filtering:</strong> Any remaining tool XML is stripped from the response before sending to the client. Patterns filtered: <code>&lt;function_calls&gt;</code>, <code>&lt;invoke&gt;</code>, <code>&lt;function_results&gt;</code>, <code>&lt;antml:function_calls&gt;</code>, and all variants.</li>
+    <li><strong>Layer 2 — Regex Filtering:</strong> Any remaining tool XML is stripped from the response before sending to the client. Patterns filtered: <code>&lt;function_calls&gt;</code>, <code>&lt;invoke&gt;</code>, <code>&lt;function_results&gt;</code>, <code>&lt;antml:function_calls&gt;</code>, <code>&lt;web_search&gt;</code> tags, and all variants.</li>
 </ul>
+<p><strong>Filter safety:</strong> The regex patterns match <em>only</em> Claude's internal tool XML tags (<code>function_calls</code>, <code>invoke</code>, <code>web_search</code>). They do <strong>NOT</strong> affect legitimate HTML/SVG/JSX code that Claude writes as part of the answer. Tags like <code>&lt;div&gt;</code>, <code>&lt;svg&gt;</code>, <code>&lt;circle&gt;</code>, <code>&lt;script&gt;</code>, <code>&lt;style&gt;</code>, <code>&lt;form&gt;</code> pass through untouched.</p>
 <p>This means API consumers always receive clean text responses — never tool call XML or incomplete responses.</p>
+
+<h4>🌐 Web Search (Native, Server-Side)</h4>
+<p>The gateway enables Claude's <strong>native web search</strong> capability. When a user asks about current events, prices, news, or any time-sensitive information, Claude automatically searches the web and returns factual, up-to-date answers — no external API or plugin required.</p>
+<p><strong>How it works:</strong> The completion payload includes a <code>tools</code> array with <code>{"type": "web_search_v0", "name": "web_search"}</code>. Claude executes the search server-side on Claude.ai's infrastructure, processes the results, and returns a natural-language answer with real data. The gateway extracts only the final text response — tool execution blocks (<code>tool_use</code>/<code>tool_result</code>) are silently dropped from the stream.</p>
+<pre><code># Ask about current data — Claude searches the web automatically
+curl -X POST https://aicookies.elliaa.com/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_AICOOKIES_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"What is the current price of gold?"}]}'
+
+# Response — Claude searched the web and returned real data
+{"choices":[{"message":{"content":"The current price of gold is $4,085 per troy ounce..."}}]}</code></pre>
+<p><strong>No configuration needed.</strong> Web search is always enabled for <code>claude-sonnet-4-6</code>. The user simply asks a question — Claude decides when to search. Works in both streaming and non-streaming modes.</p>
+
+<h4>📦 Artifact Compatibility (Standard Markdown Output)</h4>
+<p>Claude.ai's web interface uses proprietary XML tags (<code>&lt;antArtifact type="text/html"&gt;...&lt;/antArtifact&gt;</code>) to render interactive code artifacts. External frontends cannot parse these tags. The gateway solves this in two ways:</p>
+<ul>
+    <li><strong>System Prompt Instruction:</strong> The gateway injects a directive telling Claude to use standard Markdown code blocks (<code>```html</code>, <code>```tsx</code>, etc.) instead of <code>&lt;antArtifact&gt;</code> XML.</li>
+    <li><strong>Transformation Layer:</strong> If <code>&lt;antArtifact&gt;</code> tags still appear in the response, the gateway's <code>transform_ant_artifacts()</code> function converts them to standard Markdown code blocks before sending to the client.</li>
+</ul>
+<p><strong>Supported artifact types → Markdown languages:</strong></p>
+<pre><code>text/html              → ```html
+application/vnd.ant.react → ```tsx
+text/python            → ```python
+text/javascript        → ```javascript
+text/typescript        → ```typescript
+image/svg+xml          → ```svg
+text/csv               → ```csv
+text/css               → ```css
+application/json       → ```json
+text/xml               → ```xml
+text/markdown          → ```markdown
+text/sql               → ```sql
+text/yaml              → ```yaml
+text/sh / text/bash    → ```bash
+text/plain             → ```text</code></pre>
+<p><strong>Also strips:</strong> <code>&lt;antThinking&gt;</code> reasoning blocks (Claude's internal chain-of-thought) are removed from the output — users see only the final answer.</p>
+<pre><code># Ask Claude to build a UI — get standard Markdown back
+curl ... -d '{"model":"claude-sonnet-4-6",
+  "messages":[{"role":"user","content":"Create an HTML landing page with a blue gradient"}]}'
+
+# Response — clean Markdown code block (NOT <antArtifact> XML)
+{"choices":[{"message":{"content":"```html\n<!DOCTYPE html>\n<html>...\n```"}}]}</code></pre>
+<p><strong>Streaming artifacts:</strong> The streaming transformer buffers the full response text, transforms any artifact blocks, then re-chunks into SSE events. This handles artifacts that span multiple SSE chunks correctly.</p>
+<p><strong>Filter safety:</strong> The artifact transformation and tool filtering layers are completely separate. Artifact transformation converts <code>&lt;antArtifact&gt;</code> → Markdown. Tool filtering strips <code>&lt;function_calls&gt;</code> XML. Legitimate HTML/SVG tags in the user's response are never touched.</p>
 
 <h4>📡 Claude Streaming Format</h4>
 <p>Claude responses are streamed in OpenAI-compatible SSE format. The gateway transforms Anthropic's native SSE format in real-time:</p>
@@ -211,7 +257,8 @@ data: {"choices":[{"delta":{"content":"Hello"}}]}
 data: {"choices":[{"delta":{"content":" world"}}]}
 data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
 data: [DONE]</code></pre>
-<p><strong>Tool artifacts are filtered from each streaming chunk</strong> — chunks that are entirely tool XML are silently dropped. The <code>finish_reason</code> mapping:</p>
+<p><strong>SSE format details:</strong> When web search tools are enabled (the default), Claude switches from the legacy <code>{"completion":"text"}</code> format to <code>content_block_delta</code> events with <code>{"delta":{"type":"text_delta","text":"..."}}</code>. The gateway handles <strong>both</strong> formats transparently — API consumers always receive standard OpenAI-compatible chunks regardless of which mode Claude uses internally.</p>
+<p><strong>Tool artifacts are filtered from the stream</strong> — the transformer buffers the full response, applies artifact transformation and tool XML filtering, then re-chunks into SSE events. Chunks that would be entirely tool XML are silently dropped. The <code>finish_reason</code> mapping:</p>
 <ul>
     <li><code>stop_sequence</code> / <code>end_turn</code> → <code>stop</code></li>
     <li><code>max_tokens</code> → <code>length</code></li>

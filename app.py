@@ -2961,6 +2961,10 @@ def strip_reasoning_prefix(resp_bytes, model_slug):
       'Thinking Process:\\n\\n1.  Analyze...\\n\\n**Final Answer:** Hello!'
     We extract the text after the last 'Final Answer' marker, or strip the numbered
     thinking block if no marker is found.
+
+    Also handles Fireworks' 'reasoning_content' field — when present, the actual
+    answer is in 'content' and the thinking is separated in 'reasoning_content'.
+    In that case we just need to remove the reasoning_content field and keep content as-is.
     """
     try:
         data = json.loads(resp_bytes)
@@ -2972,6 +2976,14 @@ def strip_reasoning_prefix(resp_bytes, model_slug):
 
     for choice in data.get("choices", []):
         msg = choice.get("message", {})
+
+        # ── Fireworks reasoning_content handling ──
+        # If the API already separated thinking into 'reasoning_content', just drop it
+        if "reasoning_content" in msg:
+            # The 'content' field already has the clean answer — just remove reasoning_content
+            msg.pop("reasoning_content", None)
+            continue
+
         content = msg.get("content", "")
         if not isinstance(content, str) or not content:
             continue

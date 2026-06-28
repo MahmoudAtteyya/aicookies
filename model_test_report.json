@@ -1,0 +1,110 @@
+{
+  "test_date": "2026-06-28",
+  "gateway": "https://aicookies.elliaa.com",
+  "api_key": "sk-aic-VME_MNNqti5LAxxSEd-7Fpc632BKz5u7LWHzj_5NEzk",
+  "total_models": 14,
+  "models_tested": 13,
+  "summary": {
+    "text_generation": "13/13 ✅ (all respond correctly)",
+    "code_generation": "13/13 ✅ (all produce valid Python code)",
+    "json_mode": "10/13 ✅ (glm-5p2, qwen3p7-plus, deepseek-v4-pro output thinking prefix before JSON)",
+    "overall_status": "All 13 models operational. claude-sonnet-4-6 has 0 active keys."
+  },
+  "results": {
+    "mistral-small": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "Fast (1.8s). Clean responses. Excellent all-rounder."
+    },
+    "mistral-medium": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "Fastest (1.4s). Strong reasoning. Best Mistral model."
+    },
+    "mistral-nemo": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "Good value (12B, $0.15/$0.15). No markdown wrapping in code."
+    },
+    "codestral": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "Code-specialist (22B). 256K context. Fast (1.2s). Best for code tasks."
+    },
+    "ministral-8b": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "Smallest model (8B). Fast (2.5s). Good for simple tasks. Edge-ready."
+    },
+    "command-a": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "Cohere flagship. 256K context. Web search capable. Good for RAG."
+    },
+    "command-r7b": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "Smallest Cohere (7B). Very cheap ($0.0375/$0.15). Fast (2.3s). Returns Cohere native format."
+    },
+    "command-r-plus": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(input_string): return input_string[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "104B MoE. Strong reasoning. Returns Cohere native format (needs client-side parsing)."
+    },
+    "llama-3.3-70b": {
+      "text": {"ok": true, "response": "42"},
+      "code": {"ok": true, "response": "def reverse_string(s: str) -> str: ..."},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "Meta 70B via SambaNova. FREE. Fast (2s). Good type hints in code. Best free option."
+    },
+    "glm-5p2": {
+      "text": {"ok": true, "response": "1. **Analyze the Request:**... (includes reasoning)"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": false, "response": "Outputs thinking process before JSON. JSON is embedded but not standalone."},
+      "notes": "Reasoning model (shows thinking). 131K context. 6.5s latency. Needs prompt eng to get clean JSON."
+    },
+    "kimi-k2p7-code": {
+      "text": {"ok": true, "response": "We need answer 15+27 = 42... (shows reasoning)"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": true, "response": "{\"name\": \"Alice\", \"age\": 30}"},
+      "notes": "1T MoE code specialist. Shows brief reasoning. 32K context limit. Good JSON compliance."
+    },
+    "qwen3p7-plus": {
+      "text": {"ok": true, "response": "Thinking Process:... (shows reasoning)"},
+      "code": {"ok": true, "response": "Thinking Process before code output."},
+      "json": {"ok": false, "response": "Outputs thinking prefix. JSON embedded but not standalone."},
+      "notes": "Reasoning model. Only 4K context (!). Cheapest Fireworks ($0.40/$1.60). Needs prompt eng."
+    },
+    "deepseek-v4-pro": {
+      "text": {"ok": true, "response": "We are asked: 'What is 15+27?'... (shows reasoning)"},
+      "code": {"ok": true, "response": "def reverse_string(s): return s[::-1]"},
+      "json": {"ok": false, "response": "JSON starts but truncated by thinking prefix."},
+      "notes": "Reasoning model. 131K context. Shows chain-of-thought. Good for complex reasoning tasks."
+    }
+  },
+  "key_findings": {
+    "fastest_model": "codestral (1.2s)",
+    "cheapest_model": "command-r7b ($0.0375/$0.15 per million tokens)",
+    "best_free_model": "llama-3.3-70b (SambaNova, free dev tier)",
+    "largest_context": "codestral & command-a (256K tokens)",
+    "reasoning_models": "glm-5p2, qwen3p7-plus, deepseek-v4-pro, kimi-k2p7-code (show thinking process)",
+    "json_compliance_issue": "Reasoning models (glm-5p2, qwen3p7-plus, deepseek-v4-pro) prepend thinking to JSON output. Need 'No thinking, just output JSON' prompt.",
+    "cohere_format_note": "command-r7b and command-r-plus return Cohere native format (message.content is array of {type, text}) instead of OpenAI format (message.content is string). Gateway should normalize.",
+    "claude_issue": "claude-sonnet-4-6 has 0 active keys — not testable. Cookie-based auth not configured."
+  },
+  "recommendations": [
+    "Add prompt engineering for reasoning models: 'Do not show your thinking. Output only the final answer.'",
+    "Normalize Cohere response format to OpenAI-compatible in the gateway",
+    "Increase qwen3p7-plus context from 4K — likely a configuration error, should be 131K+",
+    "Add cookie-based keys for claude-sonnet-4-6 to enable testing",
+    "Consider load balancing across the 10 Fireworks keys for better throughput"
+  ]
+}

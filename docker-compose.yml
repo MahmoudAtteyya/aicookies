@@ -6,7 +6,7 @@ services:
     ports:
       - "5050:5050"
     volumes:
-      - cookie_data:/data
+      - /opt/aicookies-data:/data
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -45,8 +45,7 @@ services:
       - "traefik.http.services.aicookies.loadbalancer.server.port=5050"
       - "traefik.docker.network=dokploy-network"
 
-volumes:
-  cookie_data:
+volumes:  # Using bind mount /opt/aicookies-data instead — survives Dokploy recreates
 
 networks:
   dokploy-network:

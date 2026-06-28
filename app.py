@@ -504,9 +504,9 @@ MODELS = {
     },
     "qwen3p7-plus": {
         "provider": "fireworks", "real_model": "accounts/fireworks/models/qwen3p7-plus",
-        "desc": "Qwen 3.7 Plus — affordable reasoning model, 4K ctx", "style": "reasoning", "tokens": 4000,
+        "desc": "Qwen 3.7 Plus — affordable reasoning model, 131K ctx", "style": "reasoning", "tokens": 131072,
         "developer": "Alibaba / Qwen", "display_name": "Qwen 3.7 Plus",
-        "max_output": 4000, "params": "Undisclosed",
+        "max_output": 131072, "params": "Undisclosed",
         "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
         "pricing": {"in": "$0.40", "out": "$1.60", "cached_in": "$0.08"},
     },
@@ -859,7 +859,17 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                     "X-Proxy-Latency": str(latency), "X-Proxy-Model": real_model,
                 })
             else:
-                return resp.content, resp.status_code, {
+                # ── Post-process non-streaming responses ──
+                resp_body = resp.content
+                # 1) Normalize Cohere native format → OpenAI format
+                if provider_slug == "cohere":
+                    resp_body = normalize_cohere_response(resp_body, model_slug, real_model)
+                # 2) Strip reasoning/thinking prefix for reasoning-style models
+                model_entry = MODELS.get(model_slug, {})
+                if model_entry.get("style") == "reasoning":
+                    resp_body = strip_reasoning_prefix(resp_body, model_slug)
+
+                return resp_body, resp.status_code, {
                     "Content-Type": resp.headers.get("Content-Type", "application/json"),
                     "X-Proxy-Provider": provider_slug, "X-Proxy-Key": str(key_id),
                     "X-Proxy-Latency": str(latency),
@@ -965,7 +975,15 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                             "X-Proxy-Fallback-Reason": "Primary provider exhausted",
                         })
                     else:
-                        return fb_resp.content, fb_resp.status_code, {
+                        # ── Post-process fallback non-streaming responses ──
+                        fb_body = fb_resp.content
+                        if fb_provider == "cohere":
+                            fb_body = normalize_cohere_response(fb_body, fb_model, fb_model)
+                        fb_model_entry = MODELS.get(fb_model, {})
+                        if fb_model_entry.get("style") == "reasoning":
+                            fb_body = strip_reasoning_prefix(fb_body, fb_model)
+
+                        return fb_body, fb_resp.status_code, {
                             "Content-Type": fb_resp.headers.get("Content-Type", "application/json"),
                             "X-Proxy-Provider": fb_provider, "X-Proxy-Key": str(fb_key_id),
                             "X-Proxy-Latency": str(fb_latency),
@@ -2864,14 +2882,140 @@ def inject_model_into_body(body, real_model, provider_slug):
         data = json.loads(body)
     except:
         return body
-    
+
     data["model"] = real_model
-    
+
     # Cohere-specific: ensure max_tokens is present
     if provider_slug == "cohere":
         if "max_tokens" not in data:
             data["max_tokens"] = 1024
-    
+
+    return json.dumps(data).encode()
+
+
+def normalize_cohere_response(resp_bytes, model_slug, real_model):
+    """Convert Cohere v2 /chat native response to OpenAI /v1/chat/completions format.
+
+    Cohere returns:
+      {"id":"...", "message":{"role":"assistant","content":[{"type":"text","text":"..."}]}, "finish_reason":"COMPLETE", "usage":{...}}
+    OpenAI expects:
+      {"id":"...", "object":"chat.completion", "model":"...", "choices":[{"index":0,"message":{"role":"assistant","content":"..."},"finish_reason":"stop"}], "usage":{"prompt_tokens":N,"completion_tokens":N,"total_tokens":N}}
+    """
+    try:
+        data = json.loads(resp_bytes)
+    except Exception:
+        return resp_bytes  # Can't parse — return as-is
+
+    # Already OpenAI format? (has "choices")
+    if "choices" in data:
+        return resp_bytes
+
+    # Cohere native format
+    if "message" in data and isinstance(data.get("message"), dict):
+        msg = data["message"]
+        # Extract text from content array
+        content_parts = msg.get("content", [])
+        if isinstance(content_parts, list):
+            text = "".join(p.get("text", "") for p in content_parts if isinstance(p, dict))
+        elif isinstance(content_parts, str):
+            text = content_parts
+        else:
+            text = str(content_parts)
+
+        # Map finish_reason
+        finish_map = {"COMPLETE": "stop", "MAX_TOKENS": "length", "ERROR": "error", "ERROR_TOXIC": "content_filter"}
+        finish_reason = finish_map.get(data.get("finish_reason", ""), "stop")
+
+        # Map usage
+        usage_raw = data.get("usage", {})
+        billed = usage_raw.get("billed_units", {})
+        prompt_tokens = billed.get("input_tokens", usage_raw.get("tokens", {}).get("input_tokens", 0))
+        completion_tokens = billed.get("output_tokens", usage_raw.get("tokens", {}).get("output_tokens", 0))
+
+        openai_resp = {
+            "id": data.get("id", f"chatcmpl-{uuid.uuid4().hex[:24]}"),
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model_slug,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": text},
+                "finish_reason": finish_reason,
+            }],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        }
+        return json.dumps(openai_resp).encode()
+
+    return resp_bytes  # Unknown format — return as-is
+
+
+def strip_reasoning_prefix(resp_bytes, model_slug):
+    """For reasoning models (style='reasoning'), strip 'Thinking Process:' / chain-of-thought
+    prefixes from the response content so the final answer is clean.
+
+    Reasoning models like glm-5p2, qwen3p7-plus, deepseek-v4-pro often prepend:
+      'Thinking Process:\\n\\n1.  Analyze...\\n\\n**Final Answer:** Hello!'
+    We extract the text after the last 'Final Answer' marker, or strip the numbered
+    thinking block if no marker is found.
+    """
+    try:
+        data = json.loads(resp_bytes)
+    except Exception:
+        return resp_bytes
+
+    if "choices" not in data:
+        return resp_bytes  # Not OpenAI format — leave it
+
+    for choice in data.get("choices", []):
+        msg = choice.get("message", {})
+        content = msg.get("content", "")
+        if not isinstance(content, str) or not content:
+            continue
+
+        # Skip if content is already short and clean (no thinking prefix)
+        if len(content) < 80 and not re.match(r'^(Thinking Process|1\.\s+\*\*Analyze|Let me|We need|We are asked)', content, re.I):
+            continue
+
+        # Pattern 1: Look for "Final Answer:" or "**Final Answer:**" marker
+        final_match = re.search(r'(?:\*\*)?Final Answer(?:\*\*)?\s*[:：]?\s*(.+)', content, re.S | re.I)
+        if final_match:
+            msg["content"] = final_match.group(1).strip()
+            continue
+
+        # Pattern 2: Look for a JSON object in the content (for JSON mode requests)
+        json_match = re.search(r'(\{[^{}]*\})', content)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(1))
+                if isinstance(parsed, dict):
+                    msg["content"] = json.dumps(parsed)
+                    continue
+            except:
+                pass
+
+        # Pattern 3: Strip numbered thinking block — find the actual answer after the reasoning
+        # Look for double-newline after numbered list, then take the rest
+        lines = content.split('\n')
+        answer_start = None
+        for i, line in enumerate(lines):
+            # Skip thinking lines (numbered, bold markers, "Analyze", etc.)
+            stripped = line.strip()
+            if not stripped:
+                if answer_start is not None:
+                    break
+                continue
+            if re.match(r'^\d+\.\s', stripped) or stripped.startswith('**') or 'Analyze' in stripped or 'Thinking' in stripped:
+                answer_start = i + 1
+                continue
+            # Found a non-thinking line
+            if answer_start is not None:
+                msg["content"] = '\n'.join(lines[i:]).strip()
+                break
+
     return json.dumps(data).encode()
 
 # ═══════════════════════════════════════════════════════════════════════════

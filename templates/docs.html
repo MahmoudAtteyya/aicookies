@@ -350,7 +350,7 @@ table.api tbody tr:last-child td { border-bottom: none; }
     <p class="lead">
       A unified OpenAI-compatible API gateway that fronts 15 models across Anthropic,
       OpenAI, Google, xAI and DeepSeek — with smart key rotation, rate limiting,
-      function calling, native web search, and a Claude cookie proxy. One endpoint, every model.
+      function calling, native web search, embeddings, FIM code completion, moderation, and a Claude cookie proxy. One endpoint, every model.
     </p>
     <div class="hero-cta">
       <a class="primary" href="#quick-start">Quick Start →</a>
@@ -395,6 +395,10 @@ table.api tbody tr:last-child td { border-bottom: none; }
         <li><a href="#health">13. Health Check</a></li>
         <li><a href="#flow">14. Request Flow</a></li>
         <li><a href="#custom-endpoints">15. Custom Endpoints</a></li>
+        <li><a href="#embeddings">16. Embeddings</a></li>
+        <li><a href="#fim">17. FIM (Code Completion)</a></li>
+        <li><a href="#moderation">18. Moderation</a></li>
+        <li><a href="#vision">19. Vision/Image Input</a></li>
       </ol>
     </aside>
 
@@ -460,7 +464,7 @@ table.api tbody tr:last-child td { border-bottom: none; }
           <a class="anchor" href="#models">#</a>
         </div>
         <p>
-          The gateway exposes <strong>15 models</strong> across five providers.
+          The gateway exposes <strong>22 models</strong> across five providers.
           Use the <em>slug</em> as the <code class="inline">model</code> field in your
           requests — the gateway maps it to the real upstream model automatically.
           Models are tagged as <span class="badge badge-direct">direct</span> (fast, single-pass)
@@ -1486,6 +1490,228 @@ print(response.choices[0].message.content)</pre>
           ⏸ <strong>Paused</strong> — returns <code class="inline">INVALID_REQUEST</code> error with "Endpoint is paused"<br>
           🗑 <strong>Deleted</strong> — endpoint and all data removed
         </p>
+      </section>
+
+      <!-- ============ EMBEDDINGS ============ -->
+      <section class="section" id="embeddings">
+        <div class="section-head">
+          <span class="num">16</span>
+          <h2>Embeddings</h2>
+          <a class="anchor" href="#embeddings">#</a>
+        </div>
+        <p>
+          Generate dense vector embeddings for semantic search, RAG pipelines, and clustering.
+          Proxies to <strong>Mistral Embed</strong> (1024 dimensions).
+        </p>
+
+        <div class="endpoint">
+          <span class="method POST">POST</span>
+          <span class="path">/v1/embeddings</span>
+          <span class="auth-tag">API Key</span>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="c">// Request</span>
+{
+  <span class="s">"model"</span>: <span class="s">"mistral-embed"</span>,
+  <span class="s">"input"</span>: [<span class="s">"Embed this sentence."</span>, <span class="s">"As well as this one."</span>],
+  <span class="s">"encoding_format"</span>: <span class="s">"float"</span>
+}</pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="c">// Response</span>
+{
+  <span class="s">"id"</span>: <span class="s">"emb-xxx"</span>,
+  <span class="s">"object"</span>: <span class="s">"list"</span>,
+  <span class="s">"model"</span>: <span class="s">"mistral-embed"</span>,
+  <span class="s">"data"</span>: [
+    {<span class="s">"id"</span>: <span class="s">"0"</span>, <span class="s">"object"</span>: <span class="s">"embedding"</span>, <span class="s">"embedding"</span>: [0.1, -0.2, ...]},
+    {<span class="s">"id"</span>: <span class="s">"1"</span>, <span class="s">"object"</span>: <span class="s">"embedding"</span>, <span class="s">"embedding"</span>: [0.3, 0.1, ...]}
+  ],
+  <span class="s">"usage"</span>: {<span class="s">"prompt_tokens"</span>: 8, <span class="s">"total_tokens"</span>: 8}
+}</pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <h4>Parameters</h4>
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>model</code></td><td>string</td><td><code>mistral-embed</code></td><td>Embedding model slug</td></tr>
+              <tr><td><code>input</code></td><td>string\|array</td><td><em>required</em></td><td>Text to embed</td></tr>
+              <tr><td><code>encoding_format</code></td><td>string</td><td><code>float</code></td><td><code>float</code> or <code>base64</code></td></tr>
+              <tr><td><code>output_dtype</code></td><td>string</td><td><code>float</code></td><td><code>float</code>, <code>int8</code>, <code>uint8</code>, <code>binary</code>, <code>ubinary</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ FIM ============ -->
+      <section class="section" id="fim">
+        <div class="section-head">
+          <span class="num">17</span>
+          <h2>FIM (Fill-in-the-Middle) — Code Completion</h2>
+          <a class="anchor" href="#fim">#</a>
+        </div>
+        <p>
+          Complete code given a prefix and optional suffix. Proxies to <strong>Codestral</strong>.
+          Ideal for IDE integrations and copilot-style suggestions. Supports streaming.
+        </p>
+
+        <div class="endpoint">
+          <span class="method POST">POST</span>
+          <span class="path">/v1/fim/completions</span>
+          <span class="auth-tag">API Key</span>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="c">// Request</span>
+{
+  <span class="s">"model"</span>: <span class="s">"codestral"</span>,
+  <span class="s">"prompt"</span>: <span class="s">"def fibonacci(n):"</span>,
+  <span class="s">"suffix"</span>: <span class="s">"    return result"</span>,
+  <span class="s">"max_tokens"</span>: 100,
+  <span class="s">"temperature"</span>: 0.2,
+  <span class="s">"stream"</span>: false
+}</pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <h4>Parameters</h4>
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>model</code></td><td>string</td><td><code>codestral-latest</code></td><td>FIM model slug</td></tr>
+              <tr><td><code>prompt</code></td><td>string</td><td><em>required</em></td><td>Prefix code to complete</td></tr>
+              <tr><td><code>suffix</code></td><td>string</td><td><code>""</code></td><td>Suffix — model fills between prompt and suffix</td></tr>
+              <tr><td><code>max_tokens</code></td><td>int</td><td><code>1024</code></td><td>Max tokens to generate</td></tr>
+              <tr><td><code>temperature</code></td><td>float</td><td><code>0.7</code></td><td>Sampling temperature</td></tr>
+              <tr><td><code>stream</code></td><td>bool</td><td><code>false</code></td><td>SSE streaming (same format as chat)</td></tr>
+              <tr><td><code>stop</code></td><td>string\|array</td><td><code>null</code></td><td>Stop sequences</td></tr>
+              <tr><td><code>random_seed</code></td><td>int</td><td><code>null</code></td><td>Deterministic output seed</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout info">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            <strong>Use case:</strong> FIM is perfect for IDE plugins — given the code before
+            the cursor (<code>prompt</code>) and after the cursor (<code>suffix</code>),
+            the model generates only the missing middle section.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ MODERATION ============ -->
+      <section class="section" id="moderation">
+        <div class="section-head">
+          <span class="num">18</span>
+          <h2>Moderation — Content Classification</h2>
+          <a class="anchor" href="#moderation">#</a>
+        </div>
+        <p>
+          Classify text into <strong>10 content safety categories</strong> using Mistral Moderation.
+          Two endpoints: raw text and conversational (chat messages).
+        </p>
+
+        <div class="endpoint">
+          <span class="method POST">POST</span>
+          <span class="path">/v1/moderations</span>
+          <span class="auth-tag">API Key</span>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="c">// Raw text moderation</span>
+{
+  <span class="s">"model"</span>: <span class="s">"mistral-moderation"</span>,
+  <span class="s">"input"</span>: [<span class="s">"I want to buy a laptop."</span>, <span class="s">"I hate all people from..."</span>]
+}</pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <div class="callout info">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            <strong>10 Categories:</strong>
+            <code>sexual</code>, <code>hate_and_discrimination</code>, <code>violence_and_threats</code>,
+            <code>dangerous_and_criminal_content</code>, <code>selfharm</code>, <code>health</code>,
+            <code>financial</code>, <code>law</code>, <code>pii</code>, <code>jailbreaking</code>
+          </div>
+        </div>
+
+        <h3>Chat Moderation (Conversational)</h3>
+        <div class="endpoint">
+          <span class="method POST">POST</span>
+          <span class="path">/v1/chat/moderations</span>
+          <span class="auth-tag">API Key</span>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="c">// Conversational moderation with role context</span>
+{
+  <span class="s">"model"</span>: <span class="s">"mistral-moderation"</span>,
+  <span class="s">"input"</span>: [
+    {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"I want to buy a laptop."</span>},
+    {<span class="s">"role"</span>: <span class="s">"assistant"</span>, <span class="s">"content"</span>: <span class="s">"Sure! What's your budget?"</span>}
+  ]
+}</pre>
+          <button class="copy-btn">copy</button>
+        </div>
+      </section>
+
+      <!-- ============ VISION ============ -->
+      <section class="section" id="vision">
+        <div class="section-head">
+          <span class="num">19</span>
+          <h2>Vision / Image Input</h2>
+          <a class="anchor" href="#vision">#</a>
+        </div>
+        <p>
+          <strong>Pixtral</strong> models accept image inputs alongside text using the
+          OpenAI-compatible <code class="inline">image_url</code> content type.
+          No special endpoint needed — use the standard <code class="inline">/v1/chat/completions</code>.
+        </p>
+
+        <div class="endpoint">
+          <span class="method POST">POST</span>
+          <span class="path">/v1/chat/completions</span>
+          <span class="auth-tag">API Key</span>
+        </div>
+
+        <div class="code-block">
+          <div class="code-head"><span class="lang">json</span></div>
+          <pre><span class="c">// Image + text input</span>
+{
+  <span class="s">"model"</span>: <span class="s">"pixtral-12b"</span>,
+  <span class="s">"messages"</span>: [{
+    <span class="s">"role"</span>: <span class="s">"user"</span>,
+    <span class="s">"content"</span>: [
+      {<span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"text"</span>: <span class="s">"What's in this image?"</span>},
+      {<span class="s">"type"</span>: <span class="s">"image_url"</span>, <span class="s">"image_url"</span>: <span class="s">"https://example.com/image.jpg"</span>}
+    ]
+  }]
+}</pre>
+          <button class="copy-btn">copy</button>
+        </div>
+
+        <div class="callout info">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            <strong>Supported image formats:</strong> HTTP/HTTPS URLs and base64 data URLs
+            (<code>data:image/jpeg;base64,...</code>). Works with both
+            <code>pixtral-12b</code> (12B, open-weight) and <code>pixtral-large</code> (124B, flagship).
+          </div>
+        </div>
       </section>
 
       <div class="divider"></div>

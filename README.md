@@ -24,7 +24,7 @@
 - [Overview](#-overview)
 - [Key Features](#-key-features)
 - [Architecture](#-architecture)
-- [Available Models](#-available-models-15-total)
+- [Available Models](#-available-models-22-total)
 - [API Reference](#-api-reference)
 - [Authentication](#-authentication)
 - [Quick Start](#-quick-start)
@@ -50,7 +50,7 @@
 
 ## 🎯 Overview
 
-AI Proxy Gateway is a self-hosted, OpenAI-compatible API gateway that aggregates **15 AI models from 5 providers** behind a single endpoint. It solves three critical problems:
+AI Proxy Gateway is a self-hosted, OpenAI-compatible API gateway that aggregates **22 AI models from 5 providers** behind a single endpoint. It solves three critical problems:
 
 1. **Unified API**: One endpoint, one auth token, one SDK — regardless of which provider the model runs on. Clients using the standard OpenAI SDK can switch between Claude, Mistral, Cohere, SambaNova, and Fireworks models without changing a single line of code.
 
@@ -69,7 +69,7 @@ Commercial AI API providers each have their own SDKs, authentication schemes, ra
 | Feature | Description |
 |---------|-------------|
 | **OpenAI-Compatible API** | Drop-in replacement for OpenAI's `/v1/chat/completions` endpoint. Works with any OpenAI SDK (Python, JavaScript, Go, etc.) |
-| **15 Models, 5 Providers** | Claude (cookie), Mistral AI, Cohere, SambaNova, Fireworks — all behind one URL |
+| **22 Models, 5 Providers** | Claude (cookie), Mistral AI, Cohere, SambaNova, Fireworks — all behind one URL |
 | **Smart Key Rotation** | Least-used-first key selection, automatic cooldown on rate limits (429), permanent dead-marking on auth failures (401/403) |
 | **Claude Cookie Orchestration** | Affinity tracking (multi-turn pinned to same cookie), tier-aware selection (free/pro/max), availability states (active/parked/quarantined), thread-safe with `RLock` |
 | **curl_cffi TLS Impersonation** | Bypasses Cloudflare's JA3 fingerprint validation by impersonating Chrome 131's exact TLS fingerprint |
@@ -94,6 +94,11 @@ Commercial AI API providers each have their own SDKs, authentication schemes, ra
 | **User-Friendly Errors** | 9 typed error responses (RATE_LIMITED, ALL_KEYS_EXHAUSTED, CLAUDE_ALL_SESSIONS_BUSY, TIMEOUT, etc.) with title, message, suggestion, and retry_after_ms. Streaming errors sent as SSE events |
 | **180s Claude Timeout** | Extended timeout for reasoning models that take longer to think before responding |
 | **Custom Endpoints** | Create virtual API endpoints (`/v1/{slug}/chat/completions`) with forced system prompts, model pinning, and parameter overrides — full developer control without touching the base API |
+| **Embeddings API** | `/v1/embeddings` endpoint — proxy to Mistral Embed (1024-dim vectors) for RAG, semantic search, and clustering |
+| **FIM (Fill-in-the-Middle)** | `/v1/fim/completions` endpoint — proxy to Codestral for code completion with prefix+suffix context |
+| **Moderation API** | `/v1/moderations` and `/v1/chat/moderations` endpoints — 10-category content classification via Mistral Moderation |
+| **Vision/Multimodal** | Pixtral 12B and Pixtral Large models for image+text inputs — OpenAI-compatible `image_url` content type |
+| **Reasoning Models** | Magistral Large and Mistral Large 2 for chain-of-thought deep reasoning tasks |
 
 ---
 
@@ -164,33 +169,48 @@ Commercial AI API providers each have their own SDKs, authentication schemes, ra
 
 ---
 
-## 🤖 Available Models (15 total)
+## 🤖 Available Models (22 total)
 
-### ⚡ Direct Response Models (12)
+### ⚡ Direct Response Models (14)
 
 | Slug | Provider | Real Model | Context | Description |
 |------|----------|------------|---------|-------------|
 | `claude-sonnet-4-6` | 🍪 Claude | claude-sonnet-4-6 | 200K | Claude Sonnet 4 via cookie proxy |
-| `mistral-small` | Mistral AI | mistral-small-latest | 32K | Fast, efficient general-purpose |
-| `mistral-medium` | Mistral AI | mistral-medium-latest | 32K | Balanced quality and speed |
+| `mistral-small` | Mistral AI | mistral-small-latest | 128K | Fast, efficient general-purpose |
+| `mistral-medium` | Mistral AI | mistral-medium-latest | 128K | Balanced quality and speed |
 | `mistral-nemo` | Mistral AI | open-mistral-nemo | 128K | Open-source 12B model |
 | `codestral` | Mistral AI | codestral-latest | 256K | Code generation specialist |
 | `ministral-8b` | Mistral AI | ministral-8b-latest | 128K | Lightweight 8B model |
+| `ministral-3b` | Mistral AI | ministral-3b-latest | 128K | Ultra-light 3B edge model |
+| `pixtral-12b` | Mistral AI | pixtral-12b-2409 | 128K | Open-weight multimodal (vision+text) |
+| `pixtral-large` | Mistral AI | pixtral-large-latest | 128K | 124B flagship multimodal |
 | `command-a` | Cohere | command-a-03-2025 | 256K | Latest flagship model |
 | `command-r7b` | Cohere | command-r7b-12-2024 | 128K | Fast & capable |
 | `command-r-plus` | Cohere | command-r-plus-08-2024 | 128K | Most powerful Cohere model |
 | `llama-3.3-70b` | SambaNova | Meta-Llama-3.3-70B-Instruct | 131K | Powerful open model |
 | `kimi-k2p7-code` | Fireworks | kimi-k2p7-code | 32K | Code generation specialist |
 
-### 🧠 Reasoning Models (3)
+### 🧠 Reasoning Models (5)
 
 | Slug | Provider | Real Model | Context | Description |
 |------|----------|------------|---------|-------------|
+| `mistral-large` | Mistral AI | mistral-large-latest | 128K | Mistral flagship — top-tier reasoning+code |
+| `magistral-large` | Mistral AI | magistral-large-latest | 128K | Deep chain-of-thought reasoning |
 | `glm-5p2` | Fireworks | accounts/fireworks/models/glm-5p2 | 131K | General reasoning with thinking |
-| `qwen3p7-plus` | Fireworks | accounts/fireworks/models/qwen3p7-plus | 4K | Multimodal reasoning |
+| `qwen3p7-plus` | Fireworks | accounts/fireworks/models/qwen3p7-plus | 131K | Multimodal reasoning |
 | `deepseek-v4-pro` | Fireworks | accounts/fireworks/models/deepseek-v4-pro | 131K | Deep reasoning specialist |
 
+### 🔧 Utility Models (3)
+
+| Slug | Provider | Real Model | Endpoint | Description |
+|------|----------|------------|----------|-------------|
+| `mistral-embed` | Mistral AI | mistral-embed | `/v1/embeddings` | 1024-dim text embeddings for RAG/search |
+| `mistral-moderation` | Mistral AI | mistral-moderation-latest | `/v1/moderations` | 10-category content classification |
+| `mistral-moderation` | Mistral AI | mistral-moderation-latest | `/v1/chat/moderations` | Conversational content moderation |
+
 > ⚠️ **Reasoning models** return a `reasoning_content` field alongside `content`. Set `max_tokens ≥ 500` to avoid truncated thinking.
+> 
+> 📷 **Vision models** (pixtral-12b, pixtral-large) accept `image_url` content in messages — see [Vision/Image Input](#-visionimage-input) below.
 
 ---
 
@@ -263,6 +283,220 @@ POST /v1/{model_slug}/chat/completions
 GET /v1/models
 Authorization: Bearer YOUR_API_KEY
 ```
+
+### Embeddings
+
+Generate text embeddings for semantic search, RAG, and clustering.
+
+```http
+POST /v1/embeddings
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+```
+
+**Request:**
+
+```json
+{
+  "model": "mistral-embed",
+  "input": ["Embed this sentence.", "As well as this one."]
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "emb-xxx",
+  "object": "list",
+  "model": "mistral-embed",
+  "data": [
+    {"id": "0", "object": "embedding", "embedding": [0.1, -0.2, ...]},
+    {"id": "1", "object": "embedding", "embedding": [0.3, 0.1, ...]}
+  ],
+  "usage": {"prompt_tokens": 8, "total_tokens": 8}
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | string | `mistral-embed` | Embedding model slug |
+| `input` | string\|array | *required* | Text to embed (single string or array) |
+| `encoding_format` | string | `float` | `float` or `base64` |
+| `output_dtype` | string | `float` | `float`, `int8`, `uint8`, `binary`, `ubinary` |
+
+### FIM (Fill-in-the-Middle) — Code Completion
+
+Complete code given a prefix and optional suffix. Ideal for IDE integrations.
+
+```http
+POST /v1/fim/completions
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+```
+
+**Request:**
+
+```json
+{
+  "model": "codestral",
+  "prompt": "def fibonacci(n):",
+  "suffix": "    return result",
+  "max_tokens": 100,
+  "temperature": 0.2,
+  "stream": false
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "fim-xxx",
+  "object": "chat.completion",
+  "model": "codestral-latest",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "    if n <= 1:\n        return n\n    a, b = 0, 1\n    result = 0\n    for _ in range(2, n):\n        a, b = b, a + b\n"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 10, "completion_tokens": 50, "total_tokens": 60}
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | string | `codestral-latest` | FIM model slug |
+| `prompt` | string | *required* | Prefix code to complete |
+| `suffix` | string | `""` | Suffix — model fills between prompt and suffix |
+| `max_tokens` | int | `1024` | Max tokens to generate |
+| `temperature` | float | `0.7` | Sampling temperature |
+| `stream` | bool | `false` | SSE streaming (same format as chat) |
+| `stop` | string\|array | `null` | Stop sequences |
+| `random_seed` | int | `null` | Deterministic output seed |
+
+### Moderation — Content Classification
+
+Classify text into 10 content safety categories.
+
+```http
+POST /v1/moderations
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+```
+
+**Request:**
+
+```json
+{
+  "model": "mistral-moderation",
+  "input": ["I want to buy a laptop.", "I hate all people from..."]
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "mod-xxx",
+  "model": "mistral-moderation-latest",
+  "results": [
+    {
+      "categories": {
+        "sexual": false,
+        "hate_and_discrimination": false,
+        "violence_and_threats": false,
+        "dangerous_and_criminal_content": false,
+        "selfharm": false,
+        "health": false,
+        "financial": false,
+        "law": false,
+        "pii": false,
+        "jailbreaking": false
+      },
+      "category_scores": {
+        "sexual": 0.001,
+        "hate_and_discrimination": 0.002,
+        "violence_and_threats": 0.001,
+        "dangerous_and_criminal_content": 0.001,
+        "selfharm": 0.001,
+        "health": 0.001,
+        "financial": 0.001,
+        "law": 0.001,
+        "pii": 0.001,
+        "jailbreaking": 0.001
+      }
+    }
+  ]
+}
+```
+
+**10 Categories:** `sexual`, `hate_and_discrimination`, `violence_and_threats`, `dangerous_and_criminal_content`, `selfharm`, `health`, `financial`, `law`, `pii`, `jailbreaking`
+
+### Chat Moderation — Conversational
+
+Moderate chat messages with role-aware context.
+
+```http
+POST /v1/chat/moderations
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+```
+
+**Request:**
+
+```json
+{
+  "model": "mistral-moderation",
+  "input": [
+    {"role": "user", "content": "I want to buy a laptop."},
+    {"role": "assistant", "content": "Sure! What's your budget?"}
+  ]
+}
+```
+
+### 📷 Vision/Image Input
+
+Pixtral models accept image inputs alongside text using the OpenAI-compatible `image_url` content type.
+
+```http
+POST /v1/chat/completions
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+```
+
+**Request:**
+
+```json
+{
+  "model": "pixtral-12b",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "What's in this image?"},
+        {"type": "image_url", "image_url": "https://example.com/image.jpg"}
+      ]
+    }
+  ]
+}
+```
+
+Supports both HTTP URLs and base64 data URLs:
+```json
+{"type": "image_url", "image_url": "data:image/jpeg;base64,/9j/4AAQ..."}
+```
+
+**Vision models:** `pixtral-12b` (12B, open-weight), `pixtral-large` (124B, flagship)
 
 ### Health Check (no auth)
 

@@ -284,8 +284,8 @@ def init_db():
     # ── Seed providers ──
     providers = [
         ("mistral", "Mistral AI", "https://api.mistral.ai/v1", "free",
-         '["mistral-small-latest","mistral-medium-latest","open-mistral-nemo","codestral-latest","ministral-8b-latest"]',
-         "Free tier: 1 req/sec, 1M tokens/month."),
+         '["mistral-small-latest","mistral-medium-latest","mistral-large-latest","open-mistral-nemo","codestral-latest","ministral-8b-latest","ministral-3b-latest","pixtral-12b-2409","pixtral-large-latest","magistral-large-latest","mistral-embed","mistral-moderation-latest"]',
+         "Free tier: 1 req/sec, 1M tokens/month. 12 models: chat, vision, code, embeddings, moderation."),
         ("cohere", "Cohere", "https://api.cohere.com/v2", "free",
          '["command-a-03-2025","command-r7b-12-2024","command-r-plus-08-2024"]',
          "Free trial: 1000 req/month. Uses /v2/chat endpoint."),
@@ -450,6 +450,65 @@ MODELS = {
         "max_output": 128000, "params": "8B",
         "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
         "pricing": {"in": "$0.15", "out": "$0.15"},
+    },
+    "mistral-large": {
+        "provider": "mistral", "real_model": "mistral-large-latest",
+        "desc": "Mistral Large 2 — flagship, 128K ctx, top-tier reasoning+code", "style": "reasoning", "tokens": 128000,
+        "developer": "Mistral AI", "display_name": "Mistral Large 2",
+        "max_output": 128000, "params": "~123B",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$2.00", "out": "$6.00"},
+    },
+    "pixtral-large": {
+        "provider": "mistral", "real_model": "pixtral-large-latest",
+        "desc": "Pixtral Large — 124B multimodal, vision+text, 128K ctx", "style": "direct", "tokens": 128000,
+        "developer": "Mistral AI", "display_name": "Pixtral Large",
+        "max_output": 128000, "params": "~124B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$2.00", "out": "$6.00"},
+    },
+    "pixtral-12b": {
+        "provider": "mistral", "real_model": "pixtral-12b-2409",
+        "desc": "Pixtral 12B — open-weight multimodal, vision+text, 128K ctx", "style": "direct", "tokens": 128000,
+        "developer": "Mistral AI", "display_name": "Pixtral 12B",
+        "max_output": 128000, "params": "12B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$0.15", "out": "$0.15"},
+    },
+    "magistral-large": {
+        "provider": "mistral", "real_model": "magistral-large-latest",
+        "desc": "Magistral Large — deep reasoning, chain-of-thought, 128K ctx", "style": "reasoning", "tokens": 128000,
+        "developer": "Mistral AI", "display_name": "Magistral Large",
+        "max_output": 128000, "params": "~123B",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$2.00", "out": "$6.00"},
+    },
+    "ministral-3b": {
+        "provider": "mistral", "real_model": "ministral-3b-latest",
+        "desc": "Ministral 3B — ultra-light edge model, 128K ctx", "style": "direct", "tokens": 128000,
+        "developer": "Mistral AI", "display_name": "Ministral 3B",
+        "max_output": 128000, "params": "3B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "$0.04", "out": "$0.04"},
+    },
+    # Mistral utility models (embeddings + moderation)
+    "mistral-embed": {
+        "provider": "mistral", "real_model": "mistral-embed",
+        "desc": "Mistral Embed — 1024-dim text embeddings for RAG/search", "style": "direct", "tokens": 8192,
+        "developer": "Mistral AI", "display_name": "Mistral Embed",
+        "max_output": 0, "params": "7B",
+        "capabilities": {"text": True, "code": False, "thinking": False, "tools": False, "vision": False, "web_search": False, "json": False, "stream": False},
+        "pricing": {"in": "$0.10", "out": "N/A"},
+        "endpoint_type": "embeddings",
+    },
+    "mistral-moderation": {
+        "provider": "mistral", "real_model": "mistral-moderation-latest",
+        "desc": "Mistral Moderation — 10-category content classification", "style": "direct", "tokens": 8192,
+        "developer": "Mistral AI", "display_name": "Mistral Moderation",
+        "max_output": 0, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": False, "thinking": False, "tools": False, "vision": False, "web_search": False, "json": False, "stream": False},
+        "pricing": {"in": "Free", "out": "N/A"},
+        "endpoint_type": "moderation",
     },
     # Cohere
     "command-a": {
@@ -3387,6 +3446,278 @@ def list_models():
             },
         })
     return jsonify({"object": "list", "data": models})
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EXTENDED API ENDPOINTS — Embeddings, FIM, Moderation
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/v1/embeddings", methods=["POST"])
+def proxy_embeddings():
+    """OpenAI-compatible embeddings endpoint — proxies to Mistral embeddings."""
+    auth_err = check_proxy_auth()
+    if auth_err: return auth_err
+
+    allowed, remaining, retry_after = check_rate_limit()
+    if not allowed:
+        return jsonify({"error": "Rate limit exceeded", "retry_after_seconds": retry_after}), 429, {"Retry-After": str(retry_after)}
+
+    body = request.get_data()
+    try:
+        data = json.loads(body)
+        model_slug = data.get("model", "mistral-embed")
+    except:
+        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"mistral-embed\",\"input\":[\"text\"]}"}), 400
+
+    # Allow direct real model name or our slug
+    if model_slug not in MODELS and model_slug not in ("mistral-embed", "mistral-embed-2310", "mistral-embed"):
+        # Check if it's a real model name for mistral embed
+        if "embed" not in model_slug.lower():
+            return jsonify({"error": f"Unknown embeddings model: '{model_slug}'", "available": ["mistral-embed"]}), 404
+        real_model = model_slug
+    else:
+        model_info = MODELS.get(model_slug, {"real_model": "mistral-embed"})
+        real_model = model_info.get("real_model", "mistral-embed")
+
+    keys = get_provider_keys("mistral")
+    if not keys:
+        return jsonify({"error": "No active keys for Mistral provider"}), 503
+
+    for key_info in keys:
+        key_id = key_info["id"]
+        base_url = key_info["base_url"]
+        key_val = key_info["key_value"]
+
+        try:
+            payload = json.loads(body)
+            payload["model"] = real_model
+            url = f"{base_url}/embeddings"
+            headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json"}
+
+            proxy = get_proxy_url()
+            with httpx.Client(proxy=proxy, timeout=60.0, verify=False) as client:
+                resp = client.post(url, json=payload, headers=headers)
+
+            if resp.status_code >= 400:
+                if resp.status_code == 429:
+                    mark_key_rate_limited(key_id, f"429: {resp.text[:200]}")
+                elif resp.status_code in (401, 403):
+                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
+                else:
+                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
+                continue
+
+            bump_key_usage(key_id)
+            record_proxy_request(model_slug, "mistral", key_id, "ok", int(time.time() * 1000 % 100000))
+            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": "mistral"}
+
+        except Exception as e:
+            mark_key_error(key_id, str(e)[:200])
+            continue
+
+    return jsonify({"error": "All Mistral keys failed for embeddings"}), 503
+
+
+@app.route("/v1/fim/completions", methods=["POST"])
+def proxy_fim():
+    """FIM (Fill-in-the-Middle) endpoint — proxies to Mistral Codestral."""
+    auth_err = check_proxy_auth()
+    if auth_err: return auth_err
+
+    allowed, remaining, retry_after = check_rate_limit()
+    if not allowed:
+        return jsonify({"error": "Rate limit exceeded", "retry_after_seconds": retry_after}), 429, {"Retry-After": str(retry_after)}
+
+    body = request.get_data()
+    try:
+        data = json.loads(body)
+        model_slug = data.get("model", "codestral-latest")
+    except:
+        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"codestral-latest\",\"prompt\":\"...\",\"suffix\":\"...\"}"}), 400
+
+    # Resolve model
+    if model_slug in MODELS:
+        real_model = MODELS[model_slug]["real_model"]
+    elif model_slug in ("codestral-latest", "codestral-2508", "codestral-2405"):
+        real_model = model_slug
+    else:
+        return jsonify({"error": f"Unknown FIM model: '{model_slug}'", "available": ["codestral", "codestral-latest"]}), 404
+
+    keys = get_provider_keys("mistral")
+    if not keys:
+        return jsonify({"error": "No active keys for Mistral provider"}), 503
+
+    for key_info in keys:
+        key_id = key_info["id"]
+        base_url = key_info["base_url"]
+        key_val = key_info["key_value"]
+
+        try:
+            payload = json.loads(body)
+            payload["model"] = real_model
+            url = f"{base_url}/fim/completions"
+            headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json"}
+
+            is_streaming = payload.get("stream", False)
+            if is_streaming:
+                headers["Accept"] = "text/event-stream"
+
+            proxy = get_proxy_url()
+            with httpx.Client(proxy=proxy, timeout=120.0, verify=False) as client:
+                resp = client.post(url, json=payload, headers=headers)
+
+            if resp.status_code >= 400:
+                if resp.status_code == 429:
+                    mark_key_rate_limited(key_id, f"429: {resp.text[:200]}")
+                elif resp.status_code in (401, 403):
+                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
+                else:
+                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
+                continue
+
+            bump_key_usage(key_id)
+            record_proxy_request(model_slug, "mistral", key_id, "ok", int(time.time() * 1000 % 100000))
+
+            if is_streaming:
+                def generate():
+                    for chunk in resp.iter_bytes(8192):
+                        yield chunk
+                return Response(stream_with_context(generate()), status=resp.status_code, headers={
+                    "Content-Type": "text/event-stream",
+                    "X-Proxy-Provider": "mistral",
+                })
+            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": "mistral"}
+
+        except Exception as e:
+            mark_key_error(key_id, str(e)[:200])
+            continue
+
+    return jsonify({"error": "All Mistral keys failed for FIM"}), 503
+
+
+@app.route("/v1/moderations", methods=["POST"])
+def proxy_moderation():
+    """OpenAI-compatible moderation endpoint — proxies to Mistral moderation API."""
+    auth_err = check_proxy_auth()
+    if auth_err: return auth_err
+
+    allowed, remaining, retry_after = check_rate_limit()
+    if not allowed:
+        return jsonify({"error": "Rate limit exceeded", "retry_after_seconds": retry_after}), 429, {"Retry-After": str(retry_after)}
+
+    body = request.get_data()
+    try:
+        data = json.loads(body)
+    except:
+        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"mistral-moderation-latest\",\"input\":[\"text\"]}"}), 400
+
+    model_slug = data.get("model", "mistral-moderation-latest")
+    if model_slug in MODELS:
+        real_model = MODELS[model_slug]["real_model"]
+    elif "moderation" in model_slug.lower():
+        real_model = model_slug
+    else:
+        return jsonify({"error": f"Unknown moderation model: '{model_slug}'", "available": ["mistral-moderation", "mistral-moderation-latest"]}), 404
+
+    keys = get_provider_keys("mistral")
+    if not keys:
+        return jsonify({"error": "No active keys for Mistral provider"}), 503
+
+    for key_info in keys:
+        key_id = key_info["id"]
+        base_url = key_info["base_url"]
+        key_val = key_info["key_value"]
+
+        try:
+            payload = json.loads(body)
+            payload["model"] = real_model
+            url = f"{base_url}/moderations"
+            headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json"}
+
+            proxy = get_proxy_url()
+            with httpx.Client(proxy=proxy, timeout=60.0, verify=False) as client:
+                resp = client.post(url, json=payload, headers=headers)
+
+            if resp.status_code >= 400:
+                if resp.status_code == 429:
+                    mark_key_rate_limited(key_id, f"429: {resp.text[:200]}")
+                elif resp.status_code in (401, 403):
+                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
+                else:
+                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
+                continue
+
+            bump_key_usage(key_id)
+            record_proxy_request(model_slug, "mistral", key_id, "ok", int(time.time() * 1000 % 100000))
+            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": "mistral"}
+
+        except Exception as e:
+            mark_key_error(key_id, str(e)[:200])
+            continue
+
+    return jsonify({"error": "All Mistral keys failed for moderation"}), 503
+
+
+@app.route("/v1/chat/moderations", methods=["POST"])
+def proxy_chat_moderation():
+    """Conversational moderation endpoint — moderates chat messages via Mistral."""
+    auth_err = check_proxy_auth()
+    if auth_err: return auth_err
+
+    allowed, remaining, retry_after = check_rate_limit()
+    if not allowed:
+        return jsonify({"error": "Rate limit exceeded", "retry_after_seconds": retry_after}), 429, {"Retry-After": str(retry_after)}
+
+    body = request.get_data()
+    try:
+        data = json.loads(body)
+    except:
+        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"mistral-moderation-latest\",\"input\":[{\"role\":\"user\",\"content\":\"...\"}]}"}), 400
+
+    model_slug = data.get("model", "mistral-moderation-latest")
+    if model_slug in MODELS:
+        real_model = MODELS[model_slug]["real_model"]
+    elif "moderation" in model_slug.lower():
+        real_model = model_slug
+    else:
+        real_model = "mistral-moderation-latest"
+
+    keys = get_provider_keys("mistral")
+    if not keys:
+        return jsonify({"error": "No active keys for Mistral provider"}), 503
+
+    for key_info in keys:
+        key_id = key_info["id"]
+        base_url = key_info["base_url"]
+        key_val = key_info["key_value"]
+
+        try:
+            payload = json.loads(body)
+            payload["model"] = real_model
+            url = f"{base_url}/chat/moderations"
+            headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json"}
+
+            proxy = get_proxy_url()
+            with httpx.Client(proxy=proxy, timeout=60.0, verify=False) as client:
+                resp = client.post(url, json=payload, headers=headers)
+
+            if resp.status_code >= 400:
+                if resp.status_code == 429:
+                    mark_key_rate_limited(key_id, f"429: {resp.text[:200]}")
+                elif resp.status_code in (401, 403):
+                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
+                else:
+                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
+                continue
+
+            bump_key_usage(key_id)
+            record_proxy_request(model_slug, "mistral", key_id, "ok", int(time.time() * 1000 % 100000))
+            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": "mistral"}
+
+        except Exception as e:
+            mark_key_error(key_id, str(e)[:200])
+            continue
+
+    return jsonify({"error": "All Mistral keys failed for chat moderation"}), 503
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PAGES

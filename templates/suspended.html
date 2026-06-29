@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Suspended Keys — AI Proxy Gateway{% endblock %}
+
+{% block head %}
+<style>
+.sh-hero {
+    position: relative; overflow: hidden; border-radius: var(--r-xl);
+    padding: 1.75rem 2rem; margin-bottom: 1.5rem;
+    background: radial-gradient(circle at 80% 30%, rgba(210,153,29,0.12) 0%, transparent 55%),
+        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
+    border: 1px solid rgba(210,153,29,0.3); box-shadow: 0 0 20px rgba(210,153,29,0.1), var(--shadow-md);
+}
+.sh-hero::after { content:''; position:absolute; top:-50%; right:-10%; width:350px; height:350px; background: radial-gradient(circle, rgba(210,153,29,0.1) 0%, transparent 70%); border-radius:50%; pointer-events:none; }
+.sh-hero h2 { font-size:1.6rem; font-weight:800; letter-spacing:-0.03em; margin:0; color: #e3b341; }
+.sh-hero p { color:var(--text-dim); margin:0.3rem 0 0; font-size:0.88rem; }
+
+.sh-section-title { display:flex; align-items:center; gap:0.5rem; font-size:1.05rem; font-weight:700; margin:0 0 0.85rem; }
+.sh-section-title .bar { width:4px; height:1.1rem; border-radius:2px; background: linear-gradient(180deg, #e3b341, #d2991d); }
+
+.sh-key-row { transition: background var(--t-fast); }
+.sh-key-row:hover { background: var(--bg-hover); }
+
+.sh-suspension-reason { font-size:0.78rem; color: var(--yellow); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.sh-suspension-reason:hover { white-space: normal; overflow: visible; }
+
+/* Spinner for reactivate button */
+.sh-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="sh-hero">
+    <h2>⚠️ Suspended Keys</h2>
+    <p>Keys temporarily deactivated — excluded from API pool. Test reactivation after resolving billing issues.</p>
+</div>
+
+{% if not keys %}
+<div class="card empty-state">
+    <div class="icon">✅</div>
+    <h3>No suspended keys</h3>
+    <p>All keys are either active or permanently dead. Suspended keys appear here when detected.</p>
+    <a href="/keys" class="btn btn-primary">🔑 Back to Keys</a>
+</div>
+{% else %}
+<div style="display:flex;gap:0.5rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap;">
+    <form method="POST" action="/keys/suspended/reactivate-all" style="display:inline;" id="reactivateAllForm">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-primary" id="reactivateAllBtn">
+            🔄 Test & Reactivate All ({{ suspended_count }})
+        </button>
+    </form>
+    <a href="/keys" class="btn btn-sm">🔑 Back to Keys</a>
+</div>
+
+<div class="card" style="padding:0;overflow:hidden;">
+    <table>
+        <thead>
+            <tr>
+                <th>Provider</th>
+                <th>Label</th>
+                <th>Key</th>
+                <th>Account</th>
+                <th>Suspension Reason</th>
+                <th>Last Error</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for k in keys %}
+            <tr class="sh-key-row" id="row-{{ k.id }}">
+                <td><span class="badge badge-{{ k.provider_slug|default('unknown') }}">{{ k.provider_name }}</span></td>
+                <td class="text-sm">{{ k.label or '—' }}</td>
+                <td>
+                    <div style="display:flex;align-items:center;gap:0.3rem;">
+                        <code class="text-xs key-display" id="skey-{{ k.id }}" data-full="{{ k.key_value }}" style="color:var(--text-muted);cursor:pointer;" onclick="toggleKeyVisibility({{ k.id }})" title="Click to reveal/hide">{{ k.key_value[:12] }}…{{ k.key_value[-4:] }}</code>
+                        <button class="btn btn-sm key-copy-btn" style="font-size:0.7rem;padding:0.15rem 0.35rem;" onclick="copyKey({{ k.id }})" title="Copy key">📋</button>
+                    </div>
+                </td>
+                <td>
+                    {% set acct = account_infos.get(k.id) %}
+                    {% if acct %}
+                        {% if acct.account_status == 'suspended' %}
+                            <span class="badge badge-yellow">💀 {{ acct.account_name or 'Suspended' }}</span>
+                        {% elif acct.account_status == 'active' %}
+                            <span class="badge badge-green">✅ Active</span>
+                        {% else %}
+                            <span class="badge badge-yellow">{{ acct.account_status }}</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="text-dim text-xs">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% set acct = account_infos.get(k.id) %}
+                    {% if acct and acct.suspension_reason %}
+                        <span class="sh-suspension-reason text-xs" title="{{ acct.suspension_reason }}">
+                            {{ acct.suspension_reason[:80] }}{% if acct.suspension_reason|length > 80 %}…{% endif %}
+                        </span>
+                    {% elif k.last_error_msg %}
+                        <span class="sh-suspension-reason text-xs" title="{{ k.last_error_msg }}">
+                            {{ k.last_error_msg[:80] }}{% if k.last_error_msg|length > 80 %}…{% endif %}
+                        </span>
+                    {% else %}
+                        <span class="text-dim text-xs">—</span>
+                    {% endif %}
+                </td>
+                <td class="text-xs text-dim">
+                    {{ k.last_error_at[:16]|replace('T', ' ') if k.last_error_at else '—' }}
+                </td>
+                <td>
+                    <div class="flex gap-1">
+                        <form method="POST" action="/keys/suspended/reactivate/{{ k.id }}" style="display:inline;" onsubmit="handleReactivate(event, {{ k.id }})">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-primary" id="reactBtn-{{ k.id }}" title="Test & Reactivate">🔄 Reactivate</button>
+                        </form>
+                        <form method="POST" action="/delete-key/{{ k.id }}" style="display:inline;" onsubmit="return confirm('Delete this suspended key permanently?')">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-danger" title="Delete">🗑</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Key visibility toggle + copy ──
+function toggleKeyVisibility(keyId) {
+    const el = document.getElementById('skey-' + keyId);
+    if (!el) return;
+    if (el.dataset.revealed === '1') {
+        const full = el.dataset.full;
+        el.textContent = full.substring(0, 12) + '…' + full.substring(full.length - 4);
+        el.dataset.revealed = '0';
+        el.style.color = 'var(--text-muted)';
+    } else {
+        el.textContent = el.dataset.full;
+        el.dataset.revealed = '1';
+        el.style.color = 'var(--accent)';
+    }
+}
+
+function copyKey(keyId) {
+    const el = document.getElementById('skey-' + keyId);
+    if (!el) return;
+    const key = el.dataset.full;
+    navigator.clipboard.writeText(key).then(() => {
+        showToast('success', 'Key copied to clipboard');
+        const btn = el.nextElementSibling;
+        if (btn) { btn.textContent = '✅'; setTimeout(() => btn.textContent = '📋', 1500); }
+    }).catch(() => showToast('error', 'Failed to copy'));
+}
+
+// ── Handle reactivate form submission (show loading state) ──
+function handleReactivate(event, keyId) {
+    const btn = document.getElementById('reactBtn-' + keyId);
+    if (btn) { btn.innerHTML = '<span class="sh-spinner"></span> Testing…'; btn.disabled = true; }
+}
+
+// ── Handle reactivate all ──
+document.getElementById('reactivateAllForm').addEventListener('submit', function(e) {
+    const btn = document.getElementById('reactivateAllBtn');
+    if (btn) { btn.innerHTML = '<span class="sh-spinner"></span> Testing all keys…'; btn.disabled = true; }
+});
+
+// ── Toast helper ──
+function showToast(type, message) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast ' + type;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 4200);
+}
+</script>
+{% endblock %}

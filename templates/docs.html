@@ -1714,6 +1714,116 @@ print(response.choices[0].message.content)</pre>
         </div>
       </section>
 
+      <!-- ============ KEY LIFECYCLE MANAGEMENT ============ -->
+      <section class="section" id="key-lifecycle">
+        <div class="section-head">
+          <span class="num">20</span>
+          <h2>Key Lifecycle Management</h2>
+          <a class="anchor" href="#key-lifecycle">#</a>
+        </div>
+        <p>
+          The gateway tracks API key health across three states and automatically transitions keys
+          based on provider responses. This ensures dead or suspended keys never waste API traffic.
+        </p>
+
+        <h3>Key States</h3>
+        <div class="table-wrap" style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; margin:16px 0;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border);">
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">State</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Flag</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">In Pool</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Trigger</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Recovery</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:8px 14px;"><span class="text-green">● Active</span></td>
+                <td style="padding:8px 14px;"><code class="inline">is_active=1, dead=0, suspended=0</code></td>
+                <td style="padding:8px 14px;">✅ Yes</td>
+                <td style="padding:8px 14px; color:var(--text-dim);">All new keys start here</td>
+                <td style="padding:8px 14px; color:var(--text-dim);">—</td>
+              </tr>
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:8px 14px;"><span style="color:#e3b341;">⚠ Suspended</span></td>
+                <td style="padding:8px 14px;"><code class="inline">suspended=1, is_active=0</code></td>
+                <td style="padding:8px 14px;">❌ No</td>
+                <td style="padding:8px 14px; color:var(--text-dim);">Fireworks API "suspended" error, or account-info detects suspension</td>
+                <td style="padding:8px 14px;">Admin "🔄 Reactivate" from <code class="inline">/keys/suspended</code></td>
+              </tr>
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:8px 14px;"><span class="text-red">💀 Dead</span></td>
+                <td style="padding:8px 14px;"><code class="inline">dead=1, is_active=0</code></td>
+                <td style="padding:8px 14px;">❌ No</td>
+                <td style="padding:8px 14px; color:var(--text-dim);">Credits depleted, spending limit, auth failure (402/401/403)</td>
+                <td style="padding:8px 14px;">Admin "Revive All Dead Keys" from dashboard</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Suspended vs Dead Keys</h3>
+        <p>
+          Fireworks AI prepaid accounts can enter two distinct failure states:
+        </p>
+        <ul style="color:var(--text-dim); margin:12px 0 12px 24px; line-height:1.8;">
+          <li>
+            <strong>Suspended</strong> — Account temporarily suspended by Fireworks (billing issue, TOS violation).
+            The key is <strong>moved to the Suspended page</strong> (<code class="inline">/keys/suspended</code>) and
+            <strong>excluded from the API pool</strong>. The admin can test-and-reactivate at any time.
+          </li>
+          <li>
+            <strong>Dead</strong> — Credits fully depleted or auth permanently revoked.
+            The key is marked dead and shown in the dashboard dead-key alert.
+          </li>
+        </ul>
+
+        <h3>Auto-Detection</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">flow</span></div>
+          <pre>Key Added → Fireworks API /models test call
+    ├── HTTP 200 → account active → key ready
+    ├── HTTP 403/412 "suspended" → suspended=1 → moved to /keys/suspended
+    └── HTTP 402/401 → dead=1 → dashboard alert
+
+During API usage:
+    ├── "suspended" in error → suspended=1 → excluded from pool
+    ├── "insufficient"/"quota" → dead=1 → permanently excluded
+    └── 429 rate limited → back of queue</pre>
+        </div>
+
+        <h3>Management Endpoints</h3>
+        <div class="table-wrap" style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; margin:16px 0;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border);">
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Operation</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Method</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">URL</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid var(--border);"><td>View Suspended</td><td><code class="inline">GET</code></td><td><code class="inline">/keys/suspended</code></td><td style="color:var(--text-dim);">Dashboard page listing all suspended keys</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td>Reactivate One</td><td><code class="inline">POST</code></td><td><code class="inline">/keys/suspended/reactivate/&lt;id&gt;</code></td><td style="color:var(--text-dim);">Test key against API — if active, unsuspend and return to pool</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td>Reactivate All</td><td><code class="inline">POST</code></td><td><code class="inline">/keys/suspended/reactivate-all</code></td><td style="color:var(--text-dim);">Test all suspended keys in bulk — unsuspend those that are active</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td>Fetch Account Info</td><td><code class="inline">POST</code></td><td><code class="inline">/api/account-info/bulk-fetch</code></td><td style="color:var(--text-dim);">Auto-detect suspended accounts across all Fireworks keys</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout success">
+          <span class="ico">✓</span>
+          <div class="body">
+            <strong>Pro tip:</strong> Use "Fetch All Fireworks Accounts" on the Keys page to bulk-check account status.
+            Any suspended accounts are automatically moved to <code class="inline">/keys/suspended</code> and excluded
+            from the API pool — no manual intervention needed.
+          </div>
+        </div>
+      </section>
+
       <div class="divider"></div>
         <p style="color:var(--text-dim); font-size:13px; margin:0 0 16px;">
           Prefer Markdown? Grab the full docs in a single file.
@@ -1728,7 +1838,7 @@ print(response.choices[0].message.content)</pre>
       </div>
 
       <p style="text-align:center; color:var(--text-dim); font-size:12px; margin-top:40px;">
-        AI Proxy Gateway <span class="badge-v3" style="font-size:10px; padding:2px 8px;">v3.0.0</span> &nbsp;·&nbsp;
+        AI Proxy Gateway <span class="badge-v3" style="font-size:10px; padding:2px 8px;">v5.5.0</span> &nbsp;·&nbsp;
         <a href="/" style="color:var(--text-dim);">← Back to app</a>
       </p>
 

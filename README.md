@@ -4,7 +4,7 @@
 
 ### A production-grade OpenAI-compatible API gateway with multi-provider support, smart key rotation, Claude cookie orchestration, and a professional management dashboard.
 
-[![Version](https://img.shields.io/badge/version-5.1.0-7c3aed?style=flat-square)](https://github.com/MahmoudAtteyya/aicookies)
+[![Version](https://img.shields.io/badge/version-5.5.0-7c3aed?style=flat-square)](https://github.com/MahmoudAtteyya/aicookies)
 [![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.1+-000000?style=flat-square&logo=flask&logoColor=white)](https://flask.palletsprojects.com)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
@@ -70,7 +70,7 @@ Commercial AI API providers each have their own SDKs, authentication schemes, ra
 |---------|-------------|
 | **OpenAI-Compatible API** | Drop-in replacement for OpenAI's `/v1/chat/completions` endpoint. Works with any OpenAI SDK (Python, JavaScript, Go, etc.) |
 | **22 Models, 5 Providers** | Claude (cookie), Mistral AI, Cohere, SambaNova, Fireworks — all behind one URL |
-| **Smart Key Rotation** | Least-used-first key selection, automatic cooldown on rate limits (429), permanent dead-marking on auth failures (401/403) |
+| **Smart Key Rotation** | Least-used-first key selection, automatic cooldown on rate limits (429), suspended vs dead distinction for Fireworks accounts, permanent dead-marking on auth failures (401/403) |
 | **Claude Cookie Orchestration** | Affinity tracking (multi-turn pinned to same cookie), tier-aware selection (free/pro/max), availability states (active/parked/quarantined), thread-safe with `RLock` |
 | **curl_cffi TLS Impersonation** | Bypasses Cloudflare's JA3 fingerprint validation by impersonating Chrome 131's exact TLS fingerprint |
 | **Natural Prompt Middleware** | Converts OpenAI-format messages into natural conversation text — no external API calls, zero latency overhead, preserves multi-turn context and system prompts |
@@ -868,9 +868,24 @@ Claude.ai emits artifacts using proprietary `<antArtifact type="text/html">...</
 | 429 (Rate limited) | `usage_count += 100` — key rotates far back, recovers after rate limit window |
 | 401/403 (Auth error) | `dead = 1, is_active = 0` — key permanently marked dead |
 | 10 consecutive errors | `is_active = 0` — key auto-disabled |
+| "suspended" error (Fireworks) | `suspended = 1, is_active = 0` — key moved to Suspended page, **excluded from API pool** |
+| "insufficient"/"quota" (Fireworks) | `dead = 1, is_active = 0` — permanently dead (credits depleted) |
 | All keys exhausted | Returns `503 Service Unavailable` with `retry_after_ms: 5000` |
 
 **Key ordering:** `usage_count ASC, created_at ASC` — least-used first.
+
+### 🔄 Suspended vs Dead Keys (Fireworks AI)
+
+Fireworks keys can enter two failure states, handled differently:
+
+| State | Cause | Behavior | Recovery |
+|-------|-------|----------|----------|
+| **Suspended** 🔶 | Account suspended by Fireworks (billing issue, TOS violation) | `suspended=1`, excluded from API pool, shown on `/keys/suspended` | Admin can test & reactivate via "🔄 Reactivate" button — key is re-tested against API and restored if account is active again |
+| **Dead** 💀 | Credits depleted, spending limit reached, auth failure | `dead=1`, permanently excluded, shown on dashboard alert | Manual revive via "Revive All Dead Keys" or `POST /api/keys/revive/<id>` |
+
+**Auto-detection**: When you add a Fireworks key or run "Fetch All Fireworks Accounts", the gateway automatically queries the Fireworks API to determine account status. If the account is suspended, the key is immediately marked `suspended=1` and moved to the Suspended page — no API traffic is wasted on suspended accounts.
+
+**Reactivation**: From the `/keys/suspended` page, click "🔄 Reactivate" on any key. The gateway makes a lightweight test call to the Fireworks API. If it returns HTTP 200, the key is un-suspended and returned to the active pool. If the account is still suspended, the key stays on the Suspended page.
 
 ### Provider-Specific Behavior
 
@@ -931,6 +946,7 @@ All frontend pages require admin authentication. No page is publicly accessible.
 |------|-------|------------|
 | Dashboard | `/`, `/dashboard` | `@login_required` |
 | API Keys | `/keys` | `@login_required` |
+| Suspended Keys | `/keys/suspended` | `@login_required` |
 | Tokens | `/tokens` | `@login_required` |
 | Endpoints | `/endpoints` | `@login_required` |
 | Upload | `/upload` | `@login_required` |
@@ -1148,8 +1164,9 @@ The gateway includes a professional dark-themed web dashboard:
 | Page | Path | Description |
 |------|------|-------------|
 | **Login** | `/login` | Authentication with rate limiting |
-| **Dashboard** | `/` | Overview: API key counts per provider, Claude cookie count, dead key alerts |
-| **API Keys** | `/keys` | Add/delete/toggle keys, view supported providers and free models |
+| **Dashboard** | `/` | Overview: API key counts per provider, Claude cookie count, dead key alerts, suspended key alerts |
+| **API Keys** | `/keys` | Add/delete/toggle keys, view supported providers and free models, account info badges |
+| **⚠ Suspended** | `/keys/suspended` | View temporarily suspended keys (excluded from API pool), test & reactivate individually or in bulk |
 | **Tokens** | `/tokens` | Create/pause/activate/revoke proxy API tokens, view usage stats |
 | **Endpoints** | `/endpoints` | Create, manage, and test custom virtual API endpoints with forced system prompts |
 | **Upload** | `/upload` | Drag-and-drop cookie file upload (Netscape format) |

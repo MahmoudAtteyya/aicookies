@@ -228,6 +228,9 @@ def init_db():
                            ("last_error_at", "TIMESTAMP"), ("last_error_msg", "TEXT")]:
         try: conn.execute(f"ALTER TABLE api_keys ADD COLUMN {col} {col_type}")
         except: pass
+    for col, col_type in [("suspended", "INTEGER DEFAULT 0")]:
+        try: conn.execute(f"ALTER TABLE api_keys ADD COLUMN {col} {col_type}")
+        except: pass
     for col, col_type in [("provider_type", "TEXT DEFAULT 'free'")]:
         try: conn.execute(f"ALTER TABLE api_providers ADD COLUMN {col} {col_type}")
         except: pass
@@ -597,12 +600,12 @@ def parse_netscape_cookies(raw):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_provider_keys(provider_slug):
-    """Get active, non-dead keys for a provider, ordered by usage_count."""
+    """Get active, non-dead, non-suspended keys for a provider, ordered by usage_count."""
     conn = get_db()
     rows = conn.execute("""
         SELECT k.*, p.base_url, p.provider_type
         FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
-        WHERE p.slug = ? AND k.is_active = 1 AND k.dead = 0
+        WHERE p.slug = ? AND k.is_active = 1 AND k.dead = 0 AND k.suspended = 0
         ORDER BY k.usage_count ASC, k.created_at ASC
     """, (provider_slug,)).fetchall()
     conn.close()
@@ -612,6 +615,13 @@ def mark_key_dead(key_id, reason=""):
     """Permanently mark a key as dead (for prepaid providers like Fireworks)."""
     conn = get_db()
     conn.execute("UPDATE api_keys SET dead=1, is_active=0, last_error_msg=?, last_error_at=CURRENT_TIMESTAMP WHERE id=?", (reason, key_id))
+    conn.commit()
+    conn.close()
+
+def mark_key_suspended(key_id, reason=""):
+    """Mark a key as suspended (temporary — admin can reactivate). Differs from dead."""
+    conn = get_db()
+    conn.execute("UPDATE api_keys SET suspended=1, is_active=0, last_error_msg=?, last_error_at=CURRENT_TIMESTAMP WHERE id=?", (reason, key_id))
     conn.commit()
     conn.close()
 
@@ -790,12 +800,32 @@ def save_account_info(key_id, info):
 
 
 def fetch_and_store_account_info(key_id, api_key, provider_slug="fireworks"):
-    """Fetch account info and store in DB. Returns the info dict."""
+    """Fetch account info and store in DB. Returns the info dict.
+    Also updates the api_keys table: if account is suspended, mark key accordingly."""
     if provider_slug != "fireworks":
         return {"error": f"Account info fetching not supported for provider: {provider_slug}"}
 
     info = fetch_fireworks_account_info(api_key)
     save_account_info(key_id, info)
+
+    # Auto-mark key as suspended if account status is suspended
+    if info.get("account_status") == "suspended":
+        conn = get_db()
+        conn.execute("UPDATE api_keys SET suspended=1, is_active=0, last_error_msg=? WHERE id=?", 
+                     (f"Account suspended: {info.get('suspension_reason', '')[:200]}", key_id))
+        conn.commit()
+        conn.close()
+        app.logger.info(f"[account-info] Key #{key_id} auto-marked SUSPENDED — {info.get('suspension_reason', '')[:100]}")
+    elif info.get("account_status") == "active":
+        # If key was previously suspended but now active, unsuspend it
+        conn = get_db()
+        key = conn.execute("SELECT suspended FROM api_keys WHERE id=?", (key_id,)).fetchone()
+        if key and key["suspended"]:
+            conn.execute("UPDATE api_keys SET suspended=0, is_active=1, last_error_msg=NULL WHERE id=?", (key_id,))
+            conn.commit()
+            app.logger.info(f"[account-info] Key #{key_id} auto-UNSUSPENDED — account now active")
+        conn.close()
+
     return info
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -863,25 +893,36 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                 body_err_lower = body_err.lower()
 
                 # ── Determine error type and handle accordingly ──
-                # 412 = Account suspended (Fireworks-specific — permanent death)
+                # 412 = Account suspended (Fireworks-specific — could be temporary billing)
                 # 402 = Payment required / depleted
-                # "suspended" / "spending limit" / "failure to pay" = permanent
+                # "suspended" = temporarily suspended — admin can reactivate
+                # "insufficient" / "quota" / "spending limit" / "failure to pay" = permanent
                 # 429 = Rate limited (temporary)
                 # 401/403 = Auth error (permanent for prepaid, temp for free)
 
+                is_suspended = (
+                    "suspended" in body_err_lower
+                    and "insufficient" not in body_err_lower
+                    and "quota" not in body_err_lower
+                    and "spending" not in body_err_lower
+                )
+
                 is_permanent = (
-                    code == 412 or
                     code == 402 or
                     "insufficient" in body_err_lower or
                     "quota" in body_err_lower or
-                    "suspended" in body_err_lower or
                     "spending limit" in body_err_lower or
                     "failure to pay" in body_err_lower or
                     "billing" in body_err_lower and "limit" in body_err_lower
                 )
 
-                if is_permanent:
-                    # Permanent death — account suspended/depleted, won't recover
+                if is_suspended:
+                    # Temporary suspension — key can be reactivated by admin
+                    mark_key_suspended(key_id, f"{code} Account suspended: {body_err[:200]}")
+                    error_msg = "SUSPENDED"
+                    app.logger.warning(f"[proxy] Key #{key_id} ({provider_slug}) marked SUSPENDED — {code}: {body_err[:100]}")
+                elif is_permanent:
+                    # Permanent death — account depleted, won't recover
                     mark_key_dead(key_id, f"{code} Account suspended/depleted: {body_err[:200]}")
                     error_msg = "ACCOUNT_SUSPENDED"
                     app.logger.warning(f"[proxy] Key #{key_id} ({provider_slug}) marked DEAD — {code}: {body_err[:100]}")
@@ -938,15 +979,24 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             latency = int((time.time() - start) * 1000)
             code = e.response.status_code
             body_err = e.response.text[:500]
-            # ── Same logic as above — handle all error codes ──
+            # ── Same logic as above — differentiate suspended vs dead ──
             body_err_lower = body_err.lower()
+            is_suspended = (
+                "suspended" in body_err_lower
+                and "insufficient" not in body_err_lower
+                and "quota" not in body_err_lower
+                and "spending" not in body_err_lower
+            )
             is_permanent = (
-                code == 412 or code == 402 or
+                code == 402 or
                 "insufficient" in body_err_lower or "quota" in body_err_lower or
-                "suspended" in body_err_lower or "spending limit" in body_err_lower or
+                "spending limit" in body_err_lower or
                 "failure to pay" in body_err_lower
             )
-            if is_permanent:
+            if is_suspended:
+                mark_key_suspended(key_id, f"{code} Account suspended: {body_err[:200]}")
+                error_msg = "SUSPENDED"
+            elif is_permanent:
                 mark_key_dead(key_id, f"{code} Account suspended/depleted: {body_err[:200]}")
                 error_msg = "ACCOUNT_SUSPENDED"
             elif code == 429:
@@ -3755,10 +3805,11 @@ def dashboard():
     conn = get_db()
     cookie_files = conn.execute("SELECT id, platform, filename, cookie_count, uploaded_at FROM cookie_files ORDER BY uploaded_at DESC").fetchall()
     claude_count = conn.execute("SELECT COUNT(*) FROM cookie_files WHERE platform = 'claude'").fetchone()[0]
-    providers = conn.execute("SELECT p.*, COUNT(k.id) as key_count FROM api_providers p LEFT JOIN api_keys k ON k.provider_id = p.id AND k.is_active = 1 AND k.dead = 0 GROUP BY p.id ORDER BY p.name").fetchall()
+    providers = conn.execute("SELECT p.*, COUNT(k.id) as key_count FROM api_providers p LEFT JOIN api_keys k ON k.provider_id = p.id AND k.is_active = 1 AND k.dead = 0 AND k.suspended = 0 GROUP BY p.id ORDER BY p.name").fetchall()
     dead_keys = conn.execute("SELECT COUNT(*) FROM api_keys WHERE dead = 1").fetchone()[0]
+    suspended_keys = conn.execute("SELECT COUNT(*) FROM api_keys WHERE suspended = 1").fetchone()[0]
     conn.close()
-    return render_template("dashboard.html", files=cookie_files, claude_count=claude_count, providers=providers, dead_keys=dead_keys, models=MODELS)
+    return render_template("dashboard.html", files=cookie_files, claude_count=claude_count, providers=providers, dead_keys=dead_keys, suspended_keys=suspended_keys, models=MODELS)
 
 @app.route("/dashboard")
 @login_required
@@ -4156,7 +4207,7 @@ def keys_page():
     
     providers = conn.execute("SELECT * FROM api_providers ORDER BY name").fetchall()
     keys = conn.execute("""SELECT k.*, p.name as provider_name, p.slug as provider_slug, p.provider_type
-        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id ORDER BY p.name, k.dead ASC, k.created_at DESC""").fetchall()
+        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id ORDER BY p.name, k.suspended ASC, k.dead ASC, k.created_at DESC""").fetchall()
     providers_parsed = []
     for p in providers:
         pd = dict(p)
@@ -4172,6 +4223,120 @@ def delete_key(key_id):
     conn = get_db(); conn.execute("DELETE FROM api_keys WHERE id=?", (key_id,)); conn.commit(); conn.close()
     flash("🗑️ Deleted", "info")
     return redirect(url_for("keys_page"))
+
+# ── Suspended Keys Page ──────────────────────────────────────────────────
+@app.route("/keys/suspended")
+@login_required
+def suspended_keys_page():
+    """View suspended keys (temporarily deactivated, admin can reactivate)."""
+    conn = get_db()
+    keys = conn.execute("""SELECT k.*, p.name as provider_name, p.slug as provider_slug, p.provider_type
+        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
+        WHERE k.suspended = 1
+        ORDER BY p.name, k.last_error_at DESC""").fetchall()
+
+    # Also get cached account info for each suspended key
+    key_ids = [k["id"] for k in keys]
+    account_infos = {}
+    if key_ids:
+        placeholders = ",".join("?" * len(key_ids))
+        accts = conn.execute(
+            f"SELECT * FROM key_account_info WHERE key_id IN ({placeholders})",
+            key_ids
+        ).fetchall()
+        for a in accts:
+            account_infos[a["key_id"]] = dict(a)
+    conn.close()
+
+    suspended_count = len(keys)
+    return render_template("suspended.html", keys=keys, suspended_count=suspended_count,
+                          account_infos=account_infos)
+
+# ── Reactivate suspended key ────────────────────────────────────────────
+@app.route("/keys/suspended/reactivate/<int:key_id>", methods=["POST"])
+@login_required
+def reactivate_suspended_key(key_id):
+    """Test a suspended key against the provider API. If it responds OK,
+    unsuspend it and return it to the active pool."""
+    conn = get_db()
+    key = conn.execute("""SELECT k.*, p.base_url, p.slug as provider_slug
+        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
+        WHERE k.id=? AND k.suspended=1""", (key_id,)).fetchone()
+    if not key:
+        conn.close()
+        flash("❌ Key not found or not suspended", "danger")
+        return redirect(url_for("suspended_keys_page"))
+
+    key = dict(key)
+    try:
+        url = f"{key['base_url']}/models"
+        headers = {"Authorization": f"Bearer {key['key_value']}"}
+        with httpx.Client(timeout=10.0, verify=False) as c:
+            r = c.get(url, headers=headers)
+
+        if r.status_code == 200:
+            # Key is working again — unsuspend
+            conn.execute("""UPDATE api_keys SET suspended=0, is_active=1, error_count=0,
+                last_error_msg=NULL WHERE id=?""", (key_id,))
+            conn.commit()
+            flash("✅ Key reactivated successfully — account is active again", "success")
+            app.logger.info(f"[reactivate] Key #{key_id} manually reactivated by admin")
+            
+            # Also refresh account info
+            try:
+                info = fetch_and_store_account_info(key_id, key["key_value"], key.get("provider_slug", "fireworks"))
+            except:
+                pass
+        else:
+            # Still suspended or dead
+            flash(f"❌ Key still not working (HTTP {r.status_code}). Account may still be suspended.", "danger")
+    except Exception as e:
+        flash(f"❌ Connection error: {str(e)[:150]}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("suspended_keys_page"))
+
+# ── Reactivate ALL suspended keys ───────────────────────────────────────
+@app.route("/keys/suspended/reactivate-all", methods=["POST"])
+@login_required
+def reactivate_all_suspended_keys():
+    """Test all suspended keys. Unsuspend those that respond OK."""
+    conn = get_db()
+    suspended = conn.execute("""SELECT k.id, k.key_value, p.base_url, p.slug as provider_slug
+        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
+        WHERE k.suspended = 1""").fetchall()
+    conn.close()
+
+    reactivated = 0
+    failed = 0
+    for k in suspended:
+        k = dict(k)
+        try:
+            url = f"{k['base_url']}/models"
+            headers = {"Authorization": f"Bearer {k['key_value']}"}
+            with httpx.Client(timeout=10.0, verify=False) as c:
+                r = c.get(url, headers=headers)
+
+            if r.status_code == 200:
+                conn2 = get_db()
+                conn2.execute("""UPDATE api_keys SET suspended=0, is_active=1, error_count=0,
+                    last_error_msg=NULL WHERE id=?""", (k["id"],))
+                conn2.commit()
+                conn2.close()
+                reactivated += 1
+                app.logger.info(f"[reactivate-all] Key #{k['id']} reactivated")
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+
+    if reactivated:
+        flash(f"✅ Reactivated {reactivated} key(s) — {failed} still suspended", "success")
+    else:
+        flash(f"⚠️ No keys could be reactivated — {failed} keys still suspended", "warning")
+
+    return redirect(url_for("suspended_keys_page"))
 
 @app.route("/toggle-key/<int:key_id>", methods=["POST"])
 @login_required
@@ -4310,7 +4475,7 @@ def api_keys():
     prov = request.args.get("provider")
     rows = conn.execute("""SELECT k.*, p.name as provider_name, p.slug as provider_slug, p.base_url, p.provider_type
         FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
-        WHERE k.is_active=1 AND k.dead=0""" + (" AND p.slug=?" if prov else "") + " ORDER BY k.usage_count ASC",
+        WHERE k.is_active=1 AND k.dead=0 AND k.suspended=0""" + (" AND p.slug=?" if prov else "") + " ORDER BY k.usage_count ASC",
         (prov,) if prov else ()).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
@@ -4320,7 +4485,7 @@ def api_keys():
 def api_next_key(provider):
     conn = get_db()
     key = conn.execute("""SELECT k.*, p.base_url, p.provider_type FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
-        WHERE p.slug=? AND k.is_active=1 AND k.dead=0 ORDER BY k.usage_count ASC, k.created_at ASC LIMIT 1""", (provider,)).fetchone()
+        WHERE p.slug=? AND k.is_active=1 AND k.dead=0 AND k.suspended=0 ORDER BY k.usage_count ASC, k.created_at ASC LIMIT 1""", (provider,)).fetchone()
     if key:
         conn.execute("UPDATE api_keys SET usage_count=usage_count+1, last_used_at=CURRENT_TIMESTAMP WHERE id=?", (key["id"],))
         conn.commit()
@@ -4377,7 +4542,7 @@ def api_reset_usage(provider):
 @login_required
 def api_list_providers():
     conn = get_db()
-    rows = conn.execute("""SELECT p.*, COUNT(k.id) as key_count FROM api_providers p LEFT JOIN api_keys k ON k.provider_id=p.id AND k.is_active=1 AND k.dead=0 GROUP BY p.id ORDER BY p.name""").fetchall()
+    rows = conn.execute("""SELECT p.*, COUNT(k.id) as key_count FROM api_providers p LEFT JOIN api_keys k ON k.provider_id=p.id AND k.is_active=1 AND k.dead=0 AND k.suspended=0 GROUP BY p.id ORDER BY p.name""").fetchall()
     conn.close()
     result = []
     for p in rows:
@@ -4390,9 +4555,10 @@ def api_models():
     conn = get_db()
     result = []
     for slug, info in MODELS.items():
-        kc = conn.execute("SELECT COUNT(*) FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE p.slug=? AND k.is_active=1 AND k.dead=0", (info["provider"],)).fetchone()[0]
+        kc = conn.execute("SELECT COUNT(*) FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE p.slug=? AND k.is_active=1 AND k.dead=0 AND k.suspended=0", (info["provider"],)).fetchone()[0]
         dead = conn.execute("SELECT COUNT(*) FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE p.slug=? AND k.dead=1", (info["provider"],)).fetchone()[0]
-        result.append({"slug": slug, "provider": info["provider"], "real_model": info["real_model"], "desc": info["desc"], "active_keys": kc, "dead_keys": dead, "endpoint": f"/v1/{slug}/chat/completions"})
+        suspended = conn.execute("SELECT COUNT(*) FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE p.slug=? AND k.suspended=1", (info["provider"],)).fetchone()[0]
+        result.append({"slug": slug, "provider": info["provider"], "real_model": info["real_model"], "desc": info["desc"], "active_keys": kc, "dead_keys": dead, "suspended_keys": suspended, "endpoint": f"/v1/{slug}/chat/completions"})
     conn.close()
     return jsonify(result)
 
@@ -4404,6 +4570,7 @@ def api_stats():
     ok = conn.execute("SELECT COUNT(*) FROM proxy_requests WHERE status='ok'").fetchone()[0]
     recent = conn.execute("SELECT * FROM proxy_requests ORDER BY created_at DESC LIMIT 20").fetchall()
     dead_keys = conn.execute("SELECT k.*, p.name as provider_name FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE k.dead=1").fetchall()
+    suspended_keys = conn.execute("SELECT k.*, p.name as provider_name FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE k.suspended=1").fetchall()
     conn.close()
     
     # Include Claude token state
@@ -4422,6 +4589,7 @@ def api_stats():
         "total_requests": total, "successful": ok,
         "recent": [dict(r) for r in recent],
         "dead_keys": [dict(d) for d in dead_keys],
+        "suspended_keys": [dict(d) for d in suspended_keys],
         "claude_tokens": claude_state,
     })
 

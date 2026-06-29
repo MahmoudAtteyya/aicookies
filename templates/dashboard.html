@@ -192,6 +192,19 @@
 </div>
 {% endif %}
 
+<!-- ═══════════ SUSPENDED KEYS ALERT ═══════════ -->
+{% if suspended_keys and suspended_keys > 0 %}
+<div class="card" style="border-left:4px solid var(--yellow);background:var(--yellow-bg);">
+    <div class="flex items-center justify-between flex-wrap gap-1">
+        <div>
+            <strong style="color:var(--yellow);">⚠️ {{ suspended_keys }} Suspended Key(s)</strong>
+            <p class="text-sm text-dim mb-0" style="margin-top:0.25rem;">Temporarily deactivated — excluded from API pool. Test reactivation after resolving billing.</p>
+        </div>
+        <a href="/keys/suspended" class="btn btn-primary btn-sm">🔍 View Suspended Keys</a>
+    </div>
+</div>
+{% endif %}
+
 <!-- ═══════════ PREMIUM STAT CARDS ═══════════ -->
 <div class="pstat-grid">
     {% set ns_keys = namespace(total=0) %}
@@ -226,6 +239,11 @@
         <span class="icon">💀</span>
         <div class="num">{{ dead_keys }}</div>
         <div class="label">Dead Keys</div>
+    </div>
+    <div class="pstat is-danger is-clickable" onclick="location.href='/keys/suspended'">
+        <span class="icon">⚠️</span>
+        <div class="num">{{ suspended_keys|default(0) }}</div>
+        <div class="label">Suspended Keys</div>
     </div>
 </div>
 

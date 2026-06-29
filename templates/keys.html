@@ -154,7 +154,9 @@
                 </td>
                 <td class="text-sm">{{ k.usage_count }} uses</td>
                 <td>
-                    {% if k.dead %}
+                    {% if k.suspended %}
+                        <span class="badge badge-yellow">⚠️ Suspended</span>
+                    {% elif k.dead %}
                         <span class="badge badge-red">💀 Dead</span>
                     {% elif k.is_active %}
                         <span class="badge badge-green">✅ Active</span>

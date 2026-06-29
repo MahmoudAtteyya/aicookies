@@ -1822,6 +1822,42 @@ During API usage:
             from the API pool — no manual intervention needed.
           </div>
         </div>
+
+        <h3>💳 Promotional Credit Tracking</h3>
+        <p>
+          Fireworks AI provides $6.00 promotional credits per account (~7.2M prompt tokens).
+          The gateway calculates remaining credit by analyzing rate-limit headers from each API call:
+        </p>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">formula</span></div>
+          <pre>Credits Remaining ($) = (remaining_tokens / 7,200,000) × $6.00
+
+Example:
+  x-ratelimit-limit-tokens-prompt: 7200000
+  x-ratelimit-remaining-tokens-prompt: 6498732
+  → Credits: $5.42 of $6.00 (90.3% remaining)</pre>
+        </div>
+
+        <div class="table-wrap" style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; margin:16px 0;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border);">
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Data Point</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">Source</th>
+                <th style="text-align:left; padding:10px 14px; color:var(--text);">When Available</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Credits ($)</td><td>Rate-limit headers ÷ 7.2M × $6</td><td>Active accounts only</td></tr>
+              <tr><td>Tokens remaining</td><td><code>x-ratelimit-remaining-tokens-prompt</code></td><td>Active accounts only</td></tr>
+              <tr><td>Account name</td><td>Error message or model owned_by</td><td>All states</td></tr>
+              <tr><td>Account email</td><td>Suspension error message</td><td>Suspended accounts</td></tr>
+              <tr><td>Plan type</td><td>Inferred from token limit</td><td>All states</td></tr>
+              <tr><td>Models count</td><td><code>/models</code> endpoint</td><td>Active + some suspended</td></tr>
+              <tr><td>Suspension reason</td><td>412/403 error body</td><td>Suspended accounts</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <div class="divider"></div>
@@ -1838,7 +1874,7 @@ During API usage:
       </div>
 
       <p style="text-align:center; color:var(--text-dim); font-size:12px; margin-top:40px;">
-        AI Proxy Gateway <span class="badge-v3" style="font-size:10px; padding:2px 8px;">v5.5.0</span> &nbsp;·&nbsp;
+        AI Proxy Gateway <span class="badge-v3" style="font-size:10px; padding:2px 8px;">v5.6.0</span> &nbsp;·&nbsp;
         <a href="/" style="color:var(--text-dim);">← Back to app</a>
       </p>
 

@@ -231,6 +231,9 @@ def init_db():
     for col, col_type in [("suspended", "INTEGER DEFAULT 0")]:
         try: conn.execute(f"ALTER TABLE api_keys ADD COLUMN {col} {col_type}")
         except: pass
+    for col, col_type in [("credits_dollar", "TEXT"), ("credits_initial", "TEXT"), ("models_count", "INTEGER")]:
+        try: conn.execute(f"ALTER TABLE key_account_info ADD COLUMN {col} {col_type}")
+        except: pass
     for col, col_type in [("provider_type", "TEXT DEFAULT 'free'")]:
         try: conn.execute(f"ALTER TABLE api_providers ADD COLUMN {col} {col_type}")
         except: pass
@@ -662,28 +665,42 @@ def bump_key_usage(key_id):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def fetch_fireworks_account_info(api_key):
-    """Fetch account info for a Fireworks AI key by making a minimal API call
-    and extracting account data from response headers + error messages.
-
-    Returns dict with: account_name, account_status, rate_limits, models, etc.
+    """Fetch comprehensive account info for a Fireworks AI key.
+    
+    Makes a minimal chat completion to extract rate-limit headers,
+    fetches available models, parses error messages for account details,
+    and calculates promotional credit remaining ($6 initial).
+    
+    Returns dict with 18+ fields: account_name, account_status, plan_type,
+    credits_dollar, rate_limits, models_available, suspension_reason, etc.
     """
     import json as _json
+    import urllib.request, urllib.error, re
+    
     result = {
         "provider_slug": "fireworks",
         "account_name": None,
+        "account_email": None,
         "account_status": "unknown",
         "plan_type": None,
         "credits_remaining": None,
         "credits_total": None,
+        "credits_dollar": None,
+        "credits_initial": None,
         "rate_limit_prompt": None,
         "rate_limit_generated": None,
         "rate_limit_remaining_prompt": None,
         "rate_limit_remaining_generated": None,
         "models_available": None,
+        "models_count": None,
         "billing_url": "https://fireworks.ai/account/billing",
         "suspension_reason": None,
         "raw_response": None,
     }
+    
+    # Fireworks $6 promotional credit ≈ 7.2M prompt tokens
+    FW_CREDITS_DOLLAR_INITIAL = 6.00
+    FW_CREDITS_TOKEN_LIMIT = 7200000
 
     base_url = "https://api.fireworks.ai/inference/v1"
     headers = {
@@ -693,17 +710,16 @@ def fetch_fireworks_account_info(api_key):
 
     # ── Step 1: Make a minimal chat completion to extract rate-limit headers ──
     try:
-        payload = {
+        payload = _json.dumps({
             "model": "accounts/fireworks/models/glm-5p2",
             "messages": [{"role": "user", "content": "hi"}],
             "max_tokens": 1,
             "temperature": 0,
-        }
-        # Use urllib to get raw headers
-        import urllib.request, urllib.error
+        }).encode()
+        
         req = urllib.request.Request(
             f"{base_url}/chat/completions",
-            data=_json.dumps(payload).encode(),
+            data=payload,
             headers=headers,
             method="POST",
         )
@@ -713,44 +729,98 @@ def fetch_fireworks_account_info(api_key):
                 body = _json.loads(resp.read().decode())
 
                 result["account_status"] = "active"
+                result["plan_type"] = "promotional"  # $6 free credit tier
+                
                 # Extract rate limit headers
-                result["rate_limit_prompt"] = int(resp_headers.get("x-ratelimit-limit-tokens-prompt", 0)) or None
-                result["rate_limit_generated"] = int(resp_headers.get("x-ratelimit-limit-tokens-generated", 0)) or None
-                result["rate_limit_remaining_prompt"] = int(resp_headers.get("x-ratelimit-remaining-tokens-prompt", 0)) or None
-                result["rate_limit_remaining_generated"] = int(resp_headers.get("x-ratelimit-remaining-tokens-generated", 0)) or None
-                result["raw_response"] = _json.dumps({"status": "ok", "headers": {k: v for k, v in resp_headers.items() if k.lower().startswith("x-ratelimit") or k.lower().startswith("fireworks")}})
+                prompt_limit = int(resp_headers.get("x-ratelimit-limit-tokens-prompt", 0))
+                prompt_remaining = int(resp_headers.get("x-ratelimit-remaining-tokens-prompt", 0))
+                gen_limit = int(resp_headers.get("x-ratelimit-limit-tokens-generated", 0))
+                gen_remaining = int(resp_headers.get("x-ratelimit-remaining-tokens-generated", 0))
+                
+                result["rate_limit_prompt"] = prompt_limit or FW_CREDITS_TOKEN_LIMIT
+                result["rate_limit_remaining_prompt"] = prompt_remaining if prompt_remaining else prompt_limit - 13 if prompt_limit else None
+                result["rate_limit_generated"] = gen_limit or None
+                result["rate_limit_remaining_generated"] = gen_remaining or None
+                
+                # Calculate credit in dollars
+                if prompt_limit and prompt_limit >= FW_CREDITS_TOKEN_LIMIT * 0.8:  # ~7M = promotional tier
+                    prompt_rem = prompt_remaining if prompt_remaining else (prompt_limit - 13)
+                    dollar_remaining = round((prompt_rem / FW_CREDITS_TOKEN_LIMIT) * FW_CREDITS_DOLLAR_INITIAL, 2)
+                    result["credits_remaining"] = f"{prompt_rem:,}"
+                    result["credits_total"] = f"{prompt_limit:,}"
+                    result["credits_dollar"] = f"${dollar_remaining:.2f}"
+                    result["credits_initial"] = f"${FW_CREDITS_DOLLAR_INITIAL:.2f}"
+                else:
+                    result["credits_remaining"] = str(prompt_limit)
+                    result["credits_total"] = str(prompt_limit)
+                    result["credits_dollar"] = None
+
+                # Save raw key headers
+                result["raw_response"] = _json.dumps({
+                    "status": "ok",
+                    "headers": {k: v for k, v in resp_headers.items()
+                                if any(p in k.lower() for p in ("x-ratelimit", "fireworks"))}
+                })
+                
+                # Extract account name from usage/model field if available
+                model_name = body.get("model", "")
+                usage = body.get("usage", {})
+                result["_model_used"] = model_name
+                result["_usage_details"] = _json.dumps(usage) if usage else None
 
         except urllib.error.HTTPError as e:
             body_text = e.read().decode()
+            resp_headers = dict(e.headers) if hasattr(e, 'headers') else {}
             result["raw_response"] = body_text[:2000]
+            
+            code = e.code
+            msg = ""
+            try:
+                err = _json.loads(body_text)
+                msg = err.get("error", {}).get("message", "")
+            except:
+                msg = body_text[:500]
 
-            if e.code in (403, 422, 412):
-                try:
-                    err = _json.loads(body_text)
-                    msg = err.get("error", {}).get("message", "")
-                    result["account_status"] = "suspended"
-                    result["suspension_reason"] = msg
-                    # Extract account name from error message
-                    # "Account mahmoud3034045-mo8sa is suspended..."
-                    import re
-                    name_match = re.search(r'Account\s+(\S+)\s+is\s+suspended', msg)
-                    if name_match:
-                        result["account_name"] = name_match.group(1)
-                except:
-                    result["account_status"] = "error"
-                    result["suspension_reason"] = body_text[:500]
-            elif e.code == 401:
+            if code in (403, 422, 412):
+                # Account suspended
+                result["account_status"] = "suspended"
+                result["suspension_reason"] = msg
+                result["plan_type"] = "promotional"
+                
+                # Extract account name: "Account X is suspended..."
+                name_match = re.search(r'Account\s+(\S+)\s+is\s+suspended', msg)
+                if name_match:
+                    result["account_name"] = name_match.group(1)
+                
+                # Extract email if present in message
+                email_match = re.search(r'([\w.+-]+@[\w-]+\.[\w.]+)', msg)
+                if email_match:
+                    result["account_email"] = email_match.group(1)
+                    
+                # Extract credits/dollar info from suspension message
+                dollar_match = re.search(r'\$([\d.]+)', msg)
+                if dollar_match:
+                    result["credits_initial"] = f"${FW_CREDITS_DOLLAR_INITIAL:.2f}"
+                    result["credits_dollar"] = "$0.00"
+                    result["credits_remaining"] = "0"
+                    result["credits_total"] = str(FW_CREDITS_TOKEN_LIMIT)
+                    
+            elif code == 401:
                 result["account_status"] = "invalid_key"
                 result["suspension_reason"] = "Authentication failed — invalid API key"
-            elif e.code == 429:
+            elif code == 429:
                 result["account_status"] = "rate_limited"
-                result["suspension_reason"] = "Rate limit exceeded"
+                result["suspension_reason"] = "Rate limit exceeded — try again later"
             else:
                 result["account_status"] = "error"
-                result["suspension_reason"] = f"HTTP {e.code}: {body_text[:300]}"
+                result["suspension_reason"] = f"HTTP {code}: {msg[:300]}"
+
+    except urllib.error.URLError as e:
+        result["account_status"] = "network_error"
+        result["suspension_reason"] = f"Network error: {str(e.reason)[:300]}" if hasattr(e, 'reason') else str(e)[:300]
     except Exception as e:
         result["account_status"] = "fetch_failed"
-        result["suspension_reason"] = str(e)[:500]
+        result["suspension_reason"] = f"{type(e).__name__}: {str(e)[:400]}"
 
     # ── Step 2: Fetch available models (works even for some suspended accounts) ──
     try:
@@ -762,19 +832,49 @@ def fetch_fireworks_account_info(api_key):
         with urllib.request.urlopen(req2, timeout=10) as resp:
             models_data = _json.loads(resp.read().decode())
             model_ids = [m.get("id", "") for m in models_data.get("data", [])]
-            result["models_available"] = _json.dumps(model_ids[:50])  # cap at 50
+            result["models_available"] = _json.dumps(model_ids[:50])
+            result["models_count"] = len(model_ids)
+            
+            # Try to extract org/owner info from first model
+            if model_ids and not result.get("account_name"):
+                first_model = models_data.get("data", [{}])[0] if models_data.get("data") else {}
+                owned_by = first_model.get("owned_by", "")
+                if owned_by and not owned_by.startswith("accounts/"):
+                    result["account_name"] = owned_by
+    except urllib.error.HTTPError as e:
+        # 412 for suspended accounts — still try to parse body
+        if e.code == 412 and result["account_status"] != "suspended":
+            try:
+                err = _json.loads(e.read().decode())
+                msg = err.get("error", {}).get("message", "")
+                if "suspended" in msg.lower():
+                    result["account_status"] = "suspended"
+                    result["suspension_reason"] = msg
+                    name_match = re.search(r'Account\s+(\S+)\s+is\s+suspended', msg)
+                    if name_match:
+                        result["account_name"] = name_match.group(1)
+            except:
+                pass
     except:
-        pass  # Models list is optional — don't fail if this doesn't work
+        pass
 
-    # ── Step 3: Try to extract account name from successful responses ──
-    # If account_name is still None and status is active, try models endpoint headers
-    if not result["account_name"] and result["account_status"] == "active":
-        # The account name is sometimes in the request_id or response body
-        # We can also infer from rate limits (free tier vs paid)
-        if result["rate_limit_prompt"] and result["rate_limit_prompt"] >= 7000000:
-            result["plan_type"] = "standard"
-        else:
-            result["plan_type"] = "free"
+    # ── Step 3: Post-processing ──
+    if result["account_status"] == "active":
+        if not result["account_name"]:
+            # Try to get account name from models endpoint's owned_by
+            try:
+                models_list = _json.loads(result["models_available"]) if result["models_available"] else []
+                if models_list:
+                    result["account_name"] = models_list[0].split("/")[1] if "/" in models_list[0] else None
+            except:
+                pass
+
+    # Ensure credits_dollar = "$0.00" for suspended accounts
+    if result["account_status"] == "suspended" and not result.get("credits_dollar"):
+        result["credits_remaining"] = "0"
+        result["credits_total"] = str(FW_CREDITS_TOKEN_LIMIT)
+        result["credits_dollar"] = "$0.00"
+        result["credits_initial"] = f"${FW_CREDITS_DOLLAR_INITIAL:.2f}"
 
     return result
 
@@ -783,17 +883,20 @@ def save_account_info(key_id, info):
     """Save or update account info for a key in the database."""
     conn = get_db()
     conn.execute("""INSERT OR REPLACE INTO key_account_info
-        (key_id, provider_slug, account_name, account_status, plan_type,
-         credits_remaining, credits_total, rate_limit_prompt, rate_limit_generated,
+        (key_id, provider_slug, account_name, account_email, account_status, plan_type,
+         credits_remaining, credits_total, credits_dollar, credits_initial,
+         rate_limit_prompt, rate_limit_generated,
          rate_limit_remaining_prompt, rate_limit_remaining_generated,
-         models_available, billing_url, suspension_reason, raw_response, last_fetched_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)""",
+         models_available, models_count, billing_url, suspension_reason, raw_response, last_fetched_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)""",
         (key_id, info.get("provider_slug"), info.get("account_name"),
+         info.get("account_email"),
          info.get("account_status"), info.get("plan_type"),
          info.get("credits_remaining"), info.get("credits_total"),
+         info.get("credits_dollar"), info.get("credits_initial"),
          info.get("rate_limit_prompt"), info.get("rate_limit_generated"),
          info.get("rate_limit_remaining_prompt"), info.get("rate_limit_remaining_generated"),
-         info.get("models_available"), info.get("billing_url"),
+         info.get("models_available"), info.get("models_count"), info.get("billing_url"),
          info.get("suspension_reason"), info.get("raw_response")))
     conn.commit()
     conn.close()

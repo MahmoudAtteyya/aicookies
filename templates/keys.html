@@ -273,9 +273,11 @@ function displayAccountBadge(keyId, info) {
 
     let badgeClass = 'acc-unknown', badgeText = '—';
     if (status === 'active') { badgeClass = 'acc-active'; badgeText = '✅ ' + (name || 'Active'); }
-    else if (status === 'suspended') { badgeClass = 'acc-suspended'; badgeText = '💀 ' + (name || 'Suspended'); }
+    else if (status === 'suspended') { badgeClass = 'acc-suspended'; badgeText = '⛔ ' + (name || 'Suspended'); }
     else if (status === 'rate_limited') { badgeClass = 'acc-fetching'; badgeText = '⚠️ Rate Limited'; }
     else if (status === 'invalid_key') { badgeClass = 'acc-suspended'; badgeText = '❌ Invalid'; }
+    else if (status === 'network_error') { badgeClass = 'acc-suspended'; badgeText = '🌐 Network Error'; }
+    else if (status === 'fetch_failed') { badgeClass = 'acc-suspended'; badgeText = '💥 Failed'; }
 
     cell.innerHTML = `<span class="acc-badge ${badgeClass}" title="${status}">${badgeText}</span>
         <button class="btn btn-sm" style="font-size:0.65rem;padding:0.1rem 0.3rem;margin-left:0.25rem;" onclick="showAccountModal(${keyId}, null)">👁</button>`;
@@ -306,77 +308,118 @@ function renderAccountModal(info) {
     const title = document.getElementById('accModalTitle');
     const status = info.account_status || 'unknown';
     const name = info.account_name || 'Unknown';
+    const email = info.account_email || '';
     title.textContent = '🔍 ' + name;
 
-    const statusColors = { active: '#22c55e', suspended: '#ef4444', rate_limited: '#f59e0b', invalid_key: '#ef4444', unknown: '#94a3b8' };
+    const statusColors = { active: '#22c55e', suspended: '#ef4444', rate_limited: '#f59e0b', invalid_key: '#ef4444', network_error: '#f97316', fetch_failed: '#ef4444', unknown: '#94a3b8' };
+    const statusIcons = { active: '✅', suspended: '⛔', rate_limited: '⚠️', invalid_key: '❌', network_error: '🌐', fetch_failed: '💥', unknown: '❓' };
     const statusColor = statusColors[status] || '#94a3b8';
+    const statusIcon = statusIcons[status] || '❓';
 
-    let rateBar = '';
-    if (info.rate_limit_prompt && info.rate_limit_remaining_prompt) {
+    // ── Credit progress bar ──
+    let creditBar = '';
+    const creditsDollar = info.credits_dollar || '';
+    const creditsInitial = info.credits_initial || '$6.00';
+    if (info.rate_limit_prompt && info.rate_limit_remaining_prompt && status === 'active') {
+        const pct = Math.max(0, Math.min(100, ((info.rate_limit_remaining_prompt / info.rate_limit_prompt) * 100).toFixed(1)));
+        const barColor = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
+        const remaining = info.rate_limit_remaining_prompt.toLocaleString ? info.rate_limit_remaining_prompt.toLocaleString() : info.rate_limit_remaining_prompt;
+        const total = info.rate_limit_prompt.toLocaleString ? info.rate_limit_prompt.toLocaleString() : info.rate_limit_prompt;
+        creditBar = `<div class="acc-info-item acc-info-full">
+            <div class="label">💳 Promotional Credits</div>
+            <div class="value" style="font-size:1.2rem;font-weight:700;">${creditsDollar || 'N/A'} <span style="font-size:0.75rem;color:var(--text-dim);font-weight:400;">of ${creditsInitial}</span></div>
+            <div class="acc-progress-bar"><div class="acc-progress-fill" style="width:${pct}%;background:${barColor};"></div></div>
+            <div style="display:flex;justify-content:space-between;margin-top:0.25rem;font-size:0.7rem;color:var(--text-dim);">
+                <span>${remaining} tokens remaining</span><span>${total} total</span>
+            </div>
+        </div>`;
+    } else if (status === 'suspended') {
+        creditBar = `<div class="acc-info-item acc-info-full" style="border-left:3px solid #ef4444;">
+            <div class="label">💳 Promotional Credits</div>
+            <div class="value" style="color:#ef4444;font-size:1.1rem;">$0.00 <span style="font-size:0.75rem;color:var(--text-dim);font-weight:400;">of ${creditsInitial}</span></div>
+            <div class="acc-progress-bar"><div class="acc-progress-fill" style="width:0%;background:#ef4444;"></div></div>
+            <div style="margin-top:0.25rem;font-size:0.7rem;color:#ef4444;">Account suspended — credits frozen</div>
+        </div>`;
+    }
+
+    // ── Rate limit bars ──
+    let promptBar = '', genBar = '';
+    if (info.rate_limit_prompt && info.rate_limit_remaining_prompt && status === 'active') {
         const pct = ((info.rate_limit_remaining_prompt / info.rate_limit_prompt) * 100).toFixed(1);
         const barColor = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
-        rateBar = `<div class="acc-info-item acc-info-full">
-            <div class="label">Rate Limit (Prompt Tokens)</div>
+        promptBar = `<div class="acc-info-item acc-info-full">
+            <div class="label">📥 Rate Limit (Prompt Tokens)</div>
             <div class="value">${info.rate_limit_remaining_prompt?.toLocaleString()} / ${info.rate_limit_prompt?.toLocaleString()}</div>
             <div class="acc-progress-bar"><div class="acc-progress-fill" style="width:${pct}%;background:${barColor};"></div></div>
         </div>`;
     }
-
-    let genBar = '';
-    if (info.rate_limit_generated && info.rate_limit_remaining_generated) {
+    if (info.rate_limit_generated && info.rate_limit_remaining_generated && status === 'active') {
         const pct = ((info.rate_limit_remaining_generated / info.rate_limit_generated) * 100).toFixed(1);
         const barColor = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
         genBar = `<div class="acc-info-item acc-info-full">
-            <div class="label">Rate Limit (Generated Tokens)</div>
+            <div class="label">📤 Rate Limit (Generated Tokens)</div>
             <div class="value">${info.rate_limit_remaining_generated?.toLocaleString()} / ${info.rate_limit_generated?.toLocaleString()}</div>
             <div class="acc-progress-bar"><div class="acc-progress-fill" style="width:${pct}%;background:${barColor};"></div></div>
         </div>`;
     }
 
+    // ── Models chips ──
     let modelsHtml = '';
     if (info.models_available) {
         try {
             const models = JSON.parse(info.models_available);
             if (models.length > 0) {
                 modelsHtml = `<div class="acc-info-item acc-info-full">
-                    <div class="label">Available Models (${models.length})</div>
+                    <div class="label">🧠 Available Models (${info.models_count || models.length})</div>
                     <div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.5rem;">
-                        ${models.slice(0, 15).map(m => `<code class="kp-model-chip">${m.replace('accounts/fireworks/models/', '')}</code>`).join('')}
-                        ${models.length > 15 ? `<span style="color:var(--text-dim);font-size:0.8rem;">+${models.length - 15} more</span>` : ''}
+                        ${models.slice(0, 12).map(m => `<code class="kp-model-chip" style="font-size:0.68rem;" title="${m}">${m.replace('accounts/fireworks/models/', '')}</code>`).join('')}
+                        ${models.length > 12 ? `<span style="color:var(--text-dim);font-size:0.75rem;">+${models.length - 12} more</span>` : ''}
                     </div>
                 </div>`;
             }
         } catch(e) {}
     }
 
+    // ── Suspension reason ──
     let reasonHtml = '';
     if (info.suspension_reason) {
-        reasonHtml = `<div class="acc-info-item acc-info-full" style="border-left:3px solid #ef4444;">
-            <div class="label">Suspension Reason</div>
-            <div class="value" style="font-size:0.85rem;color:#ef4444;">${info.suspension_reason.substring(0, 300)}</div>
+        const reasonColor = status === 'suspended' ? '#ef4444' : status === 'rate_limited' ? '#f59e0b' : 'var(--text-dim)';
+        reasonHtml = `<div class="acc-info-item acc-info-full" style="border-left:3px solid ${reasonColor};">
+            <div class="label">${status === 'suspended' ? '⛔ Suspension Reason' : status === 'rate_limited' ? '⚠️ Rate Limit Info' : 'ℹ️ Details'}</div>
+            <div class="value" style="font-size:0.82rem;color:${reasonColor};word-break:break-word;">${(info.suspension_reason || '').substring(0, 400)}</div>
         </div>`;
     }
 
     const fetchedDate = info.last_fetched_at ? new Date(info.last_fetched_at + 'Z').toLocaleString() : 'N/A';
+    const emailDisplay = email ? `<div class="acc-info-item">
+            <div class="label">📧 Account Email</div>
+            <div class="value" style="font-size:0.9rem;">${email}</div>
+        </div>` : '';
 
     body.innerHTML = `<div class="acc-info-grid">
         <div class="acc-info-item">
-            <div class="label">Account Name</div>
+            <div class="label">👤 Account Name</div>
             <div class="value">${name}</div>
         </div>
         <div class="acc-info-item">
-            <div class="label">Status</div>
-            <div class="value" style="color:${statusColor};">● ${status.toUpperCase()}</div>
+            <div class="label">📊 Status</div>
+            <div class="value" style="color:${statusColor};font-size:1rem;">${statusIcon} ${status.toUpperCase().replace(/_/g, ' ')}</div>
         </div>
+        ${emailDisplay}
         <div class="acc-info-item">
-            <div class="label">Plan Type</div>
+            <div class="label">📋 Plan Type</div>
             <div class="value">${info.plan_type || '—'}</div>
         </div>
         <div class="acc-info-item">
-            <div class="label">Last Fetched</div>
-            <div class="value" style="font-size:0.85rem;">${fetchedDate}</div>
+            <div class="label">📦 Models Count</div>
+            <div class="value">${info.models_count || '—'}</div>
         </div>
-        ${rateBar}
+        <div class="acc-info-item">
+            <div class="label">🕐 Last Fetched</div>
+            <div class="value" style="font-size:0.82rem;">${fetchedDate}</div>
+        </div>
+        ${creditBar}
+        ${promptBar}
         ${genBar}
         ${reasonHtml}
         ${modelsHtml}
@@ -417,7 +460,8 @@ function bulkFetchAccountInfo() {
                         if (cell) {
                             let badgeClass = 'acc-unknown', badgeText = r.status;
                             if (r.status === 'active') { badgeClass = 'acc-active'; badgeText = '✅ ' + (r.account_name || 'Active'); }
-                            else if (r.status === 'suspended') { badgeClass = 'acc-suspended'; badgeText = '💀 ' + (r.account_name || 'Suspended'); }
+                            else if (r.status === 'suspended') { badgeClass = 'acc-suspended'; badgeText = '⛔ ' + (r.account_name || 'Suspended'); }
+                            else if (r.status === 'network_error' || r.status === 'fetch_failed') { badgeClass = 'acc-fetching'; badgeText = '💥 ' + r.status; }
                             cell.innerHTML = `<span class="acc-badge ${badgeClass}">${badgeText.substring(0, 25)}</span>`;
                         }
                     }

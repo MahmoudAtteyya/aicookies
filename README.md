@@ -4,7 +4,7 @@
 
 ### A production-grade OpenAI-compatible API gateway with multi-provider support, smart key rotation, Claude cookie orchestration, and a professional management dashboard.
 
-[![Version](https://img.shields.io/badge/version-5.5.0-7c3aed?style=flat-square)](https://github.com/MahmoudAtteyya/aicookies)
+[![Version](https://img.shields.io/badge/version-5.6.0-7c3aed?style=flat-square)](https://github.com/MahmoudAtteyya/aicookies)
 [![Python](https://img.shields.io/badge/Python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.1+-000000?style=flat-square&logo=flask&logoColor=white)](https://flask.palletsprojects.com)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
@@ -86,7 +86,7 @@ Commercial AI API providers each have their own SDKs, authentication schemes, ra
 | **SQLite with WAL Mode** | Write-Ahead Logging for concurrent read/write access, `busy_timeout=5000ms` to prevent lock errors |
 | **CSRF Protection** | All POST forms require a CSRF token via Jinja context processor |
 | **Login Rate Limiting** | 5 attempts per 15 minutes per IP, automatic lockout |
-| **Management Dashboard** | Web UI for managing API keys, Claude cookies, proxy tokens, and viewing request stats |
+| **Management Dashboard** | Web UI for managing API keys, Claude cookies, proxy tokens, viewing request stats, account credit tracking, model inventory, and suspension monitoring |
 | **CORS Support** | Permissive CORS headers — works from any frontend |
 | **Health Endpoint** | `/v1/health` returns status, model count, active keys, Claude orchestration state |
 | **Cross-Provider Fallback** | When ALL keys for a provider are exhausted, automatically tries a similar model from another provider (e.g. Fireworks→SambaNova→Mistral). Claude falls back to GLM-5.2 reasoning model |
@@ -886,6 +886,26 @@ Fireworks keys can enter two failure states, handled differently:
 **Auto-detection**: When you add a Fireworks key or run "Fetch All Fireworks Accounts", the gateway automatically queries the Fireworks API to determine account status. If the account is suspended, the key is immediately marked `suspended=1` and moved to the Suspended page — no API traffic is wasted on suspended accounts.
 
 **Reactivation**: From the `/keys/suspended` page, click "🔄 Reactivate" on any key. The gateway makes a lightweight test call to the Fireworks API. If it returns HTTP 200, the key is un-suspended and returned to the active pool. If the account is still suspended, the key stays on the Suspended page.
+
+### 💳 Promotional Credit Tracking (Fireworks AI)
+
+The gateway automatically tracks Fireworks promotional credits ($6.00 initial) by analyzing rate-limit headers from API responses:
+
+| Field | Source | Example |
+|-------|--------|---------|
+| **Credits Remaining** | `(remaining_tokens / 7,200,000) × $6.00` | `$5.41` |
+| **Tokens Total** | `x-ratelimit-limit-tokens-prompt` header | `7,200,000` |
+| **Tokens Remaining** | `x-ratelimit-remaining-tokens-prompt` header | `6,498,732` |
+| **Plan Type** | Inferred from token limit (~7.2M = promotional tier) | `promotional` |
+| **Models Available** | `/models` endpoint — lists all accessible models | `42 models` |
+| **Account Email** | Extracted from suspension error messages | `user@domain.com` |
+
+**Auto-refresh**: Account info is fetched:
+- When a Fireworks key is added (automatic)
+- On "🔍 Fetch All Fireworks Accounts" (bulk)
+- On individual "🔍 Info" + "🔄 Refresh" buttons
+
+Click any key's 👁 button in the Account column to see a detailed modal with credit progress bar, rate limits, available models, and suspension details.
 
 ### Provider-Specific Behavior
 

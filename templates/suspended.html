@@ -82,7 +82,13 @@
                     {% set acct = account_infos.get(k.id) %}
                     {% if acct %}
                         {% if acct.account_status == 'suspended' %}
-                            <span class="badge badge-yellow">💀 {{ acct.account_name or 'Suspended' }}</span>
+                            <span class="badge badge-yellow">⛔ {{ acct.account_name or 'Suspended' }}</span>
+                            {% if acct.credits_dollar %}
+                            <div class="text-xs text-dim" style="margin-top:2px;">💳 {{ acct.credits_dollar }} / {{ acct.credits_initial or '$6.00' }}</div>
+                            {% endif %}
+                            {% if acct.account_email %}
+                            <div class="text-xs text-dim" style="margin-top:1px;">📧 {{ acct.account_email[:25] }}</div>
+                            {% endif %}
                         {% elif acct.account_status == 'active' %}
                             <span class="badge badge-green">✅ Active</span>
                         {% else %}
@@ -96,11 +102,11 @@
                     {% set acct = account_infos.get(k.id) %}
                     {% if acct and acct.suspension_reason %}
                         <span class="sh-suspension-reason text-xs" title="{{ acct.suspension_reason }}">
-                            {{ acct.suspension_reason[:80] }}{% if acct.suspension_reason|length > 80 %}…{% endif %}
+                            {{ acct.suspension_reason[:100] }}{% if acct.suspension_reason|length > 100 %}…{% endif %}
                         </span>
                     {% elif k.last_error_msg %}
                         <span class="sh-suspension-reason text-xs" title="{{ k.last_error_msg }}">
-                            {{ k.last_error_msg[:80] }}{% if k.last_error_msg|length > 80 %}…{% endif %}
+                            {{ k.last_error_msg[:100] }}{% if k.last_error_msg|length > 100 %}…{% endif %}
                         </span>
                     {% else %}
                         <span class="text-dim text-xs">—</span>

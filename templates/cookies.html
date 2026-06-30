@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ file.filename }} — AI Proxy Gateway{% endblock %}
+{% block title %}Cookies — AI Proxy Gateway{% endblock %}
 
 {% block head %}
 <style>
@@ -10,100 +10,58 @@
         linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
     border: 1px solid var(--border-accent); box-shadow: var(--shadow-md);
 }
-.ck-hero-inner { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; }
 .ck-hero h2 { font-size:1.4rem; font-weight:800; margin:0; display:flex; align-items:center; gap:0.5rem; }
-.ck-hero .meta { color:var(--text-dim); font-size:0.82rem; margin-top:0.3rem; }
+.ck-hero p { color:var(--text-dim); font-size:0.85rem; margin-top:0.3rem; }
 .ck-section-title { display:flex; align-items:center; gap:0.5rem; font-size:1.05rem; font-weight:700; margin:0 0 0.85rem; }
 .ck-section-title .bar { width:4px; height:1.1rem; border-radius:2px; background: linear-gradient(180deg, var(--accent), var(--accent-dim)); }
-.ck-table { overflow-x:auto; }
-.ck-table th { font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; }
-.ck-value-cell { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-mono); font-size:0.78rem; }
 </style>
 {% endblock %}
 
 {% block content %}
 
 <div class="ck-hero">
-    <div class="ck-hero-inner">
-        <div>
-            <h2>
-                <span class="badge badge-{{ file.platform|default('unknown') }}">{{ file.platform }}</span>
-                {{ file.filename }}
-            </h2>
-            <p class="meta">{{ file.cookie_count }} cookies • Uploaded {{ file.uploaded_at[:16]|replace('T', ' ') }}</p>
-        </div>
-        <div class="flex gap-1">
-            <a href="/" class="btn btn-sm">← Back</a>
-            <a href="/api/cookies/raw/{{ file.id }}" class="btn btn-sm" target="_blank">📋 Raw</a>
-            <button class="btn btn-sm" onclick="copyAll()">📋 Copy All</button>
-        </div>
-    </div>
+    <h2>🍪 Claude Cookie Files</h2>
+    <p>Uploaded Netscape-format cookie files for Claude session management</p>
 </div>
 
-<div class="card mb-3">
-    <h3 class="ck-section-title"><span class="bar"></span>📝 Raw Cookie Text</h3>
-    <div class="raw-preview" id="raw-content">{{ file.raw_content }}</div>
-</div>
-
+{% if files %}
 <div class="card">
-    <h3 class="ck-section-title"><span class="bar"></span>🍪 Parsed Cookies <span class="text-dim" style="font-weight:500;font-size:0.85rem;">({{ cookies|length }})</span></h3>
-    <div class="ck-table">
-        <table>
-            <thead>
-                <tr>
-                    <th>Domain</th>
-                    <th>Name</th>
-                    <th>Value</th>
-                    <th>Path</th>
-                    <th>Secure</th>
-                    <th>Expires</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for c in cookies %}
-                <tr>
-                    <td class="text-sm">{{ c.domain }}</td>
-                    <td><code class="text-xs">{{ c.name }}</code></td>
-                    <td><div class="ck-value-cell" title="{{ c.value }}">{{ c.value }}</div></td>
-                    <td class="text-sm">{{ c.path }}</td>
-                    <td>
-                        {% if c.secure == 'TRUE' %}
-                        <span class="badge badge-green">🔒</span>
-                        {% else %}
-                        <span class="text-muted">—</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-xs">
-                        {% if c.expiration and c.expiration != '0' %}
-                            {{ c.expiration[:10] }}
-                        {% else %}
-                            <span class="text-muted">session</span>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Platform</th>
+                <th>Cookies</th>
+                <th>Uploaded</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for f in files %}
+            <tr>
+                <td>
+                    <a href="/cookies/{{ f.id }}" style="color:var(--accent);text-decoration:none;font-weight:600;">
+                        {{ f.filename }}
+                    </a>
+                </td>
+                <td><span class="badge badge-{{ f.platform }}">{{ f.platform }}</span></td>
+                <td>{{ f.cookie_count }}</td>
+                <td class="text-sm">{{ f.uploaded_at[:16]|replace('T', ' ') }}</td>
+                <td>
+                    <a href="/api/cookies/raw/{{ f.id }}" class="btn btn-sm" target="_blank">📋 Raw</a>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
 </div>
-
-<script>
-function copyAll() {
-    const raw = document.getElementById('raw-content').textContent;
-    navigator.clipboard.writeText(raw).then(() => {
-        // Use base.html toast
-        const container = document.getElementById('toastContainer');
-        if (container) {
-            const toast = document.createElement('div');
-            toast.className = 'toast success';
-            toast.textContent = '✅ Raw cookies copied!';
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 4200);
-        } else {
-            alert('✅ Raw cookies copied to clipboard!');
-        }
-    });
-}
-</script>
+{% else %}
+<div class="empty-state">
+    <div class="icon">📭</div>
+    <h3>No cookie files</h3>
+    <p>Upload Claude cookie files to enable session management.</p>
+    <a href="/upload" class="btn btn-primary">⬆️ Upload Cookies</a>
+</div>
+{% endif %}
 
 {% endblock %}

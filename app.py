@@ -4250,7 +4250,7 @@ def view_cookies(file_id):
     if not f: conn.close(); flash("❌ Not found", "danger"); return redirect(url_for("dashboard"))
     cookies = conn.execute("SELECT * FROM cookies WHERE file_id=? ORDER BY domain, name", (file_id,)).fetchall()
     conn.close()
-    return render_template("cookies.html", file=f, cookies=cookies)
+    return render_template("cookie_detail.html", file=f, cookies=cookies)
 
 @app.route("/delete-cookie/<int:file_id>", methods=["POST"])
 @login_required

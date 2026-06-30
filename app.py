@@ -4310,7 +4310,9 @@ def keys_page():
     
     providers = conn.execute("SELECT * FROM api_providers ORDER BY name").fetchall()
     keys = conn.execute("""SELECT k.*, p.name as provider_name, p.slug as provider_slug, p.provider_type
-        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id ORDER BY p.name, k.suspended ASC, k.dead ASC, k.created_at DESC""").fetchall()
+        FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
+        WHERE k.suspended = 0
+        ORDER BY p.name, k.dead ASC, k.created_at DESC""").fetchall()
     providers_parsed = []
     for p in providers:
         pd = dict(p)

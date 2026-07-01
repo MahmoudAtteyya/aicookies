@@ -2,7 +2,36 @@
 {% block title %}API Keys — AI Proxy Gateway{% endblock %}
 
 {% block head %}
+<!-- Cairo font for Arabic support -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
+/* ── Page-specific theme overrides (GitHub-dark + red accent) ── */
+:root {
+    --bg:           #0d1117;
+    --bg-elevated:  #161b22;
+    --bg-card:      #161b22;
+    --bg-input:     #1c2330;
+    --bg-hover:     #222a3a;
+    --border:       #30363d;
+    --border-light: #3d444d;
+    --border-accent:#4a3a4b;
+    --text:         #c9d1d9;
+    --text-dim:     #8b949e;
+    --text-muted:   #6e7681;
+    --accent:       #e63946;
+    --accent-hover: #d62839;
+    --accent-dim:   #b52331;
+    --accent-glow:  rgba(230,57,70,0.12);
+    --accent-glow2: rgba(230,57,70,0.06);
+    --shadow-glow:  0 0 20px rgba(230,57,70,0.15);
+    --font-sans: 'Cairo', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+}
+
+body, nav, .container { font-family: var(--font-sans); }
+
+/* ── Hero ── */
 .kp-hero {
     position: relative; overflow: hidden; border-radius: var(--r-xl);
     padding: 1.75rem 2rem; margin-bottom: 1.5rem;
@@ -14,33 +43,102 @@
 .kp-hero h2 { font-size:1.6rem; font-weight:800; letter-spacing:-0.03em; margin:0; background: linear-gradient(135deg, var(--text), var(--accent)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
 .kp-hero p { color:var(--text-dim); margin:0.3rem 0 0; font-size:0.88rem; }
 
+/* ── Section titles ── */
 .kp-section-title { display:flex; align-items:center; gap:0.5rem; font-size:1.05rem; font-weight:700; margin:0 0 0.85rem; }
 .kp-section-title .bar { width:4px; height:1.1rem; border-radius:2px; background: linear-gradient(180deg, var(--accent), var(--accent-dim)); }
 
+/* ── Provider info rows ── */
 .kp-provider-row { margin-bottom:1.25rem; padding-bottom:1.25rem; border-bottom:1px solid var(--border); }
 .kp-provider-row:last-child { border-bottom:none; padding-bottom:0; margin-bottom:0; }
 .kp-provider-name { color:var(--accent); font-size:1.05rem; font-weight:700; }
 .kp-provider-desc { color:var(--text-dim); font-size:0.8rem; margin:0.3rem 0; }
-.kp-model-chip { background:var(--bg-input); padding:0.15rem 0.5rem; border-radius:var(--r-sm); font-size:0.72rem; margin:0.15rem; display:inline-block; font-family:var(--font-mono); }
+.kp-model-chip { background:var(--bg-input); padding:0.15rem 0.5rem; border-radius:var(--r-sm); font-size:0.72rem; margin:0.15rem; display:inline-block; font-family:var(--font-mono); border:1px solid var(--border); }
 
+/* ── Key rows ── */
 .kp-key-row { transition: background var(--t-fast); }
 .kp-key-row:hover { background: var(--bg-hover); }
 
-/* Account info badge */
+/* ═══════════════════════════════════════════════════════════════════
+   PROVIDER BADGES — color coded per provider
+   ═══════════════════════════════════════════════════════════════════ */
+.pv-badge {
+    display:inline-flex; align-items:center; gap:0.3rem;
+    padding:0.2rem 0.6rem; border-radius:var(--r-sm);
+    font-size:0.72rem; font-weight:700; letter-spacing:0.02em;
+    border:1px solid transparent; white-space:nowrap;
+}
+.pv-badge .dot { width:6px; height:6px; border-radius:50%; display:inline-block; }
+.pv-badge-nvidia      { background:rgba(63,185,80,0.12);  color:#3fb950; border-color:rgba(63,185,80,0.25); }
+.pv-badge-nvidia .dot { background:#3fb950; }
+.pv-badge-openrouter      { background:rgba(88,166,255,0.12);  color:#58a6ff; border-color:rgba(88,166,255,0.25); }
+.pv-badge-openrouter .dot { background:#58a6ff; }
+.pv-badge-google      { background:rgba(248,81,73,0.12);  color:#f85149; border-color:rgba(248,81,73,0.25); }
+.pv-badge-google .dot { background:#f85149; }
+.pv-badge-fireworks      { background:rgba(240,136,62,0.12);  color:#f0883e; border-color:rgba(240,136,62,0.25); }
+.pv-badge-fireworks .dot { background:#f0883e; }
+.pv-badge-claude      { background:rgba(139,92,246,0.12);  color:#c4b5fd; border-color:rgba(139,92,246,0.25); }
+.pv-badge-claude .dot { background:#c4b5fd; }
+.pv-badge-openai      { background:rgba(45,212,191,0.12);  color:#2dd4bf; border-color:rgba(45,212,191,0.25); }
+.pv-badge-openai .dot { background:#2dd4bf; }
+.pv-badge-unknown      { background:var(--bg-input); color:var(--text-dim); border-color:var(--border); }
+.pv-badge-unknown .dot { background:var(--text-muted); }
+
+/* ── Form styles ── */
+.kp-form-grid {
+    display:grid;
+    grid-template-columns:1fr;
+    gap:1rem;
+}
+@media (min-width:640px) {
+    .kp-form-grid { grid-template-columns:1fr 240px; }
+    .kp-form-grid .kp-field-key { grid-column:1 / -1; }
+}
+.kp-field { display:flex; flex-direction:column; gap:0.4rem; }
+.kp-field label { font-size:0.82rem; font-weight:600; color:var(--text); }
+.kp-field input, .kp-field textarea, .kp-field select {
+    background:var(--bg-input); border:1px solid var(--border); color:var(--text);
+    border-radius:var(--r-md); padding:0.65rem 0.85rem; font-size:0.9rem;
+    transition:border-color var(--t-fast), box-shadow var(--t-fast);
+    font-family:var(--font-sans);
+    width:100%;
+}
+.kp-field input:focus, .kp-field textarea:focus, .kp-field select:focus {
+    outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow);
+}
+.kp-field input[type="password"], .kp-field textarea.kp-key-input {
+    font-family:var(--font-mono); letter-spacing:0.03em;
+}
+.kp-key-input {
+    min-height:48px; resize:vertical; line-height:1.5;
+}
+.kp-hint {
+    font-size:0.76rem; color:var(--text-dim);
+    display:flex; align-items:center; gap:0.35rem;
+}
+.kp-hint .icon { color:var(--accent); font-size:0.85rem; }
+.kp-detect-preview {
+    display:flex; align-items:center; gap:0.4rem;
+    min-height:24px; font-size:0.76rem; color:var(--text-dim);
+}
+.kp-detect-preview .label { color:var(--text-muted); }
+.kp-detect-preview .pv-badge { font-size:0.68rem; padding:0.15rem 0.45rem; }
+
+/* ── Account info badge ── */
 .acc-badge { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: var(--r-sm); font-weight: 600; }
 .acc-active { background: rgba(34,197,94,0.15); color: #22c55e; }
 .acc-suspended { background: rgba(239,68,68,0.15); color: #ef4444; }
 .acc-unknown { background: rgba(148,163,184,0.15); color: #94a3b8; }
 .acc-fetching { background: rgba(59,130,246,0.15); color: #3b82f6; animation: pulse 1s infinite; }
 
-/* Account info modal */
+/* ── Account info modal ── */
 .acc-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); z-index: 9999; display: none; align-items: center; justify-content: center; padding: 2rem; }
 .acc-modal-overlay.show { display: flex; animation: fadeIn 0.2s ease; }
 .acc-modal { background: var(--bg-card); border: 1px solid var(--border-accent); border-radius: var(--r-xl); max-width: 600px; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow-glow), var(--shadow-lg); }
 .acc-modal-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
 .acc-modal-header h3 { margin: 0; font-size: 1.2rem; font-weight: 700; }
 .acc-modal-body { padding: 1.5rem; }
-.acc-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+.acc-info-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 1rem; }
+@media (min-width:480px) { .acc-info-grid { grid-template-columns: 1fr 1fr; } }
 .acc-info-item { background: var(--bg-input); border-radius: var(--r-md); padding: 0.75rem 1rem; }
 .acc-info-item .label { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .acc-info-item .value { font-size: 0.95rem; font-weight: 600; color: var(--text); word-break: break-all; }
@@ -51,6 +149,31 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESPONSIVE TABLE — horizontal scroll on mobile
+   ═══════════════════════════════════════════════════════════════════ */
+.kp-table-wrap {
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    border-radius:var(--r-lg);
+    -webkit-mask-image:linear-gradient(to right, transparent 0, #000 2px, #000 calc(100% - 2px), transparent 100%);
+}
+.kp-table-wrap table { min-width:680px; }
+.kp-table-wrap::-webkit-scrollbar { height:6px; }
+.kp-table-wrap::-webkit-scrollbar-track { background:var(--bg-input); border-radius:3px; }
+.kp-table-wrap::-webkit-scrollbar-thumb { background:var(--border-light); border-radius:3px; }
+.kp-table-wrap::-webkit-scrollbar-thumb:hover { background:var(--accent-dim); }
+
+/* Mobile: stack form vertically, smaller hero */
+@media (max-width:640px) {
+    .kp-hero { padding:1.25rem 1.25rem; }
+    .kp-hero h2 { font-size:1.3rem; }
+    .card { padding:1rem; }
+}
+
+/* RTL support for Arabic */
+[dir="rtl"] { font-family: 'Cairo', sans-serif; }
 </style>
 {% endblock %}
 
@@ -58,36 +181,40 @@
 
 <div class="kp-hero">
     <h2>🔑 API Keys Manager</h2>
-    <p>Manage provider API keys with automatic rotation and health monitoring</p>
+    <p>Paste any provider key — the provider is auto-detected automatically</p>
 </div>
 
 <!-- ═══════════ ADD KEY FORM ═══════════ -->
 <h3 class="kp-section-title"><span class="bar"></span>➕ Add API Key</h3>
 <div class="card mb-3">
-    <form method="POST">
+    <form method="POST" id="addKeyForm">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-            <div class="form-group">
-                <label for="provider_id">Provider</label>
-                <select id="provider_id" name="provider_id" required>
-                    <option value="">-- Select provider --</option>
-                    {% for p in providers %}
-                    <option value="{{ p.id }}">{{ p.name }}</option>
-                    {% endfor %}
-                </select>
+        <div class="kp-form-grid">
+            <!-- API Key field (auto-detect) -->
+            <div class="form-group kp-field kp-field-key">
+                <label for="key_value">API Key</label>
+                <textarea id="key_value" name="key_value" class="kp-key-input"
+                          placeholder="Paste your key here — e.g. sk-or-v1-… / AIza… / nvapi-… / sk-ant-…"
+                          required rows="2" autocomplete="off" spellcheck="false"
+                          oninput="previewDetect()"></textarea>
+                <div class="kp-hint">
+                    <span class="icon">⚡</span>
+                    <span>Provider will be auto-detected from your key</span>
+                </div>
+                <div class="kp-detect-preview" id="detectPreview">
+                    <span class="label">Detected:</span>
+                    <span id="detectBadge" class="pv-badge pv-badge-unknown"><span class="dot"></span>—</span>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="label">Label (optional)</label>
+            <!-- Optional label -->
+            <div class="form-group kp-field">
+                <label for="label">Label <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
                 <input type="text" id="label" name="label" placeholder="e.g. Account 1, Free Tier">
             </div>
         </div>
-        <div class="form-group">
-            <label for="key_value">API Key</label>
-            <input type="password" id="key_value" name="key_value"
-                   placeholder="sk-or-v1-... or AIza... or gsk_..." required
-                   style="font-family:var(--font-mono);">
+        <div style="margin-top:1rem;">
+            <button type="submit" class="btn btn-primary">➕ Add Key</button>
         </div>
-        <button type="submit" class="btn btn-primary">➕ Add Key</button>
     </form>
 </div>
 
@@ -97,7 +224,7 @@
     {% for p in providers %}
     <div class="kp-provider-row">
         <div class="flex items-center gap-1">
-            <strong class="kp-provider-name">{{ p.name }}</strong>
+            <span class="pv-badge pv-badge-{{ p.slug|default('unknown') }}"><span class="dot"></span>{{ p.name }}</span>
             {% if p.api_docs_url %}
             <a href="{{ p.api_docs_url }}" target="_blank" style="color:var(--blue);font-size:0.8rem;text-decoration:none;">docs ↗</a>
             {% endif %}
@@ -115,7 +242,7 @@
 <!-- ═══════════ STORED KEYS ═══════════ -->
 <h3 class="kp-section-title"><span class="bar"></span>🗄️ Stored Keys <span class="text-dim" style="font-weight:500;font-size:0.85rem;">({{ keys|length }})</span></h3>
 
-<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+<div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;">
     <button class="btn btn-sm btn-primary" onclick="bulkFetchAccountInfo()" id="bulkFetchBtn">
         🔍 Fetch All Fireworks Accounts
     </button>
@@ -125,70 +252,76 @@
 <div class="card empty-state">
     <div class="icon">🔑</div>
     <h3>No API keys stored</h3>
-    <p>Add keys for your providers above to start using the gateway</p>
+    <p>Paste a key above — the provider is detected automatically from the key format</p>
 </div>
 {% else %}
 <div class="card" style="padding:0;overflow:hidden;">
-    <table>
-        <thead>
-            <tr>
-                <th>Provider</th>
-                <th>Label</th>
-                <th>Key</th>
-                <th>Usage</th>
-                <th>Status</th>
-                <th>Account</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for k in keys %}
-            <tr class="kp-key-row" id="row-{{ k.id }}">
-                <td><span class="badge badge-{{ k.provider_slug|default('unknown') }}">{{ k.provider_name }}</span></td>
-                <td class="text-sm">{{ k.label or '—' }}</td>
-                <td>
-                    <div style="display:flex;align-items:center;gap:0.3rem;">
-                        <code class="text-xs key-display" id="key-{{ k.id }}" data-full="{{ k.key_value }}" style="color:var(--text-muted);cursor:pointer;" onclick="toggleKeyVisibility({{ k.id }})" title="Click to reveal/hide">{{ k.key_value[:12] }}…{{ k.key_value[-4:] }}</code>
-                        <button class="btn btn-sm key-copy-btn" style="font-size:0.7rem;padding:0.15rem 0.35rem;" onclick="copyKey({{ k.id }})" title="Copy key">📋</button>
-                    </div>
-                </td>
-                <td class="text-sm">{{ k.usage_count }} uses</td>
-                <td>
-                    {% if k.suspended %}
-                        <span class="badge badge-yellow">⚠️ Suspended</span>
-                    {% elif k.dead %}
-                        <span class="badge badge-red">💀 Dead</span>
-                    {% elif k.is_active %}
-                        <span class="badge badge-green">✅ Active</span>
-                    {% else %}
-                        <span class="badge badge-yellow">⏸ Paused</span>
-                    {% endif %}
-                </td>
-                <td id="acc-cell-{{ k.id }}">
-                    {% if k.provider_slug == 'fireworks' %}
-                        <button class="btn btn-sm" style="font-size:0.75rem;padding:0.2rem 0.5rem;" onclick="fetchAccountInfo({{ k.id }})" id="acc-btn-{{ k.id }}">
-                            🔍 Info
-                        </button>
-                    {% else %}
-                        <span class="text-dim text-xs">—</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <div class="flex gap-1">
-                        <form method="POST" action="/toggle-key/{{ k.id }}" style="display:inline;">
-                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-sm" title="Toggle active/inactive">{{ '⏸' if k.is_active else '▶' }}</button>
-                        </form>
-                        <form method="POST" action="/delete-key/{{ k.id }}" style="display:inline;" onsubmit="return confirm('Delete this key?')">
-                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-sm btn-danger" title="Delete">🗑</button>
-                        </form>
-                    </div>
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <div class="kp-table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Provider</th>
+                    <th>Label</th>
+                    <th>Key</th>
+                    <th>Usage</th>
+                    <th>Status</th>
+                    <th>Account</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for k in keys %}
+                <tr class="kp-key-row" id="row-{{ k.id }}">
+                    <td>
+                        <span class="pv-badge pv-badge-{{ k.provider_slug|default('unknown') }}">
+                            <span class="dot"></span>{{ k.provider_name }}
+                        </span>
+                    </td>
+                    <td class="text-sm">{{ k.label or '—' }}</td>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:0.3rem;">
+                            <code class="text-xs key-display" id="key-{{ k.id }}" data-full="{{ k.key_value }}" style="color:var(--text-muted);cursor:pointer;" onclick="toggleKeyVisibility({{ k.id }})" title="Click to reveal/hide">{{ k.key_value[:12] }}…{{ k.key_value[-4:] }}</code>
+                            <button class="btn btn-sm key-copy-btn" style="font-size:0.7rem;padding:0.15rem 0.35rem;" onclick="copyKey({{ k.id }})" title="Copy key">📋</button>
+                        </div>
+                    </td>
+                    <td class="text-sm">{{ k.usage_count }} uses</td>
+                    <td>
+                        {% if k.suspended %}
+                            <span class="badge badge-yellow">⚠️ Suspended</span>
+                        {% elif k.dead %}
+                            <span class="badge badge-red">💀 Dead</span>
+                        {% elif k.is_active %}
+                            <span class="badge badge-green">✅ Active</span>
+                        {% else %}
+                            <span class="badge badge-yellow">⏸ Paused</span>
+                        {% endif %}
+                    </td>
+                    <td id="acc-cell-{{ k.id }}">
+                        {% if k.provider_slug == 'fireworks' %}
+                            <button class="btn btn-sm" style="font-size:0.75rem;padding:0.2rem 0.5rem;" onclick="fetchAccountInfo({{ k.id }})" id="acc-btn-{{ k.id }}">
+                                🔍 Info
+                            </button>
+                        {% else %}
+                            <span class="text-dim text-xs">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="flex gap-1">
+                            <form method="POST" action="/toggle-key/{{ k.id }}" style="display:inline;">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm" title="Toggle active/inactive">{{ '⏸' if k.is_active else '▶' }}</button>
+                            </form>
+                            <form method="POST" action="/delete-key/{{ k.id }}" style="display:inline;" onsubmit="return confirm('Delete this key?')">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-danger" title="Delete">🗑</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endif %}
 
@@ -212,6 +345,37 @@
 
 {% block scripts %}
 <script>
+// ── Live provider auto-detect preview ──
+function detectProviderFromKey(apiKey) {
+    const k = (apiKey || '').trim();
+    const kl = k.toLowerCase();
+    const klen = k.length;
+    if (!k) return null;
+    if (kl.startsWith('nvapi-')) return { slug:'nvidia', name:'NVIDIA' };
+    if (kl.startsWith('sk-or-v1-') || kl.startsWith('sk-or-')) return { slug:'openrouter', name:'OpenRouter' };
+    if (k.startsWith('AIza') && klen >= 35) return { slug:'google', name:'Google' };
+    if (kl.startsWith('sk-ant-')) return { slug:'claude', name:'Claude' };
+    if (kl.startsWith('sk-pro-') || (kl.startsWith('sk-') && !kl.startsWith('sk-or') && !kl.startsWith('sk-ant'))) return { slug:'openai', name:'OpenAI' };
+    if (klen >= 40 && /^[a-z0-9]+$/.test(kl)) return { slug:'fireworks', name:'Fireworks' };
+    return null;
+}
+
+function previewDetect() {
+    const input = document.getElementById('key_value');
+    const badge = document.getElementById('detectBadge');
+    if (!input || !badge) return;
+    const detected = detectProviderFromKey(input.value);
+    if (detected) {
+        badge.className = 'pv-badge pv-badge-' + detected.slug;
+        badge.innerHTML = '<span class="dot"></span>' + detected.name;
+        badge.style.opacity = '1';
+    } else {
+        badge.className = 'pv-badge pv-badge-unknown';
+        badge.innerHTML = '<span class="dot"></span>' + (input.value ? 'Unknown' : '—');
+        badge.style.opacity = input.value ? '1' : '0.5';
+    }
+}
+
 // ── Key visibility toggle + copy ──
 function toggleKeyVisibility(keyId) {
     const el = document.getElementById('key-' + keyId);
@@ -424,7 +588,7 @@ function renderAccountModal(info) {
         ${reasonHtml}
         ${modelsHtml}
     </div>
-    <div style="margin-top:1rem;display:flex;gap:0.5rem;">
+    <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
         <a href="${info.billing_url || 'https://fireworks.ai/account/billing'}" target="_blank" class="btn btn-sm" style="text-decoration:none;">💳 Billing Page</a>
         <button class="btn btn-sm btn-primary" onclick="fetchAccountInfo(${info.key_id || 0})">🔄 Refresh</button>
     </div>`;
@@ -474,5 +638,8 @@ function bulkFetchAccountInfo() {
             if (btn) { btn.innerHTML = '🔍 Fetch All Fireworks Accounts'; btn.disabled = false; }
         });
 }
+
+// Run initial detect preview on load
+document.addEventListener('DOMContentLoaded', previewDetect);
 </script>
 {% endblock %}

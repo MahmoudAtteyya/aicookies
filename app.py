@@ -289,18 +289,18 @@ def init_db():
 
     # ── Seed providers ──
     providers = [
-        ("mistral", "Mistral AI", "https://api.mistral.ai/v1", "free",
-         '["mistral-small-latest","mistral-medium-latest","mistral-large-latest","open-mistral-nemo","codestral-latest","ministral-8b-latest","ministral-3b-latest","pixtral-12b-2409","pixtral-large-latest","magistral-large-latest","mistral-embed","mistral-moderation-latest"]',
-         "Free tier: 1 req/sec, 1M tokens/month. 12 models: chat, vision, code, embeddings, moderation."),
-        ("cohere", "Cohere", "https://api.cohere.com/v2", "free",
-         '["command-a-03-2025","command-r7b-12-2024","command-r-plus-08-2024"]',
-         "Free trial: 1000 req/month. Uses /v2/chat endpoint."),
-        ("sambanova", "SambaNova", "https://api.sambanova.ai/v1", "free",
-         '["Meta-Llama-3.3-70B-Instruct"]',
-         "Free tier: generous rate limits. OpenAI-compatible."),
+        ("nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1", "free",
+         '["nvidia/llama-3.3-nemotron-super-49b-v1","nvidia/llama-3.1-nemotron-70b-instruct","qwen/qwen2.5-32b-instruct","deepseek-ai/deepseek-r1","mistralai/mistral-nemo-minitrait-8b-16k"]',
+         "1000 free credits/month. OpenAI-compatible. Keys start with 'nvapi-'."),
+        ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "free",
+         '["google/gemini-2.0-flash-exp:free","deepseek/deepseek-r1:free","meta-llama/llama-3.3-70b-instruct:free","qwen/qwen-2.5-32b-instruct:free","google/gemma-3-27b-it:free","mistralai/mistral-7b-instruct:free"]',
+         "Free tier models (:free suffix). OpenAI-compatible. Keys start with 'sk-or-v1-'."),
+        ("google", "Google AI Studio", "https://generativelanguage.googleapis.com/v1beta", "free",
+         '["gemini-2.0-flash","gemini-2.5-flash","gemini-2.5-pro","gemini-2.0-flash-lite"]',
+         "Free tier: 15 RPM (5 RPM for Pro). OpenAI-compatible. Keys start with 'AIza'."),
         ("fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "prepaid",
          '["accounts/fireworks/models/glm-5p2","accounts/fireworks/models/kimi-k2p7-code","accounts/fireworks/models/qwen3p7-plus","accounts/fireworks/models/deepseek-v4-pro"]',
-         "$6 per account. When depleted → permanently dead."),
+         "$6 per account. When depleted → permanently dead. OpenAI-compatible."),
     ]
 
     active_slugs = {p[0] for p in providers}
@@ -407,150 +407,149 @@ def check_login_rate_limit(ip):
 # ═══════════════════════════════════════════════════════════════════════════
 
 MODELS = {
-    # Claude (cookie-based — special handling)
+    # ───────────────────────────────────────────────────────────────────────
+    # Claude (cookie-based — special handling, no API key needed)
+    # ───────────────────────────────────────────────────────────────────────
     "claude-sonnet-4-6": {
         "provider": "claude", "real_model": "claude-sonnet-4-6",
-        "desc": "Claude Sonnet 4 — 200K context", "style": "direct", "tokens": 200000,
+        "desc": "Claude Sonnet 4 — 200K context, cookie-based", "style": "direct", "tokens": 200000,
         "developer": "Anthropic", "display_name": "Claude Sonnet 4",
         "max_output": 8192, "params": "Undisclosed",
         "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
         "pricing": {"in": "$3.00", "out": "$15.00"},
     },
-    # Mistral
-    "mistral-small": {
-        "provider": "mistral", "real_model": "mistral-small-latest",
-        "desc": "Mistral Small 4 — hybrid reasoning+coding, multimodal, Apache 2.0", "style": "reasoning", "tokens": 128000,
-        "developer": "Mistral AI", "display_name": "Mistral Small 4",
-        "max_output": 128000, "params": "~24B",
-        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$0.15", "out": "$0.60"},
-    },
-    "mistral-medium": {
-        "provider": "mistral", "real_model": "mistral-medium-latest",
-        "desc": "Mistral Medium 3.5 — frontier multimodal, agentic+coding", "style": "reasoning", "tokens": 128000,
-        "developer": "Mistral AI", "display_name": "Mistral Medium 3.5",
-        "max_output": 128000, "params": "Undisclosed",
-        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$1.50", "out": "$7.50"},
-    },
-    "mistral-nemo": {
-        "provider": "mistral", "real_model": "open-mistral-nemo",
-        "desc": "Mistral NeMo — 12B, multilingual, code tasks (legacy)", "style": "direct", "tokens": 128000,
-        "developer": "Mistral AI × NVIDIA", "display_name": "Mistral NeMo",
-        "max_output": 128000, "params": "12B",
+    # ───────────────────────────────────────────────────────────────────────
+    # NVIDIA NIM API (integrate.api.nvidia.com) — 1000 free credits/month
+    # ───────────────────────────────────────────────────────────────────────
+    "nvidia-nemotron-70b": {
+        "provider": "nvidia", "real_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "desc": "Nemotron Super 49B — NVIDIA-tuned Llama, 128K ctx, optimized for instruction-following", "style": "direct", "tokens": 131072,
+        "developer": "NVIDIA", "display_name": "Nemotron Super 49B",
+        "max_output": 131072, "params": "49B",
         "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$0.15", "out": "$0.15"},
+        "pricing": {"in": "Free", "out": "Free"},
     },
-    "codestral": {
-        "provider": "mistral", "real_model": "codestral-latest",
-        "desc": "Codestral — 22B code gen, FIM, 80+ languages, 256K ctx", "style": "direct", "tokens": 256000,
-        "developer": "Mistral AI", "display_name": "Codestral",
-        "max_output": 256000, "params": "22B",
-        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$0.30", "out": "$0.90"},
-    },
-    "ministral-8b": {
-        "provider": "mistral", "real_model": "ministral-8b-latest",
-        "desc": "Ministral 8B — edge model, multimodal, 128K ctx", "style": "direct", "tokens": 128000,
-        "developer": "Mistral AI", "display_name": "Ministral 3 8B",
-        "max_output": 128000, "params": "8B",
-        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$0.15", "out": "$0.15"},
-    },
-    "mistral-large": {
-        "provider": "mistral", "real_model": "mistral-large-latest",
-        "desc": "Mistral Large 2 — flagship, 128K ctx, top-tier reasoning+code", "style": "reasoning", "tokens": 128000,
-        "developer": "Mistral AI", "display_name": "Mistral Large 2",
-        "max_output": 128000, "params": "~123B",
-        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$2.00", "out": "$6.00"},
-    },
-    "pixtral-large": {
-        "provider": "mistral", "real_model": "pixtral-large-latest",
-        "desc": "Pixtral Large — 124B multimodal, vision+text, 128K ctx", "style": "direct", "tokens": 128000,
-        "developer": "Mistral AI", "display_name": "Pixtral Large",
-        "max_output": 128000, "params": "~124B",
-        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$2.00", "out": "$6.00"},
-    },
-    "pixtral-12b": {
-        "provider": "mistral", "real_model": "pixtral-12b-2409",
-        "desc": "Pixtral 12B — open-weight multimodal, vision+text, 128K ctx", "style": "direct", "tokens": 128000,
-        "developer": "Mistral AI", "display_name": "Pixtral 12B",
-        "max_output": 128000, "params": "12B",
-        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$0.15", "out": "$0.15"},
-    },
-    "magistral-large": {
-        "provider": "mistral", "real_model": "magistral-large-latest",
-        "desc": "Magistral Large — deep reasoning, chain-of-thought, 128K ctx", "style": "reasoning", "tokens": 128000,
-        "developer": "Mistral AI", "display_name": "Magistral Large",
-        "max_output": 128000, "params": "~123B",
-        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$2.00", "out": "$6.00"},
-    },
-    "ministral-3b": {
-        "provider": "mistral", "real_model": "ministral-3b-latest",
-        "desc": "Ministral 3B — ultra-light edge model, 128K ctx", "style": "direct", "tokens": 128000,
-        "developer": "Mistral AI", "display_name": "Ministral 3B",
-        "max_output": 128000, "params": "3B",
-        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "$0.04", "out": "$0.04"},
-    },
-    # Mistral utility models (embeddings + moderation)
-    "mistral-embed": {
-        "provider": "mistral", "real_model": "mistral-embed",
-        "desc": "Mistral Embed — 1024-dim text embeddings for RAG/search", "style": "direct", "tokens": 8192,
-        "developer": "Mistral AI", "display_name": "Mistral Embed",
-        "max_output": 0, "params": "7B",
-        "capabilities": {"text": True, "code": False, "thinking": False, "tools": False, "vision": False, "web_search": False, "json": False, "stream": False},
-        "pricing": {"in": "$0.10", "out": "N/A"},
-        "endpoint_type": "embeddings",
-    },
-    "mistral-moderation": {
-        "provider": "mistral", "real_model": "mistral-moderation-latest",
-        "desc": "Mistral Moderation — 10-category content classification", "style": "direct", "tokens": 8192,
-        "developer": "Mistral AI", "display_name": "Mistral Moderation",
-        "max_output": 0, "params": "Undisclosed",
-        "capabilities": {"text": True, "code": False, "thinking": False, "tools": False, "vision": False, "web_search": False, "json": False, "stream": False},
-        "pricing": {"in": "Free", "out": "N/A"},
-        "endpoint_type": "moderation",
-    },
-    # Cohere
-    "command-a": {
-        "provider": "cohere", "real_model": "command-a-03-2025",
-        "desc": "Command A — flagship, 256K ctx, RAG+agents, web search", "style": "direct", "tokens": 256000,
-        "developer": "Cohere", "display_name": "Command A",
-        "max_output": 8000, "params": "Undisclosed",
-        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": True, "json": True, "stream": True},
-        "pricing": {"in": "$2.50", "out": "$10.00"},
-    },
-    "command-r7b": {
-        "provider": "cohere", "real_model": "command-r7b-12-2024",
-        "desc": "Command R7B — 7B, fast RAG+tools, cheapest Cohere", "style": "direct", "tokens": 128000,
-        "developer": "Cohere", "display_name": "Command R7B",
-        "max_output": 4000, "params": "7B",
-        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": True, "json": True, "stream": True},
-        "pricing": {"in": "$0.0375", "out": "$0.15"},
-    },
-    "command-r-plus": {
-        "provider": "cohere", "real_model": "command-r-plus-08-2024",
-        "desc": "Command R+ — 104B MoE, RAG+multi-step tools, web search", "style": "direct", "tokens": 128000,
-        "developer": "Cohere", "display_name": "Command R+ (08-2024)",
-        "max_output": 4000, "params": "~104B MoE",
-        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": True, "json": True, "stream": True},
-        "pricing": {"in": "$2.50", "out": "$10.00"},
-    },
-    # SambaNova
-    "llama-3.3-70b": {
-        "provider": "sambanova", "real_model": "Meta-Llama-3.3-70B-Instruct",
-        "desc": "Llama 3.3 70B — open-weight, 128K ctx, free dev tier", "style": "direct", "tokens": 131072,
-        "developer": "Meta", "display_name": "Meta Llama 3.3 70B Instruct",
+    "nvidia-llama-3.3-70b": {
+        "provider": "nvidia", "real_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "desc": "Llama 3.3 70B via NVIDIA NIM — fast, reliable, 128K ctx", "style": "direct", "tokens": 131072,
+        "developer": "Meta × NVIDIA", "display_name": "Llama 3.3 70B (NIM)",
         "max_output": 131072, "params": "70B",
         "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
-        "pricing": {"in": "Free (dev tier)", "out": "Free (dev tier)"},
+        "pricing": {"in": "Free", "out": "Free"},
     },
-    # Fireworks
+    "nvidia-qwen-32b": {
+        "provider": "nvidia", "real_model": "qwen/qwen2.5-32b-instruct",
+        "desc": "Qwen 2.5 32B Instruct — strong code+reasoning, 128K ctx, NVIDIA-hosted", "style": "direct", "tokens": 131072,
+        "developer": "Alibaba × NVIDIA", "display_name": "Qwen 2.5 32B (NIM)",
+        "max_output": 131072, "params": "32B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "nvidia-deepseek-r1": {
+        "provider": "nvidia", "real_model": "deepseek-ai/deepseek-r1",
+        "desc": "DeepSeek R1 — deep reasoning, 128K ctx, interleaved thinking", "style": "reasoning", "tokens": 131072,
+        "developer": "DeepSeek × NVIDIA", "display_name": "DeepSeek R1 (NIM)",
+        "max_output": 131072, "params": "671B MoE",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "nvidia-mistral-nemo": {
+        "provider": "nvidia", "real_model": "mistralai/mistral-nemo-minitrait-8b-16k",
+        "desc": "Mistral NeMo 12B — multilingual, 128K ctx, NVIDIA-hosted", "style": "direct", "tokens": 131072,
+        "developer": "Mistral × NVIDIA", "display_name": "Mistral NeMo (NIM)",
+        "max_output": 131072, "params": "12B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    # ───────────────────────────────────────────────────────────────────────
+    # OpenRouter (openrouter.ai) — Free tier models (:free suffix)
+    # ───────────────────────────────────────────────────────────────────────
+    "or-gemini-flash": {
+        "provider": "openrouter", "real_model": "google/gemini-2.0-flash-exp:free",
+        "desc": "Gemini 2.0 Flash — fast multimodal, 1M ctx, via OpenRouter free", "style": "direct", "tokens": 1048576,
+        "developer": "Google", "display_name": "Gemini 2.0 Flash (OR)",
+        "max_output": 8192, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "or-deepseek-r1": {
+        "provider": "openrouter", "real_model": "deepseek/deepseek-r1:free",
+        "desc": "DeepSeek R1 — full 671B reasoning model, free via OpenRouter", "style": "reasoning", "tokens": 65536,
+        "developer": "DeepSeek", "display_name": "DeepSeek R1 (OR Free)",
+        "max_output": 65536, "params": "671B MoE",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "or-llama-3.3-70b": {
+        "provider": "openrouter", "real_model": "meta-llama/llama-3.3-70b-instruct:free",
+        "desc": "Llama 3.3 70B Instruct — open-weight flagship, 128K ctx, free via OR", "style": "direct", "tokens": 131072,
+        "developer": "Meta", "display_name": "Llama 3.3 70B (OR Free)",
+        "max_output": 131072, "params": "70B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "or-qwen-32b": {
+        "provider": "openrouter", "real_model": "qwen/qwen-2.5-32b-instruct:free",
+        "desc": "Qwen 2.5 32B — code+math+reasoning, 128K ctx, free via OpenRouter", "style": "direct", "tokens": 131072,
+        "developer": "Alibaba / Qwen", "display_name": "Qwen 2.5 32B (OR Free)",
+        "max_output": 131072, "params": "32B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "or-gemma-3-27b": {
+        "provider": "openrouter", "real_model": "google/gemma-3-27b-it:free",
+        "desc": "Gemma 3 27B — Google's open model, 96K ctx, multimodal, free via OR", "style": "direct", "tokens": 96320,
+        "developer": "Google", "display_name": "Gemma 3 27B (OR Free)",
+        "max_output": 96320, "params": "27B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "or-mistral-7b": {
+        "provider": "openrouter", "real_model": "mistralai/mistral-7b-instruct:free",
+        "desc": "Mistral 7B — lightweight, fast, 32K ctx, free via OpenRouter", "style": "direct", "tokens": 32768,
+        "developer": "Mistral AI", "display_name": "Mistral 7B (OR Free)",
+        "max_output": 32768, "params": "7B",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": False, "web_search": False, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    # ───────────────────────────────────────────────────────────────────────
+    # Google AI Studio (generativelanguage.googleapis.com) — Free tier
+    # ───────────────────────────────────────────────────────────────────────
+    "gemini-2.0-flash": {
+        "provider": "google", "real_model": "gemini-2.0-flash",
+        "desc": "Gemini 2.0 Flash — fast, multimodal, 1M ctx, free tier 15 RPM", "style": "direct", "tokens": 1048576,
+        "developer": "Google", "display_name": "Gemini 2.0 Flash",
+        "max_output": 8192, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "gemini-2.5-flash": {
+        "provider": "google", "real_model": "gemini-2.5-flash",
+        "desc": "Gemini 2.5 Flash — next-gen, adaptive thinking, 1M ctx, free 15 RPM", "style": "reasoning", "tokens": 1048576,
+        "developer": "Google", "display_name": "Gemini 2.5 Flash",
+        "max_output": 8192, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "gemini-2.5-pro": {
+        "provider": "google", "real_model": "gemini-2.5-pro",
+        "desc": "Gemini 2.5 Pro — frontier reasoning+vision, 2M ctx, free tier 5 RPM", "style": "reasoning", "tokens": 2097152,
+        "developer": "Google", "display_name": "Gemini 2.5 Pro",
+        "max_output": 8192, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    "gemini-flash-lite": {
+        "provider": "google", "real_model": "gemini-2.0-flash-lite",
+        "desc": "Gemini 2.0 Flash-Lite — ultra-fast, cheapest, 1M ctx, free 30 RPM", "style": "direct", "tokens": 1048576,
+        "developer": "Google", "display_name": "Gemini 2.0 Flash-Lite",
+        "max_output": 8192, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": False, "tools": True, "vision": True, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "Free", "out": "Free"},
+    },
+    # ───────────────────────────────────────────────────────────────────────
+    # Fireworks AI (api.fireworks.ai) — prepaid ($6 per account)
+    # ───────────────────────────────────────────────────────────────────────
     "glm-5p2": {
         "provider": "fireworks", "real_model": "accounts/fireworks/models/glm-5p2",
         "desc": "GLM 5.2 — Opus-level reasoning, 131K ctx, interleaved thinking", "style": "reasoning", "tokens": 131072,
@@ -584,6 +583,54 @@ MODELS = {
         "pricing": {"in": "$1.74", "out": "$3.48", "cached_in": "$0.145"},
     },
 }
+
+# ── Provider base URLs ──────────────────────────────────────────────────────
+PROVIDER_BASE_URLS = {
+    "claude":    "https://claude.ai",
+    "nvidia":    "https://integrate.api.nvidia.com/v1",
+    "openrouter":"https://openrouter.ai/api/v1",
+    "google":    "https://generativelanguage.googleapis.com/v1beta",
+    "fireworks": "https://api.fireworks.ai/inference/v1",
+}
+
+# ── Auto-detect provider from API key format ────────────────────────────────
+def detect_provider_from_key(api_key):
+    """Automatically detect which provider an API key belongs to based on its format/prefix.
+    
+    Returns dict {id, slug, name} from the database, or None if unrecognized.
+    Supports: NVIDIA NIM, OpenRouter, Google AI Studio, Fireworks, OpenAI, Anthropic (Claude).
+    """
+    k = api_key.strip()
+    kl = k.lower()
+    klen = len(k)
+    
+    # NVIDIA NIM keys start with "nvapi-"
+    if kl.startswith("nvapi-"):
+        slug = "nvidia"
+    # OpenRouter keys start with "sk-or-"
+    elif kl.startswith("sk-or-v1-") or kl.startswith("sk-or-"):
+        slug = "openrouter"
+    # Google AI Studio keys start with "AIza" (39-40 chars)
+    elif k.startswith("AIza") and klen >= 35:
+        slug = "google"
+    # Anthropic/Claude keys start with "sk-ant-"
+    elif kl.startswith("sk-ant-"):
+        slug = "claude"
+    # OpenAI keys: "sk-pro-" or "sk-" (but not sk-or/sk-ant)
+    elif kl.startswith("sk-pro-") or (kl.startswith("sk-") and not kl.startswith("sk-or") and not kl.startswith("sk-ant")):
+        slug = "openai"
+    # Fireworks keys: 40+ char hex-like strings (no distinctive prefix)
+    elif klen >= 40 and all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in kl):
+        slug = "fireworks"
+    else:
+        return None
+    
+    conn = get_db()
+    row = conn.execute("SELECT id, slug, name FROM api_providers WHERE slug=?", (slug,)).fetchone()
+    conn.close()
+    if row:
+        return {"id": row["id"], "slug": row["slug"], "name": row["name"]}
+    return None
 
 # ── Cookie parser ───────────────────────────────────────────────────────
 def detect_platform_from_content(raw): 
@@ -961,12 +1008,9 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
         error_msg = None
         
         try:
-            if provider_slug == "cohere":
-                url = f"{base_url}/chat"
-                payload = inject_model_into_body(body, real_model, provider_slug)
-            else:
-                url = f"{base_url}/chat/completions"
-                payload = inject_model_into_body(body, real_model, provider_slug)
+            # All current providers (NVIDIA, OpenRouter, Google, Fireworks) use OpenAI-compatible /v1/chat/completions
+            url = f"{base_url}/chat/completions"
+            payload = inject_model_into_body(body, real_model, provider_slug)
             
             is_streaming = False
             try:
@@ -1064,10 +1108,7 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             else:
                 # ── Post-process non-streaming responses ──
                 resp_body = resp.content
-                # 1) Normalize Cohere native format → OpenAI format
-                if provider_slug == "cohere":
-                    resp_body = normalize_cohere_response(resp_body, model_slug, real_model)
-                # 2) Strip reasoning/thinking prefix for reasoning-style models
+                # Strip reasoning/thinking prefix for reasoning-style models
                 model_entry = MODELS.get(model_slug, {})
                 if model_entry.get("style") == "reasoning":
                     resp_body = strip_reasoning_prefix(resp_body, model_slug)
@@ -1155,10 +1196,7 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             
             fb_start = time.time()
             try:
-                if fb_provider == "cohere":
-                    fb_url = f"{fb_base_url}/chat"
-                else:
-                    fb_url = f"{fb_base_url}/chat/completions"
+                fb_url = f"{fb_base_url}/chat/completions"
                 
                 fb_payload = inject_model_into_body(fb_body, MODELS.get(fb_model, {}).get("real_model", fb_model), fb_provider)
                 fb_headers = {"Authorization": f"Bearer {fb_key_val}", "Content-Type": "application/json"}
@@ -1189,8 +1227,6 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                     else:
                         # ── Post-process fallback non-streaming responses ──
                         fb_body = fb_resp.content
-                        if fb_provider == "cohere":
-                            fb_body = normalize_cohere_response(fb_body, fb_model, fb_model)
                         fb_model_entry = MODELS.get(fb_model, {})
                         if fb_model_entry.get("style") == "reasoning":
                             fb_body = strip_reasoning_prefix(fb_body, fb_model)
@@ -1244,24 +1280,25 @@ import random as _random
 # This gives the user a seamless experience even when an entire provider goes down.
 PROVIDER_FALLBACK_CHAIN = {
     "fireworks": [
-        ("sambanova", "llama-3.3-70b", "Llama 3.3 70B (SambaNova fallback)"),
-        ("mistral",   "mistral-medium", "Mistral Medium (fallback)"),
+        ("nvidia",    "nvidia-llama-3.3-70b", "Llama 3.3 70B (NVIDIA NIM fallback)"),
+        ("openrouter","or-llama-3.3-70b",     "Llama 3.3 70B (OpenRouter fallback)"),
     ],
-    "sambanova": [
-        ("mistral",   "mistral-small", "Mistral Small (fallback)"),
-        ("fireworks", "glm-5p2", "GLM-5.2 (Fireworks fallback)"),
+    "nvidia": [
+        ("openrouter","or-llama-3.3-70b",     "Llama 3.3 70B (OpenRouter fallback)"),
+        ("fireworks", "glm-5p2",              "GLM-5.2 (Fireworks fallback)"),
     ],
-    "mistral": [
-        ("sambanova", "llama-3.3-70b", "Llama 3.3 70B (SambaNova fallback)"),
-        ("cohere",    "command-a", "Command-A (Cohere fallback)"),
+    "openrouter": [
+        ("nvidia",    "nvidia-llama-3.3-70b", "Llama 3.3 70B (NVIDIA NIM fallback)"),
+        ("google",    "gemini-2.0-flash",     "Gemini 2.0 Flash (Google fallback)"),
     ],
-    "cohere": [
-        ("mistral",   "mistral-small", "Mistral Small (fallback)"),
-        ("sambanova", "llama-3.3-70b", "Llama 3.3 70B (SambaNova fallback)"),
+    "google": [
+        ("openrouter","or-gemini-flash",      "Gemini 2.0 Flash (OpenRouter fallback)"),
+        ("nvidia",    "nvidia-llama-3.3-70b", "Llama 3.3 70B (NVIDIA NIM fallback)"),
     ],
     # Claude has no direct API fallback, but GLM is the closest reasoning model
     "claude": [
-        ("fireworks", "glm-5p2", "GLM-5.2 Reasoning (Fireworks fallback for Claude)"),
+        ("fireworks", "glm-5p2",              "GLM-5.2 Reasoning (Fireworks fallback for Claude)"),
+        ("google",    "gemini-2.5-pro",       "Gemini 2.5 Pro (Google fallback for Claude)"),
     ],
 }
 
@@ -3097,72 +3134,7 @@ def inject_model_into_body(body, real_model, provider_slug):
 
     data["model"] = real_model
 
-    # Cohere-specific: ensure max_tokens is present
-    if provider_slug == "cohere":
-        if "max_tokens" not in data:
-            data["max_tokens"] = 1024
-
     return json.dumps(data).encode()
-
-
-def normalize_cohere_response(resp_bytes, model_slug, real_model):
-    """Convert Cohere v2 /chat native response to OpenAI /v1/chat/completions format.
-
-    Cohere returns:
-      {"id":"...", "message":{"role":"assistant","content":[{"type":"text","text":"..."}]}, "finish_reason":"COMPLETE", "usage":{...}}
-    OpenAI expects:
-      {"id":"...", "object":"chat.completion", "model":"...", "choices":[{"index":0,"message":{"role":"assistant","content":"..."},"finish_reason":"stop"}], "usage":{"prompt_tokens":N,"completion_tokens":N,"total_tokens":N}}
-    """
-    try:
-        data = json.loads(resp_bytes)
-    except Exception:
-        return resp_bytes  # Can't parse — return as-is
-
-    # Already OpenAI format? (has "choices")
-    if "choices" in data:
-        return resp_bytes
-
-    # Cohere native format
-    if "message" in data and isinstance(data.get("message"), dict):
-        msg = data["message"]
-        # Extract text from content array
-        content_parts = msg.get("content", [])
-        if isinstance(content_parts, list):
-            text = "".join(p.get("text", "") for p in content_parts if isinstance(p, dict))
-        elif isinstance(content_parts, str):
-            text = content_parts
-        else:
-            text = str(content_parts)
-
-        # Map finish_reason
-        finish_map = {"COMPLETE": "stop", "MAX_TOKENS": "length", "ERROR": "error", "ERROR_TOXIC": "content_filter"}
-        finish_reason = finish_map.get(data.get("finish_reason", ""), "stop")
-
-        # Map usage
-        usage_raw = data.get("usage", {})
-        billed = usage_raw.get("billed_units", {})
-        prompt_tokens = billed.get("input_tokens", usage_raw.get("tokens", {}).get("input_tokens", 0))
-        completion_tokens = billed.get("output_tokens", usage_raw.get("tokens", {}).get("output_tokens", 0))
-
-        openai_resp = {
-            "id": data.get("id", f"chatcmpl-{uuid.uuid4().hex[:24]}"),
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": model_slug,
-            "choices": [{
-                "index": 0,
-                "message": {"role": "assistant", "content": text},
-                "finish_reason": finish_reason,
-            }],
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-            },
-        }
-        return json.dumps(openai_resp).encode()
-
-    return resp_bytes  # Unknown format — return as-is
 
 
 def strip_reasoning_prefix(resp_bytes, model_slug):
@@ -3617,23 +3589,32 @@ def proxy_embeddings():
     body = request.get_data()
     try:
         data = json.loads(body)
-        model_slug = data.get("model", "mistral-embed")
+        model_slug = data.get("model", "nvidia-nv-embed-v1")
     except:
-        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"mistral-embed\",\"input\":[\"text\"]}"}), 400
+        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"nvidia-nv-embed-v1\",\"input\":[\"text\"]}"}), 400
 
-    # Allow direct real model name or our slug
-    if model_slug not in MODELS and model_slug not in ("mistral-embed", "mistral-embed-2310", "mistral-embed"):
-        # Check if it's a real model name for mistral embed
-        if "embed" not in model_slug.lower():
-            return jsonify({"error": f"Unknown embeddings model: '{model_slug}'", "available": ["mistral-embed"]}), 404
+    # Resolve model — support NVIDIA NV-Embed and Google text-embedding
+    EMBED_MODELS = {
+        "nvidia-nv-embed-v1": {"provider": "nvidia", "real_model": "nvidia/nv-embed-v1"},
+        "nvidia-llama-embed": {"provider": "nvidia", "real_model": "nvidia/llama-3.2-nv-embedqa-1b-v2"},
+        "google-text-embedding-004": {"provider": "google", "real_model": "text-embedding-004"},
+    }
+    if model_slug in EMBED_MODELS:
+        emb_info = EMBED_MODELS[model_slug]
+        real_model = emb_info["real_model"]
+        emb_provider = emb_info["provider"]
+    elif "nv-embed" in model_slug.lower() or "nvidia" in model_slug.lower():
         real_model = model_slug
+        emb_provider = "nvidia"
+    elif "text-embedding" in model_slug.lower():
+        real_model = model_slug
+        emb_provider = "google"
     else:
-        model_info = MODELS.get(model_slug, {"real_model": "mistral-embed"})
-        real_model = model_info.get("real_model", "mistral-embed")
+        return jsonify({"error": f"Unknown embeddings model: '{model_slug}'", "available": list(EMBED_MODELS.keys())}), 404
 
-    keys = get_provider_keys("mistral")
+    keys = get_provider_keys(emb_provider)
     if not keys:
-        return jsonify({"error": "No active keys for Mistral provider"}), 503
+        return jsonify({"error": f"No active keys for {emb_provider} provider"}), 503
 
     for key_info in keys:
         key_id = key_info["id"]
@@ -3660,217 +3641,58 @@ def proxy_embeddings():
                 continue
 
             bump_key_usage(key_id)
-            record_proxy_request(model_slug, "mistral", key_id, "ok", int(time.time() * 1000 % 100000))
-            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": "mistral"}
+            record_proxy_request(model_slug, emb_provider, key_id, "ok", int(time.time() * 1000 % 100000))
+            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": emb_provider}
 
         except Exception as e:
             mark_key_error(key_id, str(e)[:200])
             continue
 
-    return jsonify({"error": "All Mistral keys failed for embeddings"}), 503
+    return jsonify({"error": f"All {emb_provider} keys failed for embeddings"}), 503
 
 
 @app.route("/v1/fim/completions", methods=["POST"])
 def proxy_fim():
-    """FIM (Fill-in-the-Middle) endpoint — proxies to Mistral Codestral."""
+    """FIM (Fill-in-the-Middle) endpoint — deprecated.
+
+    Codestral was the only FIM-capable provider and has been removed.
+    Use /v1/chat/completions with a code-capable model instead.
+    """
     auth_err = check_proxy_auth()
     if auth_err: return auth_err
-
-    allowed, remaining, retry_after = check_rate_limit()
-    if not allowed:
-        return jsonify({"error": "Rate limit exceeded", "retry_after_seconds": retry_after}), 429, {"Retry-After": str(retry_after)}
-
-    body = request.get_data()
-    try:
-        data = json.loads(body)
-        model_slug = data.get("model", "codestral-latest")
-    except:
-        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"codestral-latest\",\"prompt\":\"...\",\"suffix\":\"...\"}"}), 400
-
-    # Resolve model
-    if model_slug in MODELS:
-        real_model = MODELS[model_slug]["real_model"]
-    elif model_slug in ("codestral-latest", "codestral-2508", "codestral-2405"):
-        real_model = model_slug
-    else:
-        return jsonify({"error": f"Unknown FIM model: '{model_slug}'", "available": ["codestral", "codestral-latest"]}), 404
-
-    keys = get_provider_keys("mistral")
-    if not keys:
-        return jsonify({"error": "No active keys for Mistral provider"}), 503
-
-    for key_info in keys:
-        key_id = key_info["id"]
-        base_url = key_info["base_url"]
-        key_val = key_info["key_value"]
-
-        try:
-            payload = json.loads(body)
-            payload["model"] = real_model
-            url = f"{base_url}/fim/completions"
-            headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json"}
-
-            is_streaming = payload.get("stream", False)
-            if is_streaming:
-                headers["Accept"] = "text/event-stream"
-
-            proxy = get_proxy_url()
-            with httpx.Client(proxy=proxy, timeout=120.0, verify=False) as client:
-                resp = client.post(url, json=payload, headers=headers)
-
-            if resp.status_code >= 400:
-                if resp.status_code == 429:
-                    mark_key_rate_limited(key_id, f"429: {resp.text[:200]}")
-                elif resp.status_code in (401, 403):
-                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
-                else:
-                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
-                continue
-
-            bump_key_usage(key_id)
-            record_proxy_request(model_slug, "mistral", key_id, "ok", int(time.time() * 1000 % 100000))
-
-            if is_streaming:
-                def generate():
-                    for chunk in resp.iter_bytes(8192):
-                        yield chunk
-                return Response(stream_with_context(generate()), status=resp.status_code, headers={
-                    "Content-Type": "text/event-stream",
-                    "X-Proxy-Provider": "mistral",
-                })
-            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": "mistral"}
-
-        except Exception as e:
-            mark_key_error(key_id, str(e)[:200])
-            continue
-
-    return jsonify({"error": "All Mistral keys failed for FIM"}), 503
+    return jsonify({
+        "error": "FIM endpoint deprecated. Mistral Codestral has been removed from the gateway.",
+        "alternative": "Use /v1/chat/completions with models like 'nvidia-qwen-32b', 'or-qwen-32b', or 'kimi-k2p7-code' for code completion tasks.",
+        "endpoint": "/v1/chat/completions"
+    }), 410
 
 
 @app.route("/v1/moderations", methods=["POST"])
 def proxy_moderation():
-    """OpenAI-compatible moderation endpoint — proxies to Mistral moderation API."""
+    """OpenAI-compatible moderation endpoint — deprecated.
+
+    Mistral moderation was the only moderation provider and has been removed.
+    Use the chat completions endpoint with a system prompt for content classification.
+    """
     auth_err = check_proxy_auth()
     if auth_err: return auth_err
-
-    allowed, remaining, retry_after = check_rate_limit()
-    if not allowed:
-        return jsonify({"error": "Rate limit exceeded", "retry_after_seconds": retry_after}), 429, {"Retry-After": str(retry_after)}
-
-    body = request.get_data()
-    try:
-        data = json.loads(body)
-    except:
-        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"mistral-moderation-latest\",\"input\":[\"text\"]}"}), 400
-
-    model_slug = data.get("model", "mistral-moderation-latest")
-    if model_slug in MODELS:
-        real_model = MODELS[model_slug]["real_model"]
-    elif "moderation" in model_slug.lower():
-        real_model = model_slug
-    else:
-        return jsonify({"error": f"Unknown moderation model: '{model_slug}'", "available": ["mistral-moderation", "mistral-moderation-latest"]}), 404
-
-    keys = get_provider_keys("mistral")
-    if not keys:
-        return jsonify({"error": "No active keys for Mistral provider"}), 503
-
-    for key_info in keys:
-        key_id = key_info["id"]
-        base_url = key_info["base_url"]
-        key_val = key_info["key_value"]
-
-        try:
-            payload = json.loads(body)
-            payload["model"] = real_model
-            url = f"{base_url}/moderations"
-            headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json"}
-
-            proxy = get_proxy_url()
-            with httpx.Client(proxy=proxy, timeout=60.0, verify=False) as client:
-                resp = client.post(url, json=payload, headers=headers)
-
-            if resp.status_code >= 400:
-                if resp.status_code == 429:
-                    mark_key_rate_limited(key_id, f"429: {resp.text[:200]}")
-                elif resp.status_code in (401, 403):
-                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
-                else:
-                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
-                continue
-
-            bump_key_usage(key_id)
-            record_proxy_request(model_slug, "mistral", key_id, "ok", int(time.time() * 1000 % 100000))
-            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": "mistral"}
-
-        except Exception as e:
-            mark_key_error(key_id, str(e)[:200])
-            continue
-
-    return jsonify({"error": "All Mistral keys failed for moderation"}), 503
+    return jsonify({
+        "error": "Moderation endpoint deprecated. Mistral moderation has been removed from the gateway.",
+        "alternative": "Use /v1/chat/completions with a classification prompt, or use OpenAI's native moderation API.",
+        "endpoint": "/v1/chat/completions"
+    }), 410
 
 
 @app.route("/v1/chat/moderations", methods=["POST"])
 def proxy_chat_moderation():
-    """Conversational moderation endpoint — moderates chat messages via Mistral."""
+    """Conversational moderation endpoint — deprecated."""
     auth_err = check_proxy_auth()
     if auth_err: return auth_err
-
-    allowed, remaining, retry_after = check_rate_limit()
-    if not allowed:
-        return jsonify({"error": "Rate limit exceeded", "retry_after_seconds": retry_after}), 429, {"Retry-After": str(retry_after)}
-
-    body = request.get_data()
-    try:
-        data = json.loads(body)
-    except:
-        return jsonify({"error": "Invalid JSON body. Send {\"model\":\"mistral-moderation-latest\",\"input\":[{\"role\":\"user\",\"content\":\"...\"}]}"}), 400
-
-    model_slug = data.get("model", "mistral-moderation-latest")
-    if model_slug in MODELS:
-        real_model = MODELS[model_slug]["real_model"]
-    elif "moderation" in model_slug.lower():
-        real_model = model_slug
-    else:
-        real_model = "mistral-moderation-latest"
-
-    keys = get_provider_keys("mistral")
-    if not keys:
-        return jsonify({"error": "No active keys for Mistral provider"}), 503
-
-    for key_info in keys:
-        key_id = key_info["id"]
-        base_url = key_info["base_url"]
-        key_val = key_info["key_value"]
-
-        try:
-            payload = json.loads(body)
-            payload["model"] = real_model
-            url = f"{base_url}/chat/moderations"
-            headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json"}
-
-            proxy = get_proxy_url()
-            with httpx.Client(proxy=proxy, timeout=60.0, verify=False) as client:
-                resp = client.post(url, json=payload, headers=headers)
-
-            if resp.status_code >= 400:
-                if resp.status_code == 429:
-                    mark_key_rate_limited(key_id, f"429: {resp.text[:200]}")
-                elif resp.status_code in (401, 403):
-                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
-                else:
-                    mark_key_error(key_id, f"{resp.status_code}: {resp.text[:200]}")
-                continue
-
-            bump_key_usage(key_id)
-            record_proxy_request(model_slug, "mistral", key_id, "ok", int(time.time() * 1000 % 100000))
-            return resp.content, resp.status_code, {"Content-Type": "application/json", "X-Proxy-Provider": "mistral"}
-
-        except Exception as e:
-            mark_key_error(key_id, str(e)[:200])
-            continue
-
-    return jsonify({"error": "All Mistral keys failed for chat moderation"}), 503
+    return jsonify({
+        "error": "Chat moderation endpoint deprecated. Mistral moderation has been removed from the gateway.",
+        "alternative": "Use /v1/chat/completions with a moderation/classification system prompt.",
+        "endpoint": "/v1/chat/completions"
+    }), 410
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PAGES
@@ -3949,12 +3771,12 @@ def docs_md():
         md.append(f"| `{slug}` | {info['provider']} | {style} |\n")
     md.append(f"\n**Total:** {len(MODELS)} models\n\n")
     md.append("## Response Styles\n\n")
-    md.append("### ⚡ Direct Response\nModels that reply immediately — just the answer. **All** Mistral, Cohere, SambaNova, and `kimi-k2p7-code`.\n\n")
-    md.append("### 🧠 Reasoning Response\nModels that show thinking process before answering: `glm-5p2`, `qwen3p7-plus`, `deepseek-v4-pro`.\n**Important:** set `max_tokens ≥ 500` or answer may be cut off.\n\n")
-    md.append("## Streaming (SSE)\n\nAdd `\"stream\": true` to the request body for real-time token streaming:\n\n```bash\ncurl -X POST https://aicookies.elliaa.com/v1/chat/completions \\\n  -H \"Authorization: Bearer YOUR_AICOOKIES_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"mistral-small\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'\n```\n\n")
-    md.append("## cURL Example\n\n```bash\ncurl -X POST https://aicookies.elliaa.com/v1/chat/completions \\\n  -H \"Authorization: Bearer YOUR_AICOOKIES_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"mistral-small\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'\n```\n\n")
-    md.append("## Python (OpenAI SDK)\n\n```python\nfrom openai import OpenAI\nclient = OpenAI(base_url=\"https://aicookies.elliaa.com/v1\", api_key=\"YOUR_AICOOKIES_API_KEY\")\nresponse = client.chat.completions.create(model=\"mistral-small\", messages=[{\"role\":\"user\",\"content\":\"Hello!\"}])\n```\n\n")
-    md.append("## Smart Key Rotation\n\n- 429/402 → rotate to next key (free providers recover; Fireworks 💀 dies)\n- All keys busy → 503 with `retry_after_ms: 5000`\n- Keys ordered by usage count (least-used first)\n\n")
+    md.append("### ⚡ Direct Response\nModels that reply immediately — just the answer. **All** NVIDIA non-reasoning, OpenRouter free, Google non-reasoning, and `kimi-k2p7-code`.\n\n")
+    md.append("### 🧠 Reasoning Response\nModels that show thinking process before answering: `glm-5p2`, `qwen3p7-plus`, `deepseek-v4-pro`, `nvidia-deepseek-r1`, `gemini-2.5-flash`, `gemini-2.5-pro`, `or-deepseek-r1`.\n**Important:** set `max_tokens ≥ 500` or answer may be cut off.\n\n")
+    md.append("## Streaming (SSE)\n\nAdd `\"stream\": true` to the request body for real-time token streaming:\n\n```bash\ncurl -X POST https://aicookies.elliaa.com/v1/chat/completions \\\n  -H \"Authorization: Bearer YOUR_AICOOKIES_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"gemini-2.0-flash\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'\n```\n\n")
+    md.append("## cURL Example\n\n```bash\ncurl -X POST https://aicookies.elliaa.com/v1/chat/completions \\\n  -H \"Authorization: Bearer YOUR_AICOOKIES_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"nvidia-llama-3.3-70b\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'\n```\n\n")
+    md.append("## Python (OpenAI SDK)\n\n```python\nfrom openai import OpenAI\nclient = OpenAI(base_url=\"https://aicookies.elliaa.com/v1\", api_key=\"YOUR_AICOOKIES_API_KEY\")\nresponse = client.chat.completions.create(model=\"gemini-2.0-flash\", messages=[{\"role\":\"user\",\"content\":\"Hello!\"}])\n```\n\n")
+    md.append("## Smart Key Rotation\n\n- 429/402 → rotate to next key (free providers recover; Fireworks 💀 dies)\n- All keys busy → 503 with `retry_after_ms: 5000`\n- Keys ordered by usage count (least-used first)\n- Cross-provider fallback: if all keys for a provider fail, automatically tries a similar model from another provider\n\n")
     md.append(f"*Generated from https://aicookies.elliaa.com/docs*\n")
     return "".join(md), 200, {"Content-Type": "text/markdown; charset=utf-8", "Content-Disposition": "attachment; filename=aicookies-api-docs.md"}
 
@@ -4267,40 +4089,47 @@ def keys_page():
     conn = get_db()
     if request.method == "POST":
         try:
-            pid = request.form.get("provider_id")
-            label = request.form.get("label", "").strip()
             key_val = request.form.get("key_value", "").strip()
-            if pid and key_val:
-                # Validate provider exists before insert (prevent FK violation)
-                prov = conn.execute("SELECT id FROM api_providers WHERE id=?", (int(pid),)).fetchone()
-                if not prov:
-                    flash("❌ Invalid provider", "danger")
-                    conn.close()
-                    return redirect(url_for("keys_page"))
-                conn.execute("INSERT INTO api_keys (provider_id, label, key_value) VALUES (?,?,?)", (int(pid), label, key_val))
-                new_key_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                conn.commit()
-                flash("✅ Key added", "success")
-                # Auto-fetch account info for Fireworks keys
-                prov_row = conn.execute("SELECT slug FROM api_providers WHERE id=?", (int(pid),)).fetchone()
-                if prov_row and prov_row["slug"] == "fireworks":
-                    conn.close()  # close before fetch (fetch opens its own conn)
-                    try:
-                        info = fetch_and_store_account_info(new_key_id, key_val, "fireworks")
-                        status = info.get("account_status", "unknown")
-                        name = info.get("account_name", "")
-                        if status == "active":
-                            flash(f"✅ Account info fetched: {name or 'active'} — rate limit: {info.get('rate_limit_prompt', 'N/A')} prompt tokens", "info")
-                        elif status == "suspended":
-                            flash(f"⚠️ Account suspended: {name or 'unknown'} — {info.get('suspension_reason', '')[:100]}", "warning")
-                        else:
-                            flash(f"ℹ️ Account status: {status}", "info")
-                    except Exception as e:
-                        flash(f"ℹ️ Key added, but account info fetch failed: {str(e)[:100]}", "info")
-                else:
-                    conn.close()
+            if not key_val:
+                flash("❌ API key is required", "danger")
+                conn.close()
+                return redirect(url_for("keys_page"))
+
+            # ── Auto-detect provider from key prefix/format ──
+            detected_provider = detect_provider_from_key(key_val)
+            if not detected_provider:
+                flash("❌ Could not identify provider from key format. Please check the key.", "danger")
+                conn.close()
+                return redirect(url_for("keys_page"))
+
+            pid = detected_provider["id"]
+            prov_slug = detected_provider["slug"]
+            prov_name = detected_provider["name"]
+            label = request.form.get("label", "").strip()
+            if not label:
+                label = f"{prov_name} key"
+
+            conn.execute("INSERT INTO api_keys (provider_id, label, key_value) VALUES (?,?,?)", (int(pid), label, key_val))
+            new_key_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.commit()
+            flash(f"✅ Key added → detected as <b>{prov_name}</b>", "success")
+            # Auto-fetch account info for Fireworks keys
+            if prov_slug == "fireworks":
+                conn.close()  # close before fetch (fetch opens its own conn)
+                try:
+                    info = fetch_and_store_account_info(new_key_id, key_val, "fireworks")
+                    status = info.get("account_status", "unknown")
+                    name = info.get("account_name", "")
+                    if status == "active":
+                        flash(f"✅ Account info fetched: {name or 'active'} — rate limit: {info.get('rate_limit_prompt', 'N/A')} prompt tokens", "info")
+                    elif status == "suspended":
+                        flash(f"⚠️ Account suspended: {name or 'unknown'} — {info.get('suspension_reason', '')[:100]}", "warning")
+                    else:
+                        flash(f"ℹ️ Account status: {status}", "info")
+                except Exception as e:
+                    flash(f"ℹ️ Key added, but account info fetch failed: {str(e)[:100]}", "info")
             else:
-                flash("❌ Provider and key required", "danger")
+                conn.close()
         except Exception as e:
             conn.rollback()
             flash(f"❌ Error: {str(e)[:100]}", "danger")

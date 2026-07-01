@@ -498,6 +498,7 @@ table.api tbody tr:last-child td { border-bottom: none; }
                 <td><span class="badge badge-ctx">{{ info.tokens }}</span></td>
               </tr>
               {% endfor %}
+
             </tbody>
           </table>
         </div>
@@ -998,6 +999,7 @@ resp = requests.<span class="f">post</span>(
             <thead><tr><th>HTTP</th><th>Type</th><th>Message</th><th>Cause</th></tr></thead>
             <tbody>
               <tr><td><strong>400</strong></td><td><code>invalid_request_error</code></td><td>Malformed JSON or missing required field.</td><td>Bad request body.</td></tr>
+
               <tr><td><strong>401</strong></td><td><code>authentication_error</code></td><td>Missing or invalid API key.</td><td>No/invalid Bearer token.</td></tr>
               <tr><td><strong>403</strong></td><td><code>permission_error</code></td><td>Key lacks access to this model/provider.</td><td>Key not provisioned for model.</td></tr>
               <tr><td><strong>404</strong></td><td><code>not_found_error</code></td><td>Unknown model slug or endpoint.</td><td>Invalid <code>model</code> or path.</td></tr>
@@ -1345,7 +1347,7 @@ curl -b cookies.txt -X POST https://aicookies.elliaa.com/endpoints/create \
   --data-urlencode "slug=arabic-tutor" \
   --data-urlencode "label=Arabic Tutor" \
   --data-urlencode "description=AI Arabic tutor that teaches grammar" \
-  --data-urlencode "model_slug=mistral-small" \
+  --data-urlencode "model_slug=nvidia-llama-3.3-70b" \
   --data-urlencode "system_prompt=You are an expert Arabic tutor. Always respond in Egyptian Arabic." \
   --data-urlencode "temperature=0.7" \
   --data-urlencode "max_tokens=4096"</pre>
@@ -1376,7 +1378,7 @@ curl -b cookies.txt -X POST https://aicookies.elliaa.com/endpoints/create \
           <button class="copy-btn">copy</button>
 <pre>{
   "id": "ac5cec0f0bba4230949abc57585721da",
-  "model": "mistral-small-latest",
+  "model": "nvidia/llama-3.3-nemotron-super-49b-v1",
   "choices": [{
     "message": {
       "role": "assistant",
@@ -1390,8 +1392,8 @@ curl -b cookies.txt -X POST https://aicookies.elliaa.com/endpoints/create \
         <div class="code-block">
           <button class="copy-btn">copy</button>
 <pre>X-Custom-Endpoint: arabic-tutor
-X-Custom-Model: mistral-small
-X-Proxy-Provider: mistral
+X-Custom-Model: nvidia-llama-3.3-70b
+X-Proxy-Provider: nvidia
 X-Proxy-Key: 3
 X-Proxy-Latency: 952</pre>
         </div>
@@ -1437,7 +1439,7 @@ print(response.choices[0].message.content)</pre>
         <h3>Slug Validation Rules</h3>
         <ul style="color:var(--text-dim); margin:12px 0 12px 24px; line-height:1.8;">
           <li>Lowercase letters, numbers, and hyphens only (<code class="inline">[a-z0-9-]</code>)</li>
-          <li>Must not collide with existing model slugs (e.g. cannot use <code class="inline">mistral-small</code>)</li>
+          <li>Must not collide with existing model slugs (e.g. cannot use <code class="inline">nvidia-llama-3.3-70b</code>)</li>
           <li>Must be unique — duplicates return a flash message</li>
           <li>Valid examples: <code class="inline">arabic-tutor</code>, <code class="inline">code-reviewer</code>, <code class="inline">medical-advisor</code></li>
         </ul>
@@ -1454,10 +1456,10 @@ print(response.choices[0].message.content)</pre>
               </tr>
             </thead>
             <tbody>
-              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Language tutor</td><td style="padding:8px 14px;"><code class="inline">arabic-tutor</code></td><td style="padding:8px 14px;">mistral-small</td><td style="padding:8px 14px; color:var(--text-dim);">"You are an expert Arabic tutor..."</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Language tutor</td><td style="padding:8px 14px;"><code class="inline">arabic-tutor</code></td><td style="padding:8px 14px;">nvidia-llama-3.3-70b</td><td style="padding:8px 14px; color:var(--text-dim);">"You are an expert Arabic tutor..."</td></tr>
               <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Code reviewer</td><td style="padding:8px 14px;"><code class="inline">code-reviewer</code></td><td style="padding:8px 14px;">claude-sonnet-4-6</td><td style="padding:8px 14px; color:var(--text-dim);">"You are a senior code reviewer..."</td></tr>
               <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Medical assistant</td><td style="padding:8px 14px;"><code class="inline">medical-advisor</code></td><td style="padding:8px 14px;">claude-sonnet-4-6</td><td style="padding:8px 14px; color:var(--text-dim);">"You are a medical reference assistant..."</td></tr>
-              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Support bot</td><td style="padding:8px 14px;"><code class="inline">support-bot</code></td><td style="padding:8px 14px;">mistral-small</td><td style="padding:8px 14px; color:var(--text-dim);">"You are a helpful customer support agent..."</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Support bot</td><td style="padding:8px 14px;"><code class="inline">support-bot</code></td><td style="padding:8px 14px;">gemini-2.0-flash</td><td style="padding:8px 14px; color:var(--text-dim);">"You are a helpful customer support agent..."</td></tr>
               <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;">Summarizer</td><td style="padding:8px 14px;"><code class="inline">summarizer</code></td><td style="padding:8px 14px;">glm-5p2</td><td style="padding:8px 14px; color:var(--text-dim);">"Summarize the following text in 3 bullet points."</td></tr>
             </tbody>
           </table>
@@ -1498,10 +1500,11 @@ print(response.choices[0].message.content)</pre>
           <span class="num">16</span>
           <h2>Embeddings</h2>
           <a class="anchor" href="#embeddings">#</a>
+
         </div>
         <p>
           Generate dense vector embeddings for semantic search, RAG pipelines, and clustering.
-          Proxies to <strong>Mistral Embed</strong> (1024 dimensions).
+          Proxies to <strong>NVIDIA NV-Embed</strong> (1024 dimensions).
         </p>
 
         <div class="endpoint">
@@ -1514,7 +1517,7 @@ print(response.choices[0].message.content)</pre>
           <div class="code-head"><span class="lang">json</span></div>
           <pre><span class="c">// Request</span>
 {
-  <span class="s">"model"</span>: <span class="s">"mistral-embed"</span>,
+  <span class="s">"model"</span>: <span class="s">"nvidia-nv-embed-v1"</span>,
   <span class="s">"input"</span>: [<span class="s">"Embed this sentence."</span>, <span class="s">"As well as this one."</span>],
   <span class="s">"encoding_format"</span>: <span class="s">"float"</span>
 }</pre>
@@ -1527,7 +1530,7 @@ print(response.choices[0].message.content)</pre>
 {
   <span class="s">"id"</span>: <span class="s">"emb-xxx"</span>,
   <span class="s">"object"</span>: <span class="s">"list"</span>,
-  <span class="s">"model"</span>: <span class="s">"mistral-embed"</span>,
+  <span class="s">"model"</span>: <span class="s">"nvidia-nv-embed-v1"</span>,
   <span class="s">"data"</span>: [
     {<span class="s">"id"</span>: <span class="s">"0"</span>, <span class="s">"object"</span>: <span class="s">"embedding"</span>, <span class="s">"embedding"</span>: [0.1, -0.2, ...]},
     {<span class="s">"id"</span>: <span class="s">"1"</span>, <span class="s">"object"</span>: <span class="s">"embedding"</span>, <span class="s">"embedding"</span>: [0.3, 0.1, ...]}
@@ -1542,7 +1545,7 @@ print(response.choices[0].message.content)</pre>
           <table class="api">
             <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
             <tbody>
-              <tr><td><code>model</code></td><td>string</td><td><code>mistral-embed</code></td><td>Embedding model slug</td></tr>
+              <tr><td><code>model</code></td><td>string</td><td><code>nvidia-nv-embed-v1</code></td><td>Embedding model slug</td></tr>
               <tr><td><code>input</code></td><td>string\|array</td><td><em>required</em></td><td>Text to embed</td></tr>
               <tr><td><code>encoding_format</code></td><td>string</td><td><code>float</code></td><td><code>float</code> or <code>base64</code></td></tr>
               <tr><td><code>output_dtype</code></td><td>string</td><td><code>float</code></td><td><code>float</code>, <code>int8</code>, <code>uint8</code>, <code>binary</code>, <code>ubinary</code></td></tr>
@@ -1618,7 +1621,7 @@ print(response.choices[0].message.content)</pre>
           <a class="anchor" href="#moderation">#</a>
         </div>
         <p>
-          Classify text into <strong>10 content safety categories</strong> using Mistral Moderation.
+          Classify text into <strong>10 content safety categories</strong> using a classification model (DEPRECATED).
           Two endpoints: raw text and conversational (chat messages).
         </p>
 
@@ -1632,7 +1635,7 @@ print(response.choices[0].message.content)</pre>
           <div class="code-head"><span class="lang">json</span></div>
           <pre><span class="c">// Raw text moderation</span>
 {
-  <span class="s">"model"</span>: <span class="s">"mistral-moderation"</span>,
+  <span class="s">"model"</span>: <span class="s">"nvidia-nemotron-70b"</span>,
   <span class="s">"input"</span>: [<span class="s">"I want to buy a laptop."</span>, <span class="s">"I hate all people from..."</span>]
 }</pre>
           <button class="copy-btn">copy</button>
@@ -1659,7 +1662,7 @@ print(response.choices[0].message.content)</pre>
           <div class="code-head"><span class="lang">json</span></div>
           <pre><span class="c">// Conversational moderation with role context</span>
 {
-  <span class="s">"model"</span>: <span class="s">"mistral-moderation"</span>,
+  <span class="s">"model"</span>: <span class="s">"nvidia-nemotron-70b"</span>,
   <span class="s">"input"</span>: [
     {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"I want to buy a laptop."</span>},
     {<span class="s">"role"</span>: <span class="s">"assistant"</span>, <span class="s">"content"</span>: <span class="s">"Sure! What's your budget?"</span>}

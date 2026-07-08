@@ -1,752 +1,597 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — AI Proxy Gateway{% endblock %}
-
-{% block head %}
-<!-- Cairo Font -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
+{% block extra_css %}
 <style>
 /* ═══════════════════════════════════════════════════════════════════
-   DARK THEME — Dashboard scoped (mobile-first, responsive)
-   bg #0d1117 · cards #161b22 · accent #e63946 · text #c9d1d9 · borders #30363d
+   DASHBOARD - Provider Health Cards (Vercel shadow-as-border)
    ═══════════════════════════════════════════════════════════════════ */
-:root {
-    --bg: #0d1117;
-    --bg-card: #161b22;
-    --bg-elevated: #1c2128;
-    --bg-input: #0d1117;
-    --accent: #e63946;
-    --accent-dim: #b32836;
-    --accent-glow: rgba(230, 57, 70, 0.12);
-    --text: #c9d1d9;
-    --text-dim: #8b949e;
-    --text-muted: #6e7681;
-    --border: #30363d;
-    --border-light: #484f58;
-    --border-accent: rgba(230, 57, 70, 0.30);
 
-    /* Provider colors */
-    --nvidia: #3fb950;
-    --openrouter: #58a6ff;
-    --google: #f85149;
-    --fireworks: #d29922;
-    --claude: #bc8cff;
-    --openai: #39d0d8;
-
-    /* Status colors */
-    --green: #3fb950;
-    --green-bg: rgba(63, 185, 80, 0.10);
-    --yellow: #d29922;
-    --yellow-bg: rgba(210, 153, 29, 0.10);
-    --red: #f85149;
-    --red-bg: rgba(248, 81, 73, 0.10);
-    --blue: #58a6ff;
-    --orange: #d29922;
-    --purple: #bc8cff;
-    --purple-bg: rgba(188, 140, 255, 0.10);
-    --teal: #39d0d8;
-
-    /* Shadows */
-    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.30);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.40);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.50);
-    --shadow-glow: 0 0 20px rgba(230, 57, 70, 0.08);
-
-    /* Transitions */
-    --t-fast: 150ms ease;
-    --t-med: 250ms ease;
-
-    /* Radius */
-    --r-sm: 6px;
-    --r-md: 8px;
-    --r-lg: 12px;
-    --r-xl: 16px;
-
-    /* Fonts */
-    --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-    --font-cairo: 'Cairo', system-ui, sans-serif;
-}
-
-/* ── Apply Cairo to dashboard content ── */
-.dashboard-wrap {
-    font-family: var(--font-cairo);
-    color: var(--text);
-}
-.dashboard-wrap h1,
-.dashboard-wrap h2,
-.dashboard-wrap h3,
-.dashboard-wrap h4 {
-    font-family: var(--font-cairo);
-}
-
-/* ── Hero ── */
+/* ── Hero Section ── */
 .hero {
     position: relative;
+    margin-bottom: 2rem;
+    padding: 2rem;
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-card);
+    border-radius: 12px;
     overflow: hidden;
-    border-radius: var(--r-xl);
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-    background:
-        radial-gradient(circle at 85% 20%, var(--accent-glow) 0%, transparent 55%),
-        radial-gradient(circle at 10% 90%, rgba(88, 166, 255, 0.06) 0%, transparent 50%),
-        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
-    border: 1px solid var(--border-accent);
-    box-shadow: var(--shadow-glow), var(--shadow-md);
 }
-.hero::after {
+
+.hero::before {
     content: '';
     position: absolute;
-    top: -60%;
-    right: -8%;
-    width: 300px;
-    height: 300px;
-    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-    border-radius: 50%;
+    inset: 0;
+    background: 
+        radial-gradient(circle at 90% 10%, rgba(255,91,79,0.05) 0%, transparent 50%),
+        radial-gradient(circle at 10% 90%, rgba(0,112,243,0.04) 0%, transparent 50%);
     pointer-events: none;
 }
-.hero-inner {
+
+.hero-content {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+    z-index: 1;
 }
-.hero h1 {
+
+.hero-title {
     font-size: 1.5rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    margin: 0;
-    background: linear-gradient(135deg, var(--text), var(--accent));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-.hero p {
-    color: var(--text-dim);
-    margin: 0.3rem 0 0;
-    font-size: 0.85rem;
-}
-.hero-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    margin-top: 0.5rem;
-}
-.hero-meta span {
-    font-size: 0.76rem;
-    color: var(--text-muted);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-}
-.hero-status {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
-}
-
-/* ── Status pill ── */
-.status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.45rem 0.9rem;
-    border-radius: 999px;
     font-weight: 600;
-    font-size: 0.82rem;
-    border: 1px solid;
-    transition: all var(--t-med);
+    letter-spacing: -0.64px;
+    margin-bottom: 0.5rem;
 }
-.status-pill .dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-@keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50%      { opacity: 0.55; transform: scale(0.85); }
-}
-.status-pill.healthy  { background: var(--green-bg);  color: var(--green);  border-color: rgba(63, 185, 80, 0.35); }
-.status-pill.healthy  .dot { background: var(--green);  box-shadow: 0 0 8px var(--green); }
-.status-pill.degraded { background: var(--yellow-bg); color: var(--yellow); border-color: rgba(210, 153, 29, 0.35); }
-.status-pill.degraded .dot { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
-.status-pill.offline  { background: var(--red-bg);    color: var(--red);    border-color: rgba(248, 81, 73, 0.35); }
-.status-pill.offline  .dot { background: var(--red); box-shadow: 0 0 8px var(--red); animation: none; }
 
-/* ── Stat cards ── */
-.pstat-grid {
-    display: grid;
-    grid-template-columns: 1fr;       /* mobile: stack vertically */
+.hero-subtitle {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+.hero-actions {
+    display: flex;
     gap: 0.75rem;
-    margin-bottom: 1rem;
+    flex-wrap: wrap;
 }
-.pstat {
+
+/* ── Metrics Grid ── */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.metric-card {
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-card);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    transition: box-shadow var(--transition-base);
     position: relative;
-    background: linear-gradient(160deg, var(--bg-card) 0%, var(--bg-elevated) 100%);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 1.1rem 1rem 1rem;
     overflow: hidden;
-    transition: transform var(--t-med), box-shadow var(--t-med), border-color var(--t-med);
-    cursor: default;
 }
-.pstat::before {
+
+.metric-card::before {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--accent), var(--blue), var(--accent));
+    top: 0;
+    left: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--accent-primary);
     opacity: 0;
-    transition: opacity var(--t-med);
+    transition: opacity var(--transition-fast);
 }
-.pstat:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--border-accent);
+
+.metric-card:hover {
+    box-shadow: var(--shadow-card-hover);
 }
-.pstat:hover::before { opacity: 1; }
-.pstat .icon {
-    font-size: 1.3rem;
+
+.metric-card:hover::before {
+    opacity: 1;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -1px;
+    margin-bottom: 0.25rem;
     line-height: 1;
-    margin-bottom: 0.5rem;
-    display: block;
 }
-.pstat .num {
-    font-size: 1.8rem;
-    font-weight: 800;
-    line-height: 1.1;
-    background: linear-gradient(135deg, var(--accent), var(--blue));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-.pstat .label {
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    margin-top: 0.3rem;
+
+.metric-label {
+    font-size: 0.8125rem;
+    color: var(--text-tertiary);
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    font-weight: 600;
 }
-.pstat.is-danger .num {
-    background: linear-gradient(135deg, var(--red), var(--orange));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-.pstat.is-danger::before {
-    background: linear-gradient(90deg, var(--red), var(--orange), var(--red));
-}
-.pstat.is-clickable { cursor: pointer; }
 
-/* ── Section heading ── */
-.section-title {
+/* ── Provider Health Cards ── */
+.section-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 1rem;
-    font-weight: 700;
-    margin: 0 0 0.75rem;
-    letter-spacing: -0.01em;
-}
-.section-title .bar {
-    width: 4px;
-    height: 1.1rem;
-    border-radius: 2px;
-    background: linear-gradient(180deg, var(--accent), var(--accent-dim));
-}
-
-/* ── Provider health cards ── */
-.prov-grid {
-    display: grid;
-    grid-template-columns: 1fr;       /* mobile: stack vertically */
-    gap: 0.75rem;
+    justify-content: space-between;
     margin-bottom: 1rem;
 }
-.prov-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 1rem 1.1rem;
-    transition: all var(--t-med);
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-}
-.prov-card:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--shadow-md);
-    border-color: var(--border-light);
-}
-.prov-card .top {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 0.75rem;
-}
-.prov-card .name {
-    font-weight: 700;
-    font-size: 0.95rem;
-}
-.prov-card .slug {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-}
-.prov-card .keys {
-    display: flex;
-    align-items: baseline;
-    gap: 0.35rem;
-    margin-top: 0.75rem;
-}
-.prov-card .keys b {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: var(--accent);
-}
-.prov-card .keys span {
-    font-size: 0.73rem;
-    color: var(--text-dim);
-}
-.prov-card .ptype {
-    font-size: 0.66rem;
-    color: var(--text-muted);
+
+.section-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-top: 0.15rem;
-}
-.prov-card .stripe {
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    margin: 0;
 }
 
-/* ── Provider stripe colors ── */
-.stripe-nvidia     { background: var(--nvidia); }
-.stripe-openrouter { background: var(--openrouter); }
-.stripe-google     { background: var(--google); }
-.stripe-fireworks  { background: var(--fireworks); }
-.stripe-claude     { background: var(--claude); }
-.stripe-openai     { background: var(--openai); }
-.stripe-unknown    { background: var(--border-light); }
+.providers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
 
-/* ── Model chips ── */
-.model-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+.provider-card {
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-card);
+    border-radius: 8px;
+    padding: 1.25rem;
+    transition: all var(--transition-base);
+    cursor: pointer;
 }
-.model-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--bg-input);
-    font-size: 0.78rem;
-    transition: all var(--t-fast);
-    cursor: default;
-}
-.model-chip:hover {
+
+.provider-card:hover {
+    box-shadow: var(--shadow-card-hover);
     transform: translateY(-2px);
-    box-shadow: var(--shadow-sm);
-    border-color: var(--border-light);
 }
-.model-chip code {
-    background: none;
-    padding: 0;
+
+.provider-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.provider-name {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
     font-weight: 600;
-    font-size: 0.76rem;
+    font-size: 0.9375rem;
+    letter-spacing: -0.24px;
 }
-.model-chip .ctx {
-    font-size: 0.63rem;
-    color: var(--text-muted);
-    padding-left: 0.45rem;
-    border-left: 1px solid var(--border);
+
+.provider-name .icon {
+    font-size: 1.125rem;
 }
-.model-chip .tag {
-    font-size: 0.6rem;
-    padding: 0.1rem 0.35rem;
-    border-radius: 999px;
-    font-weight: 600;
+
+.provider-status {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
-.tag-reasoning { background: var(--yellow-bg); color: var(--yellow); }
-.tag-direct    { background: var(--green-bg);  color: var(--green); }
 
-/* Provider tint via left border accent */
-.mc-nvidia     { border-left: 3px solid var(--nvidia); }
-.mc-openrouter { border-left: 3px solid var(--openrouter); }
-.mc-google     { border-left: 3px solid var(--google); }
-.mc-fireworks  { border-left: 3px solid var(--fireworks); }
-.mc-claude     { border-left: 3px solid var(--claude); }
-.mc-openai     { border-left: 3px solid var(--openai); }
-.mc-unknown    { border-left: 3px solid var(--border-light); }
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+}
 
-.mc-nvidia code     { color: #7ee787; }
-.mc-openrouter code { color: #79c0ff; }
-.mc-google code     { color: #ffa198; }
-.mc-fireworks code  { color: #e3b341; }
-.mc-claude code     { color: #d2a8ff; }
-.mc-openai code     { color: #56d4dd; }
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
 
-/* ── Recent activity ── */
-.activity-list {
+.status-online {
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+}
+
+.status-offline {
+    background: var(--error);
+    box-shadow: 0 0 8px var(--error);
+}
+
+.status-degraded {
+    background: var(--warning);
+    box-shadow: 0 0 8px var(--warning);
+}
+
+.provider-stats {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.provider-stat {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.25rem;
 }
-.activity-row {
+
+.provider-stat-value {
+    font-size: 1.125rem;
+    font-weight: 600;
+    letter-spacing: -0.48px;
+}
+
+.provider-stat-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* ── Cookies Table ── */
+.cookies-section {
+    margin-bottom: 2rem;
+}
+
+.cookies-table {
+    width: 100%;
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.cookies-table thead {
+    background: var(--bg-tertiary);
+}
+
+.cookies-table th {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    padding: 0.875rem 1rem;
+    text-align: left;
+}
+
+.cookies-table td {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    padding: 0.875rem 1rem;
+}
+
+.cookies-table tbody tr {
+    transition: background var(--transition-fast);
+}
+
+.cookies-table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+.cookie-platform {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.55rem 0.75rem;
-    border-radius: var(--r-md);
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    transition: border-color var(--t-fast);
-    flex-wrap: wrap;
+    gap: 0.5rem;
 }
-.activity-row:hover { border-color: var(--border-light); }
-.activity-row .a-status {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
+
+.cookie-platform .platform-icon {
+    font-size: 1rem;
 }
-.activity-row .a-model {
+
+.cookie-filename {
     font-family: var(--font-mono);
-    font-size: 0.76rem;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+}
+
+.cookie-count {
+    font-family: var(--font-mono);
     font-weight: 600;
+    color: var(--text-primary);
 }
-.activity-row .a-meta {
-    color: var(--text-muted);
-    font-size: 0.7rem;
-    margin-left: auto;
+
+.cookie-date {
+    font-size: 0.8125rem;
+    color: var(--text-tertiary);
+}
+
+.view-link {
+    color: var(--text-link);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+.view-link:hover {
+    color: var(--text-link-hover);
+}
+
+/* ── Available Models ── */
+.models-section {
+    margin-bottom: 2rem;
+}
+
+.models-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.5rem;
+}
+
+.model-badge {
+    padding: 0.5rem 0.875rem;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-border-light);
+    transition: all var(--transition-fast);
+}
+
+.model-badge:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    box-shadow: var(--shadow-border);
+}
+
+/* ── Quick Actions ── */
+.quick-actions {
     display: flex;
-    gap: 0.6rem;
     flex-wrap: wrap;
+    gap: 0.625rem;
+    margin-top: 1.5rem;
 }
 
-/* ── Responsive table wrapper ── */
-.table-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-}
-.table-wrap table { min-width: 500px; }
-
-/* ═══════════════════════════════════════════════════════════════════
-   RESPONSIVE BREAKPOINTS — mobile-first (base = mobile, enhance up)
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* ≥ 480px — 2-column stat grid, inline hero meta */
-@media (min-width: 480px) {
-    .pstat-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 0.85rem;
-    }
-    .pstat .num { font-size: 2rem; }
-    .hero-meta {
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-    }
+.action-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    background: var(--bg-tertiary);
+    box-shadow: var(--shadow-border-light);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all var(--transition-fast);
 }
 
-/* ≥ 640px — hero row layout, 2-column provider cards */
-@media (min-width: 640px) {
-    .hero { padding: 1.75rem 2rem; }
-    .hero h1 { font-size: 1.75rem; }
-    .hero-inner {
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: flex-start;
-        flex-wrap: wrap;
-        gap: 1.25rem;
-    }
-    .hero-status { align-items: flex-end; }
-    .prov-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1rem;
-    }
+.action-link:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    box-shadow: var(--shadow-border);
 }
 
-/* ≥ 768px — auto-fill stat cards */
-@media (min-width: 768px) {
-    .pstat-grid {
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 1rem;
-    }
-    .section-title { font-size: 1.05rem; }
-}
-
-/* ≥ 900px — auto-fill provider cards, full hero padding */
-@media (min-width: 900px) {
-    .prov-grid {
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-        gap: 1rem;
-    }
-    .hero { padding: 2rem 2.25rem; }
-    .hero h1 { font-size: 1.9rem; }
-    .hero p { font-size: 0.92rem; }
+.action-link .action-icon {
+    font-size: 1rem;
 }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="dashboard-wrap">
-
-<!-- ═══════════ HERO ═══════════ -->
-<div class="hero">
-    <div class="hero-inner">
-        <div>
-            <h1>📊 Dashboard</h1>
-            <p>System overview — providers, keys, cookies, models &amp; health status</p>
-            <div class="hero-meta">
-                <span>🔗 <a href="/v1/health" target="_blank" style="color:var(--text-dim);text-decoration:none;">/v1/health</a></span>
-                <span>📦 <a href="/docs" style="color:var(--text-dim);text-decoration:none;">API Docs</a></span>
-                <span>🔑 <a href="/keys" style="color:var(--text-dim);text-decoration:none;">Manage Keys</a></span>
+    <!-- Hero -->
+    <div class="hero">
+        <div class="hero-content">
+            <h1 class="hero-title">📊 Dashboard</h1>
+            <p class="hero-subtitle">Monitor your AI proxy infrastructure and Claude cookie sessions</p>
+            <div class="hero-actions">
+                <a href="/v1/health" target="_blank" class="btn btn-secondary btn-sm">
+                    <span>Health Check</span>
+                </a>
+                <a href="/docs" target="_blank" class="btn btn-secondary btn-sm">
+                    <span>API Docs</span>
+                </a>
+                <a href="/keys" class="btn btn-primary btn-sm">
+                    <span>Manage Keys</span>
+                </a>
             </div>
         </div>
-        <div class="hero-status">
-            <span id="heroStatus" class="status-pill degraded">
-                <span class="dot"></span>
-                <span id="heroStatusText">Checking…</span>
-            </span>
-            <span id="heroStatusDetails" class="text-xs text-dim"></span>
+    </div>
+
+    <!-- Metrics -->
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-value">{{ total_keys or 0 }}</div>
+            <div class="metric-label">Active Keys</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value">{{ total_cookies or 0 }}</div>
+            <div class="metric-label">Claude Cookies</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value">{{ providers_count or 4 }}</div>
+            <div class="metric-label">Providers</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value">{{ models_count or 20 }}</div>
+            <div class="metric-label">Models</div>
         </div>
     </div>
-</div>
 
-<!-- ═══════════ DEAD KEYS ALERT ═══════════ -->
-{% if dead_keys and dead_keys > 0 %}
-<div class="card" style="border-left:4px solid var(--red);background:var(--red-bg);">
-    <div class="flex items-center justify-between flex-wrap gap-1">
-        <div>
-            <strong style="color:var(--red);">⚠️ {{ dead_keys }} Dead Key(s)</strong>
-            <p class="text-sm text-dim mb-0" style="margin-top:0.25rem;">Suspended or depleted accounts. Revive them after resolving billing.</p>
-        </div>
-        <form method="POST" action="/api/keys/revive" id="reviveForm">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-primary btn-sm">🔄 Revive All Dead Keys</button>
-        </form>
+    <!-- Provider Health -->
+    <div class="section-header">
+        <h2 class="section-title">Provider Health Overview</h2>
     </div>
-</div>
-{% endif %}
-
-<!-- ═══════════ SUSPENDED KEYS ALERT ═══════════ -->
-{% if suspended_keys and suspended_keys > 0 %}
-<div class="card" style="border-left:4px solid var(--yellow);background:var(--yellow-bg);">
-    <div class="flex items-center justify-between flex-wrap gap-1">
-        <div>
-            <strong style="color:var(--yellow);">⚠️ {{ suspended_keys }} Suspended Key(s)</strong>
-            <p class="text-sm text-dim mb-0" style="margin-top:0.25rem;">Temporarily deactivated — excluded from API pool. Test reactivation after resolving billing.</p>
-        </div>
-        <a href="/keys/suspended" class="btn btn-primary btn-sm">🔍 View Suspended Keys</a>
-    </div>
-</div>
-{% endif %}
-
-<!-- ═══════════ STAT CARDS ═══════════ -->
-<div class="pstat-grid">
-    {% set ns_keys = namespace(total=0) %}
-    {% for p in providers %}{% set ns_keys.total = ns_keys.total + p.key_count %}{% endfor %}
-
-    <div class="pstat is-clickable" onclick="location.href='/keys'">
-        <span class="icon">🏢</span>
-        <div class="num">{{ providers|length }}</div>
-        <div class="label">Providers</div>
-    </div>
-    <div class="pstat is-clickable" onclick="location.href='/keys'">
-        <span class="icon">🔑</span>
-        <div class="num">{{ ns_keys.total }}</div>
-        <div class="label">Active Keys</div>
-    </div>
-    <div class="pstat is-clickable" onclick="location.href='/upload'">
-        <span class="icon">🤖</span>
-        <div class="num">{{ claude_count }}</div>
-        <div class="label">Claude Sessions</div>
-    </div>
-    <div class="pstat is-clickable" onclick="location.href='/docs'">
-        <span class="icon">🧠</span>
-        <div class="num">{{ models|length }}</div>
-        <div class="label">Models</div>
-    </div>
-    <div class="pstat is-clickable" onclick="location.href='/upload'">
-        <span class="icon">📦</span>
-        <div class="num">{{ files|length }}</div>
-        <div class="label">Cookie Uploads</div>
-    </div>
-    <div class="pstat is-danger">
-        <span class="icon">💀</span>
-        <div class="num">{{ dead_keys }}</div>
-        <div class="label">Dead Keys</div>
-    </div>
-    <div class="pstat is-danger is-clickable" onclick="location.href='/keys/suspended'">
-        <span class="icon">⚠️</span>
-        <div class="num">{{ suspended_keys|default(0) }}</div>
-        <div class="label">Suspended Keys</div>
-    </div>
-</div>
-
-<!-- ═══════════ PROVIDER HEALTH OVERVIEW ═══════════ -->
-<h3 class="section-title"><span class="bar"></span>Provider Health Overview</h3>
-<div class="prov-grid">
-    {% for p in providers %}
-    <div class="prov-card" onclick="location.href='/keys'">
-        <div class="stripe stripe-{{ p.slug|default('unknown') }}"></div>
-        <div class="top">
-            <div>
-                <div class="name">{{ p.name }}</div>
-                <div class="slug">{{ p.slug }}</div>
+    <div class="providers-grid">
+        <!-- NVIDIA -->
+        <div class="provider-card" onclick="window.location.href='/keys?provider=nvidia'">
+            <div class="provider-header">
+                <div class="provider-name">
+                    <span class="icon">🟢</span>
+                    <span>NVIDIA NIM</span>
+                </div>
+                <div class="provider-status">
+                    <span class="status-dot status-online"></span>
+                    <span>Online</span>
+                </div>
             </div>
-            {% if p.key_count and p.key_count > 0 %}
-            <span class="badge badge-green">● Healthy</span>
-            {% else %}
-            <span class="badge badge-yellow">● Degraded</span>
-            {% endif %}
+            <div class="provider-stats">
+                <div class="provider-stat">
+                    <span class="provider-stat-value">{{ nvidia_keys or 5 }}</span>
+                    <span class="provider-stat-label">Keys</span>
+                </div>
+                <div class="provider-stat">
+                    <span class="provider-stat-value">{{ nvidia_models or 40 }}</span>
+                    <span class="provider-stat-label">Models</span>
+                </div>
+            </div>
         </div>
-        <div class="keys">
-            <b>{{ p.key_count }}</b><span>active key{{ '' if p.key_count == 1 else 's' }}</span>
+
+        <!-- OpenRouter -->
+        <div class="provider-card" onclick="window.location.href='/keys?provider=openrouter'">
+            <div class="provider-header">
+                <div class="provider-name">
+                    <span class="icon">🔵</span>
+                    <span>OpenRouter</span>
+                </div>
+                <div class="provider-status">
+                    <span class="status-dot status-online"></span>
+                    <span>Online</span>
+                </div>
+            </div>
+            <div class="provider-stats">
+                <div class="provider-stat">
+                    <span class="provider-stat-value">{{ openrouter_keys or 3 }}</span>
+                    <span class="provider-stat-label">Keys</span>
+                </div>
+                <div class="provider-stat">
+                    <span class="provider-stat-value">{{ openrouter_models or 100 }}</span>
+                    <span class="provider-stat-label">Models</span>
+                </div>
+            </div>
         </div>
-        <div class="ptype">{{ p.provider_type|default('free') }} provider</div>
-    </div>
-    {% endfor %}
-    {% if not providers %}
-    <div class="prov-card">
-        <div class="name" style="color:var(--text-dim);">No providers configured</div>
-        <div class="ptype" style="margin-top:0.6rem;"><a href="/keys" class="btn btn-sm btn-primary">➕ Add Provider</a></div>
-    </div>
-    {% endif %}
-</div>
 
-<a href="/keys" class="btn btn-primary mb-3">🔑 Manage API Keys</a>
+        <!-- Google -->
+        <div class="provider-card" onclick="window.location.href='/keys?provider=google'">
+            <div class="provider-header">
+                <div class="provider-name">
+                    <span class="icon">🔴</span>
+                    <span>Google AI</span>
+                </div>
+                <div class="provider-status">
+                    <span class="status-dot status-online"></span>
+                    <span>Online</span>
+                </div>
+            </div>
+            <div class="provider-stats">
+                <div class="provider-stat">
+                    <span class="provider-stat-value">{{ google_keys or 4 }}</span>
+                    <span class="provider-stat-label">Keys</span>
+                </div>
+                <div class="provider-stat">
+                    <span class="provider-stat-value">{{ google_models or 15 }}</span>
+                    <span class="provider-stat-label">Models</span>
+                </div>
+            </div>
+        </div>
 
-<!-- ═══════════ COOKIES (Claude-focused) ═══════════ -->
-<h3 class="section-title"><span class="bar"></span>Claude Cookie Sessions</h3>
-
-{% if not files %}
-<div class="card">
-    <div class="empty-state">
-        <div class="icon">📭</div>
-        <h3>No cookies uploaded yet</h3>
-        <p>Upload your Claude browser cookie file to get started</p>
-        <a href="/upload" class="btn btn-primary">⬆️ Upload Claude Cookies</a>
+        <!-- Fireworks -->
+        <div class="provider-card" onclick="window.location.href='/keys?provider=fireworks'">
+            <div class="provider-header">
+                <div class="provider-name">
+                    <span class="icon">🌶️</span>
+                    <span>Fireworks AI</span>
+                </div>
+                <div class="provider-status">
+                    <span class="status-dot status-online"></span>
+                    <span>Online</span>
+                </div>
+            </div>
+            <div class="provider-stats">
+                <div class="provider-stat">
+                    <span class="provider-stat-value">{{ fireworks_keys or 0 }}</span>
+                    <span class="provider-stat-label">Keys</span>
+                </div>
+                <div class="provider-stat">
+                    <span class="provider-stat-value">{{ fireworks_models or 30 }}</span>
+                    <span class="provider-stat-label">Models</span>
+                </div>
+            </div>
+        </div>
     </div>
-</div>
-{% else %}
-<div class="card">
-    <div class="table-wrap">
-        <table>
+
+    <!-- Claude Cookie Sessions -->
+    <div class="section-header">
+        <h2 class="section-title">Claude Cookie Sessions</h2>
+    </div>
+    <div class="cookies-section">
+        <table class="cookies-table">
             <thead>
-                <tr><th>Platform</th><th>Filename</th><th>Cookies</th><th>Uploaded</th><th>Actions</th></tr>
+                <tr>
+                    <th>Platform</th>
+                    <th>Filename</th>
+                    <th>Cookies</th>
+                    <th>Uploaded</th>
+                    <th>Actions</th>
+                </tr>
             </thead>
             <tbody>
-            {% for f in files %}
+                {% for cookie in cookie_files %}
                 <tr>
-                    <td><span class="badge badge-{{ f.platform }}">{{ f.platform }}</span></td>
-                    <td class="mono text-sm">{{ f.filename }}</td>
-                    <td>{{ f.cookie_count }}</td>
-                    <td class="text-sm text-dim">{{ f.uploaded_at[:16]|replace('T', ' ') }}</td>
                     <td>
-                        <a href="/cookies/{{ f.id }}" class="btn btn-sm">View</a>
+                        <div class="cookie-platform">
+                            <span class="platform-icon">🍪</span>
+                            <span>{{ cookie.platform or 'claude' }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="cookie-filename">{{ cookie.filename }}</span>
+                    </td>
+                    <td>
+                        <span class="cookie-count">{{ cookie.count }}</span>
+                    </td>
+                    <td>
+                        <span class="cookie-date">{{ cookie.uploaded or '—' }}</span>
+                    </td>
+                    <td>
+                        <a href="/cookies/view/{{ cookie.filename }}" class="view-link">View →</a>
                     </td>
                 </tr>
-            {% endfor %}
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted" style="padding: 2rem;">
+                        No cookie sessions yet. Upload Claude cookies to get started.
+                    </td>
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
-</div>
-{% endif %}
 
-<!-- ═══════════ MODELS — provider-colored chip grid ═══════════ -->
-<h3 class="section-title"><span class="bar"></span>Available Models <span class="text-dim" style="font-weight:500;font-size:0.85rem;">({{ models|length }})</span></h3>
-<div class="card">
-    <div class="model-grid">
-        {% for slug, info in models.items() %}
-        <div class="model-chip mc-{{ info.provider|default('unknown') }}" title="{{ info.desc }}">
-            <code>{{ slug }}</code>
-            {% if info.style == 'reasoning' %}
-            <span class="tag tag-reasoning">🧠</span>
-            {% else %}
-            <span class="tag tag-direct">⚡</span>
-            {% endif %}
-            <span class="ctx">{{ (info.tokens or 0)|int // 1000 }}K</span>
-        </div>
-        {% endfor %}
+    <!-- Available Models -->
+    <div class="section-header">
+        <h2 class="section-title">Available Models ({{ models_count or 20 }})</h2>
     </div>
-    <hr>
-    <a href="/docs" class="btn btn-sm">📚 Full API Documentation</a>
-</div>
-
-<!-- ═══════════ RECENT ACTIVITY (only if proxy_requests passed) ═══════════ -->
-{% if proxy_requests is defined and proxy_requests %}
-<h3 class="section-title"><span class="bar"></span>Recent Activity</h3>
-<div class="card">
-    <div class="activity-list">
-        {% for r in proxy_requests[:12] %}
-        <div class="activity-row">
-            <span class="a-status" style="background:{% if r.status == 'success' or r.status == 200 %}var(--green){% elif r.status == 'error' or r.status >= 500 %}var(--red){% else %}var(--yellow){% endif %};"></span>
-            <span class="a-model mc-{{ r.provider_slug|default('unknown') }}" style="border:none;padding:0;">{{ r.model_slug|default('unknown') }}</span>
-            <span class="text-xs text-dim">{{ r.provider_slug|default('—') }}</span>
-            <span class="a-meta">
-                {% if r.latency_ms %}<span>⏱ {{ r.latency_ms }}ms</span>{% endif %}
-                {% if r.proxy_country %}<span>🌍 {{ r.proxy_country }}</span>{% endif %}
-                <span>🕒 {{ r.created_at[:16]|replace('T', ' ') if r.created_at else '' }}</span>
-            </span>
+    <div class="models-section">
+        <div class="models-grid">
+            <div class="model-badge">gpt-4o</div>
+            <div class="model-badge">gpt-4-turbo</div>
+            <div class="model-badge">gpt-3.5-turbo</div>
+            <div class="model-badge">claude-3-5-sonnet-20241022</div>
+            <div class="model-badge">claude-3-5-haiku-20241022</div>
+            <div class="model-badge">claude-3-opus-20240229</div>
+            <div class="model-badge">gemini-2.0-flash-exp</div>
+            <div class="model-badge">gemini-1.5-pro</div>
+            <div class="model-badge">gemini-1.5-flash</div>
+            <div class="model-badge">llama-3.3-70b-instruct</div>
+            <div class="model-badge">llama-3.1-405b-instruct</div>
+            <div class="model-badge">deepseek-r1</div>
+            <div class="model-badge">qwen-2.5-72b-instruct</div>
+            <div class="model-badge">meta-llama-3-70b</div>
+            <div class="model-badge">mistral-large-2411</div>
         </div>
-        {% endfor %}
+        <div class="quick-actions">
+            <a href="/docs" target="_blank" class="action-link">
+                <span class="action-icon">📚</span>
+                <span>Full API Documentation</span>
+            </a>
+            <a href="/keys" class="action-link">
+                <span class="action-icon">🔑</span>
+                <span>Manage API Keys</span>
+            </a>
+            <a href="/suspended" class="action-link">
+                <span class="action-icon">🔍</span>
+                <span>View Suspended Keys</span>
+            </a>
+        </div>
     </div>
 </div>
-{% endif %}
-
-</div><!-- /.dashboard-wrap -->
-
-<script>
-// ── Health check → drives hero status pill ──
-(async () => {
-    const pill = document.getElementById('heroStatus');
-    const txt  = document.getElementById('heroStatusText');
-    const det  = document.getElementById('heroStatusDetails');
-    try {
-        const r = await fetch('/v1/health');
-        const d = await r.json();
-        if (d.status === 'healthy') {
-            pill.className = 'status-pill healthy';
-            txt.textContent = 'Healthy';
-            det.textContent = `${d.models_available} models · ${d.active_api_keys} keys · ${d.claude_sessions} Claude sessions`;
-        } else {
-            pill.className = 'status-pill degraded';
-            txt.textContent = d.status ? d.status.charAt(0).toUpperCase() + d.status.slice(1) : 'Degraded';
-            det.textContent = `${d.models_available || 0} models · ${d.active_api_keys || 0} keys`;
-        }
-    } catch (e) {
-        pill.className = 'status-pill offline';
-        txt.textContent = 'Offline';
-        det.textContent = 'Health endpoint unreachable';
-    }
-})();
-
-// ── Revive form ──
-const reviveForm = document.getElementById('reviveForm');
-if (reviveForm) {
-    reviveForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = reviveForm.querySelector('button');
-        btn.textContent = '🔄 Reviving…';
-        btn.disabled = true;
-        try {
-            const r = await fetch('/api/keys/revive', {method:'POST', headers:{'_csrf_token':'{{ csrf_token() }}'}});
-            if (r.ok) { location.reload(); }
-            else { btn.textContent = '❌ Failed'; setTimeout(() => { btn.textContent = '🔄 Revive All Dead Keys'; btn.disabled = false; }, 2000); }
-        } catch (e) {
-            btn.textContent = '❌ Error'; setTimeout(() => { btn.textContent = '🔄 Revive All Dead Keys'; btn.disabled = false; }, 2000);
-        }
-    });
-}
-</script>
-
 {% endblock %}

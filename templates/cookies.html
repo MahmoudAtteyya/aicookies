@@ -1,67 +1,336 @@
 {% extends "base.html" %}
 {% block title %}Cookies — AI Proxy Gateway{% endblock %}
-
-{% block head %}
+{% block extra_css %}
 <style>
-.ck-hero {
-    position: relative; overflow: hidden; border-radius: var(--r-xl);
-    padding: 1.5rem 1.75rem; margin-bottom: 1.5rem;
-    background: radial-gradient(circle at 85% 25%, var(--accent-glow) 0%, transparent 55%),
-        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
-    border: 1px solid var(--border-accent); box-shadow: var(--shadow-md);
+/* ═══════════════════════════════════════════════════════════════════
+   COOKIES PAGE — Vercel shadow-as-border
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Hero ── */
+.cookies-hero {
+    margin-bottom: 2rem;
+    padding: 2rem;
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-card);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
 }
-.ck-hero h2 { font-size:1.4rem; font-weight:800; margin:0; display:flex; align-items:center; gap:0.5rem; }
-.ck-hero p { color:var(--text-dim); font-size:0.85rem; margin-top:0.3rem; }
-.ck-section-title { display:flex; align-items:center; gap:0.5rem; font-size:1.05rem; font-weight:700; margin:0 0 0.85rem; }
-.ck-section-title .bar { width:4px; height:1.1rem; border-radius:2px; background: linear-gradient(180deg, var(--accent), var(--accent-dim)); }
+
+.cookies-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 90% 10%, rgba(255,91,79,0.04) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+.cookies-hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+}
+
+.cookies-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.64px;
+    margin-bottom: 0.5rem;
+}
+
+.cookies-subtitle {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+}
+
+/* ── Upload Section ── */
+.cookies-upload {
+    margin-bottom: 2rem;
+}
+
+.upload-card {
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-card);
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+
+.upload-zone {
+    border: 2px dashed rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.upload-zone:hover {
+    border-color: rgba(255,255,255,0.15);
+    background: var(--bg-tertiary);
+}
+
+.upload-zone.drag-over {
+    border-color: var(--accent-primary);
+    background: var(--accent-bg);
+}
+
+.upload-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    display: block;
+}
+
+.upload-text {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.upload-hint {
+    font-size: 0.8125rem;
+    color: var(--text-tertiary);
+}
+
+.file-input {
+    display: none;
+}
+
+/* ── Cookies Table ── */
+.cookies-table-wrapper {
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.cookies-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.cookies-table thead {
+    background: var(--bg-tertiary);
+}
+
+.cookies-table th {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+    padding: 0.875rem 1rem;
+    text-align: left;
+}
+
+.cookies-table td {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    padding: 0.875rem 1rem;
+}
+
+.cookies-table tbody tr {
+    transition: background var(--transition-fast);
+}
+
+.cookies-table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+/* ── Filename Link ── */
+.filename-link {
+    color: var(--text-primary);
+    font-weight: 500;
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+.filename-link:hover {
+    color: var(--accent-primary);
+}
+
+/* ── Platform Badge ── */
+.platform-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-radius: 9999px;
+    background: rgba(188,140,255,0.08);
+    color: #bc8cff;
+    box-shadow: rgba(188,140,255,0.2) 0px 0px 0px 1px;
+}
+
+.platform-badge .badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #bc8cff;
+}
+
+/* ── Cookie Count ── */
+.cookie-count {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── Actions ── */
+.action-link {
+    color: var(--text-link);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+.action-link:hover {
+    color: var(--text-link-hover);
+}
+
+/* ── Empty State ── */
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+}
+
+.empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    display: block;
+}
+
+.empty-text {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.empty-hint {
+    font-size: 0.875rem;
+    color: var(--text-tertiary);
+}
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="cookies-wrapper">
+    <!-- Hero -->
+    <div class="cookies-hero">
+        <div class="cookies-hero-content">
+            <div>
+                <h1 class="cookies-title">🍪 Claude Cookie Sessions</h1>
+                <p class="cookies-subtitle">Manage Netscape-format cookie files for Claude session management</p>
+            </div>
+            <button onclick="document.getElementById('fileInput').click()" class="btn btn-primary btn-sm">
+                <span>＋ Upload Cookie File</span>
+            </button>
+        </div>
+    </div>
 
-<div class="ck-hero">
-    <h2>🍪 Claude Cookie Files</h2>
-    <p>Uploaded Netscape-format cookie files for Claude session management</p>
+    <!-- Upload Zone -->
+    <div class="cookies-upload">
+        <div class="upload-card">
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <span class="upload-icon">📁</span>
+                <div class="upload-text">Drop cookie files here or click to browse</div>
+                <div class="upload-hint">Netscape format (.txt) — max 5MB</div>
+            </div>
+            <input type="file" id="fileInput" class="file-input" accept=".txt" multiple>
+        </div>
+    </div>
+
+    <!-- Cookies Table -->
+    <div class="cookies-table-wrapper">
+        <table class="cookies-table">
+            <thead>
+                <tr>
+                    <th>Filename</th>
+                    <th>Platform</th>
+                    <th>Cookies</th>
+                    <th>Uploaded</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for file in files %}
+                <tr>
+                    <td>
+                        <a href="/cookies/view/{{ file.id }}" class="filename-link">
+                            {{ file.filename }}
+                        </a>
+                    </td>
+                    <td>
+                        <span class="platform-badge">
+                            <span class="badge-dot"></span>
+                            {{ file.platform or 'claude' }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="cookie-count">{{ file.cookie_count }}</span>
+                    </td>
+                    <td>
+                        <span class="text-muted text-small">{{ file.uploaded_at[:16].replace('T', ' ') }}</span>
+                    </td>
+                    <td>
+                        <a href="/api/cookies/raw/{{ file.id }}" target="_blank" class="action-link">
+                            View Raw →
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5">
+                        <div class="empty-state">
+                            <span class="empty-icon">📭</span>
+                            <div class="empty-text">No cookie files yet</div>
+                            <div class="empty-hint">Upload your first Claude cookie file above</div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
-{% if files %}
-<div class="card">
-    <table>
-        <thead>
-            <tr>
-                <th>Filename</th>
-                <th>Platform</th>
-                <th>Cookies</th>
-                <th>Uploaded</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for f in files %}
-            <tr>
-                <td>
-                    <a href="/cookies/{{ f.id }}" style="color:var(--accent);text-decoration:none;font-weight:600;">
-                        {{ f.filename }}
-                    </a>
-                </td>
-                <td><span class="badge badge-{{ f.platform }}">{{ f.platform }}</span></td>
-                <td>{{ f.cookie_count }}</td>
-                <td class="text-sm">{{ f.uploaded_at[:16]|replace('T', ' ') }}</td>
-                <td>
-                    <a href="/api/cookies/raw/{{ f.id }}" class="btn btn-sm" target="_blank">📋 Raw</a>
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% else %}
-<div class="empty-state">
-    <div class="icon">📭</div>
-    <h3>No cookie files</h3>
-    <p>Upload Claude cookie files to enable session management.</p>
-    <a href="/upload" class="btn btn-primary">⬆️ Upload Cookies</a>
-</div>
-{% endif %}
+<script>
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
 
+// Drag and drop
+uploadZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    uploadZone.classList.add('drag-over');
+});
+
+uploadZone.addEventListener('dragleave', function() {
+    uploadZone.classList.remove('drag-over');
+});
+
+uploadZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    
+    const files = e.dataTransfer.files;
+    handleFiles(files);
+});
+
+fileInput.addEventListener('change', function() {
+    handleFiles(this.files);
+});
+
+function handleFiles(files) {
+    // TODO: Implement file upload
+    console.log('Files to upload:', files);
+    alert('Upload functionality coming soon!');
+}
+</script>
 {% endblock %}

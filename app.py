@@ -301,6 +301,12 @@ def init_db():
         ("fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "prepaid",
          '["accounts/fireworks/models/glm-5p2","accounts/fireworks/models/kimi-k2p7-code","accounts/fireworks/models/qwen3p7-plus","accounts/fireworks/models/deepseek-v4-pro"]',
          "$6 per account. When depleted → permanently dead. OpenAI-compatible."),
+        ("openai", "OpenAI", "https://api.openai.com/v1", "paid",
+         '["gpt-4o","gpt-4o-mini","gpt-4-turbo","o1-pro","o3-mini"]',
+         "Paid API keys. Keys start with 'sk-', 'sk-proj-', or 'sk-svcacct-'."),
+        ("claude", "Claude (Anthropic)", "https://api.anthropic.com/v1", "cookie",
+         '["claude-sonnet-4-20250514","claude-3-5-sonnet-20241022"]',
+         "Cookie-based access or API keys. Keys start with 'sk-ant-'."),
     ]
 
     active_slugs = {p[0] for p in providers}

@@ -4166,18 +4166,54 @@ def keys_page():
         return redirect(url_for("keys_page"))
     
     providers = conn.execute("SELECT * FROM api_providers ORDER BY name").fetchall()
-    keys = conn.execute("""SELECT k.*, p.name as provider_name, p.slug as provider_slug, p.provider_type
+    keys = conn.execute("""SELECT k.id, k.provider_id, k.label, k.key_value, k.is_active, k.dead, 
+        k.usage_count, k.error_count, k.last_used_at, k.last_error_at, k.last_error_msg, k.created_at, k.suspended,
+        p.name as provider_name, p.slug as provider_slug, p.provider_type,
+        CASE p.slug
+            WHEN 'anthropic' THEN '🤖'
+            WHEN 'openai' THEN '🧠'
+            WHEN 'google' THEN '🔵'
+            WHEN 'mistral' THEN '🌪️'
+            WHEN 'fireworks' THEN '🎆'
+            WHEN 'groq' THEN '⚡'
+            WHEN 'perplexity' THEN '🔍'
+            WHEN 'cohere' THEN '🧩'
+            WHEN 'nvidia' THEN '💚'
+            WHEN 'openrouter' THEN '🔀'
+            ELSE '🔑'
+        END as provider_icon
         FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
         WHERE k.suspended = 0
         ORDER BY p.name, k.dead ASC, k.created_at DESC""").fetchall()
+    
+    # Convert sqlite3.Row objects to dicts for template access
+    keys_list = [dict(k) for k in keys]
+    
     providers_parsed = []
     for p in providers:
         pd = dict(p)
+        # Add icon to provider
+        pd["icon"] = {
+            'anthropic': '🤖', 'openai': '🧠', 'google': '🔵', 'mistral': '🌪️',
+            'fireworks': '🎆', 'groq': '⚡', 'perplexity': '🔍', 'cohere': '🧩',
+            'nvidia': '💚', 'openrouter': '🔀'
+        }.get(pd.get('slug', ''), '🔑')
         try: pd["free_models_parsed"] = json.loads(p["free_models"]) if p["free_models"] else []
         except: pd["free_models_parsed"] = []
         providers_parsed.append(pd)
     conn.close()
-    return render_template("keys.html", providers=providers_parsed, keys=keys)
+    
+    # Calculate stats
+    active_count = sum(1 for k in keys_list if k['is_active'] and not k['dead'])
+    dead_count = sum(1 for k in keys_list if k['dead'])
+    
+    return render_template("keys.html", 
+        providers=providers_parsed, 
+        keys=keys_list,
+        active_count=active_count,
+        dead_count=dead_count,
+        total_keys=len(keys_list),
+        current_provider='all')
 
 @app.route("/delete-key/<int:key_id>", methods=["POST"])
 @login_required
@@ -4192,13 +4228,31 @@ def delete_key(key_id):
 def suspended_keys_page():
     """View suspended keys (temporarily deactivated, admin can reactivate)."""
     conn = get_db()
-    keys = conn.execute("""SELECT k.*, p.name as provider_name, p.slug as provider_slug, p.provider_type
+    keys = conn.execute("""SELECT k.id, k.provider_id, k.label, k.key_value, k.is_active, k.dead, 
+        k.usage_count, k.error_count, k.last_used_at, k.last_error_at, k.last_error_msg, k.created_at, k.suspended,
+        p.name as provider_name, p.slug as provider_slug, p.provider_type,
+        CASE p.slug
+            WHEN 'anthropic' THEN '🤖'
+            WHEN 'openai' THEN '🧠'
+            WHEN 'google' THEN '🔵'
+            WHEN 'mistral' THEN '🌪️'
+            WHEN 'fireworks' THEN '🎆'
+            WHEN 'groq' THEN '⚡'
+            WHEN 'perplexity' THEN '🔍'
+            WHEN 'cohere' THEN '🧩'
+            WHEN 'nvidia' THEN '💚'
+            WHEN 'openrouter' THEN '🔀'
+            ELSE '🔑'
+        END as provider_icon
         FROM api_keys k JOIN api_providers p ON k.provider_id = p.id
         WHERE k.suspended = 1
         ORDER BY p.name, k.last_error_at DESC""").fetchall()
 
+    # Convert to dicts for template
+    keys_list = [dict(k) for k in keys]
+
     # Also get cached account info for each suspended key
-    key_ids = [k["id"] for k in keys]
+    key_ids = [k["id"] for k in keys_list]
     account_infos = {}
     if key_ids:
         placeholders = ",".join("?" * len(key_ids))
@@ -4210,8 +4264,8 @@ def suspended_keys_page():
             account_infos[a["key_id"]] = dict(a)
     conn.close()
 
-    suspended_count = len(keys)
-    return render_template("suspended.html", keys=keys, suspended_count=suspended_count,
+    suspended_count = len(keys_list)
+    return render_template("suspended.html", suspended_keys=keys_list, suspended_count=suspended_count,
                           account_infos=account_infos)
 
 # ── Reactivate suspended key ────────────────────────────────────────────

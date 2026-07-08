@@ -1,597 +1,162 @@
 {% extends "base.html" %}
+
 {% block title %}Dashboard — AI Proxy Gateway{% endblock %}
-{% block extra_css %}
-<style>
-/* ═══════════════════════════════════════════════════════════════════
-   DASHBOARD - Provider Health Cards (Vercel shadow-as-border)
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* ── Hero Section ── */
-.hero {
-    position: relative;
-    margin-bottom: 2rem;
-    padding: 2rem;
-    background: var(--bg-secondary);
-    box-shadow: var(--shadow-card);
-    border-radius: 12px;
-    overflow: hidden;
-}
-
-.hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: 
-        radial-gradient(circle at 90% 10%, rgba(255,91,79,0.05) 0%, transparent 50%),
-        radial-gradient(circle at 10% 90%, rgba(0,112,243,0.04) 0%, transparent 50%);
-    pointer-events: none;
-}
-
-.hero-content {
-    position: relative;
-    z-index: 1;
-}
-
-.hero-title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    letter-spacing: -0.64px;
-    margin-bottom: 0.5rem;
-}
-
-.hero-subtitle {
-    font-size: 0.9375rem;
-    color: var(--text-secondary);
-    margin-bottom: 1.5rem;
-}
-
-.hero-actions {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-}
-
-/* ── Metrics Grid ── */
-.metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-}
-
-.metric-card {
-    background: var(--bg-secondary);
-    box-shadow: var(--shadow-card);
-    border-radius: 8px;
-    padding: 1.25rem 1.5rem;
-    transition: box-shadow var(--transition-base);
-    position: relative;
-    overflow: hidden;
-}
-
-.metric-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 3px;
-    height: 100%;
-    background: var(--accent-primary);
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-}
-
-.metric-card:hover {
-    box-shadow: var(--shadow-card-hover);
-}
-
-.metric-card:hover::before {
-    opacity: 1;
-}
-
-.metric-value {
-    font-size: 2rem;
-    font-weight: 600;
-    letter-spacing: -1px;
-    margin-bottom: 0.25rem;
-    line-height: 1;
-}
-
-.metric-label {
-    font-size: 0.8125rem;
-    color: var(--text-tertiary);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-/* ── Provider Health Cards ── */
-.section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-}
-
-.section-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-tertiary);
-    margin: 0;
-}
-
-.providers-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-}
-
-.provider-card {
-    background: var(--bg-secondary);
-    box-shadow: var(--shadow-card);
-    border-radius: 8px;
-    padding: 1.25rem;
-    transition: all var(--transition-base);
-    cursor: pointer;
-}
-
-.provider-card:hover {
-    box-shadow: var(--shadow-card-hover);
-    transform: translateY(-2px);
-}
-
-.provider-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-}
-
-.provider-name {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    font-weight: 600;
-    font-size: 0.9375rem;
-    letter-spacing: -0.24px;
-}
-
-.provider-name .icon {
-    font-size: 1.125rem;
-}
-
-.provider-status {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-.status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-.status-online {
-    background: var(--success);
-    box-shadow: 0 0 8px var(--success);
-}
-
-.status-offline {
-    background: var(--error);
-    box-shadow: 0 0 8px var(--error);
-}
-
-.status-degraded {
-    background: var(--warning);
-    box-shadow: 0 0 8px var(--warning);
-}
-
-.provider-stats {
-    display: flex;
-    gap: 1.5rem;
-}
-
-.provider-stat {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.provider-stat-value {
-    font-size: 1.125rem;
-    font-weight: 600;
-    letter-spacing: -0.48px;
-}
-
-.provider-stat-label {
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
-}
-
-/* ── Cookies Table ── */
-.cookies-section {
-    margin-bottom: 2rem;
-}
-
-.cookies-table {
-    width: 100%;
-    background: var(--bg-secondary);
-    box-shadow: var(--shadow-border);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.cookies-table thead {
-    background: var(--bg-tertiary);
-}
-
-.cookies-table th {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-tertiary);
-    padding: 0.875rem 1rem;
-    text-align: left;
-}
-
-.cookies-table td {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    padding: 0.875rem 1rem;
-}
-
-.cookies-table tbody tr {
-    transition: background var(--transition-fast);
-}
-
-.cookies-table tbody tr:hover {
-    background: var(--bg-tertiary);
-}
-
-.cookie-platform {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.cookie-platform .platform-icon {
-    font-size: 1rem;
-}
-
-.cookie-filename {
-    font-family: var(--font-mono);
-    font-size: 0.8125rem;
-    color: var(--text-primary);
-}
-
-.cookie-count {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.cookie-date {
-    font-size: 0.8125rem;
-    color: var(--text-tertiary);
-}
-
-.view-link {
-    color: var(--text-link);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: color var(--transition-fast);
-}
-
-.view-link:hover {
-    color: var(--text-link-hover);
-}
-
-/* ── Available Models ── */
-.models-section {
-    margin-bottom: 2rem;
-}
-
-.models-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 0.5rem;
-}
-
-.model-badge {
-    padding: 0.5rem 0.875rem;
-    background: var(--bg-tertiary);
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-family: var(--font-mono);
-    color: var(--text-secondary);
-    box-shadow: var(--shadow-border-light);
-    transition: all var(--transition-fast);
-}
-
-.model-badge:hover {
-    color: var(--text-primary);
-    background: var(--bg-hover);
-    box-shadow: var(--shadow-border);
-}
-
-/* ── Quick Actions ── */
-.quick-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.625rem;
-    margin-top: 1.5rem;
-}
-
-.action-link {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.875rem;
-    background: var(--bg-tertiary);
-    box-shadow: var(--shadow-border-light);
-    border-radius: 6px;
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.875rem;
-    font-weight: 500;
-    transition: all var(--transition-fast);
-}
-
-.action-link:hover {
-    color: var(--text-primary);
-    background: var(--bg-hover);
-    box-shadow: var(--shadow-border);
-}
-
-.action-link .action-icon {
-    font-size: 1rem;
-}
-</style>
-{% endblock %}
 
 {% block content %}
-<div class="dashboard-wrap">
-    <!-- Hero -->
-    <div class="hero">
-        <div class="hero-content">
-            <h1 class="hero-title">📊 Dashboard</h1>
-            <p class="hero-subtitle">Monitor your AI proxy infrastructure and Claude cookie sessions</p>
-            <div class="hero-actions">
-                <a href="/v1/health" target="_blank" class="btn btn-secondary btn-sm">
-                    <span>Health Check</span>
-                </a>
-                <a href="/docs" target="_blank" class="btn btn-secondary btn-sm">
-                    <span>API Docs</span>
-                </a>
-                <a href="/keys" class="btn btn-primary btn-sm">
-                    <span>Manage Keys</span>
-                </a>
-            </div>
+<!-- ═══════════════════════════════════════════════════════════════════
+     DASHBOARD — Metrics, Charts, Provider Status
+     ═══════════════════════════════════════════════════════════════════ -->
+<div style="margin-bottom: 2rem;">
+    <h1>Dashboard</h1>
+    <p style="margin-top: 0.5rem;">
+        System health and provider status
+    </p>
+</div>
+
+<!-- Metrics Grid -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    <div class="card card-hover">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="font-size: 0.8125rem; font-weight: 500; color: var(--text-tertiary);">TOTAL KEYS</span>
+            <span style="font-size: 1.25rem;">🔑</span>
+        </div>
+        <div style="font-size: 2rem; font-weight: 600; letter-spacing: -0.05em; color: var(--text-primary);">
+            {{ stats.total }}
         </div>
     </div>
 
-    <!-- Metrics -->
-    <div class="metrics-grid">
-        <div class="metric-card">
-            <div class="metric-value">{{ total_keys or 0 }}</div>
-            <div class="metric-label">Active Keys</div>
+    <div class="card card-hover">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="font-size: 0.8125rem; font-weight: 500; color: var(--text-tertiary);">ACTIVE</span>
+            <span style="font-size: 1.25rem;">✅</span>
         </div>
-        <div class="metric-card">
-            <div class="metric-value">{{ total_cookies or 0 }}</div>
-            <div class="metric-label">Claude Cookies</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{{ providers_count or 4 }}</div>
-            <div class="metric-label">Providers</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{{ models_count or 20 }}</div>
-            <div class="metric-label">Models</div>
+        <div style="font-size: 2rem; font-weight: 600; letter-spacing: -0.05em; color: #30a14e;">
+            {{ stats.active }}
         </div>
     </div>
 
-    <!-- Provider Health -->
-    <div class="section-header">
-        <h2 class="section-title">Provider Health Overview</h2>
-    </div>
-    <div class="providers-grid">
-        <!-- NVIDIA -->
-        <div class="provider-card" onclick="window.location.href='/keys?provider=nvidia'">
-            <div class="provider-header">
-                <div class="provider-name">
-                    <span class="icon">🟢</span>
-                    <span>NVIDIA NIM</span>
-                </div>
-                <div class="provider-status">
-                    <span class="status-dot status-online"></span>
-                    <span>Online</span>
-                </div>
-            </div>
-            <div class="provider-stats">
-                <div class="provider-stat">
-                    <span class="provider-stat-value">{{ nvidia_keys or 5 }}</span>
-                    <span class="provider-stat-label">Keys</span>
-                </div>
-                <div class="provider-stat">
-                    <span class="provider-stat-value">{{ nvidia_models or 40 }}</span>
-                    <span class="provider-stat-label">Models</span>
-                </div>
-            </div>
+    <div class="card card-hover">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="font-size: 0.8125rem; font-weight: 500; color: var(--text-tertiary);">DEAD</span>
+            <span style="font-size: 1.25rem;">❌</span>
         </div>
-
-        <!-- OpenRouter -->
-        <div class="provider-card" onclick="window.location.href='/keys?provider=openrouter'">
-            <div class="provider-header">
-                <div class="provider-name">
-                    <span class="icon">🔵</span>
-                    <span>OpenRouter</span>
-                </div>
-                <div class="provider-status">
-                    <span class="status-dot status-online"></span>
-                    <span>Online</span>
-                </div>
-            </div>
-            <div class="provider-stats">
-                <div class="provider-stat">
-                    <span class="provider-stat-value">{{ openrouter_keys or 3 }}</span>
-                    <span class="provider-stat-label">Keys</span>
-                </div>
-                <div class="provider-stat">
-                    <span class="provider-stat-value">{{ openrouter_models or 100 }}</span>
-                    <span class="provider-stat-label">Models</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Google -->
-        <div class="provider-card" onclick="window.location.href='/keys?provider=google'">
-            <div class="provider-header">
-                <div class="provider-name">
-                    <span class="icon">🔴</span>
-                    <span>Google AI</span>
-                </div>
-                <div class="provider-status">
-                    <span class="status-dot status-online"></span>
-                    <span>Online</span>
-                </div>
-            </div>
-            <div class="provider-stats">
-                <div class="provider-stat">
-                    <span class="provider-stat-value">{{ google_keys or 4 }}</span>
-                    <span class="provider-stat-label">Keys</span>
-                </div>
-                <div class="provider-stat">
-                    <span class="provider-stat-value">{{ google_models or 15 }}</span>
-                    <span class="provider-stat-label">Models</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Fireworks -->
-        <div class="provider-card" onclick="window.location.href='/keys?provider=fireworks'">
-            <div class="provider-header">
-                <div class="provider-name">
-                    <span class="icon">🌶️</span>
-                    <span>Fireworks AI</span>
-                </div>
-                <div class="provider-status">
-                    <span class="status-dot status-online"></span>
-                    <span>Online</span>
-                </div>
-            </div>
-            <div class="provider-stats">
-                <div class="provider-stat">
-                    <span class="provider-stat-value">{{ fireworks_keys or 0 }}</span>
-                    <span class="provider-stat-label">Keys</span>
-                </div>
-                <div class="provider-stat">
-                    <span class="provider-stat-value">{{ fireworks_models or 30 }}</span>
-                    <span class="provider-stat-label">Models</span>
-                </div>
-            </div>
+        <div style="font-size: 2rem; font-weight: 600; letter-spacing: -0.05em; color: var(--text-tertiary);">
+            {{ stats.dead }}
         </div>
     </div>
 
-    <!-- Claude Cookie Sessions -->
-    <div class="section-header">
-        <h2 class="section-title">Claude Cookie Sessions</h2>
+    <div class="card card-hover">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+            <span style="font-size: 0.8125rem; font-weight: 500; color: var(--text-tertiary);">USAGE</span>
+            <span style="font-size: 1.25rem;">📈</span>
+        </div>
+        <div style="font-size: 2rem; font-weight: 600; letter-spacing: -0.05em; color: var(--text-primary);">
+            {{ "{:,}".format(stats.usage) }}
+        </div>
     </div>
-    <div class="cookies-section">
-        <table class="cookies-table">
+</div>
+
+<!-- Provider Health Cards -->
+<div style="margin-bottom: 2rem;">
+    <h3 style="margin-bottom: 1rem;">Provider Health</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+        {% for health in providers_health %}
+        <div class="card card-hover" style="padding: 1.25rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 1.5rem;">{{ health.icon }}</span>
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.9375rem;">{{ health.name }}</div>
+                        <div style="font-size: 0.8125rem; color: var(--text-tertiary);">{{ health.slug }}</div>
+                    </div>
+                </div>
+                {% if health.status == 'operational' %}
+                <span class="badge badge-success">
+                    <span>●</span>
+                    <span>Operational</span>
+                </span>
+                {% elif health.status == 'degraded' %}
+                <span class="badge badge-warning">
+                    <span>●</span>
+                    <span>Degraded</span>
+                </span>
+                {% else %}
+                <span style="background: rgba(248,81,73,0.1); color: #f85149; padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; box-shadow: var(--shadow-border);">
+                    <span>●</span>
+                    <span>Offline</span>
+                </span>
+                {% endif %}
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; font-size: 0.8125rem;">
+                <div>
+                    <div style="color: var(--text-tertiary); margin-bottom: 0.25rem;">Active</div>
+                    <div style="font-weight: 600; color: #30a14e;">{{ health.active }}</div>
+                </div>
+                <div>
+                    <div style="color: var(--text-tertiary); margin-bottom: 0.25rem;">Dead</div>
+                    <div style="font-weight: 600; color: var(--text-tertiary);">{{ health.dead }}</div>
+                </div>
+                <div>
+                    <div style="color: var(--text-tertiary); margin-bottom: 0.25rem;">Usage</div>
+                    <div style="font-weight: 600;">{{ "{:,}".format(health.usage) }}</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div style="margin-bottom: 2rem;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+        <h3>Recent Activity</h3>
+        <a href="/keys" class="btn btn-secondary btn-sm">View All Keys →</a>
+    </div>
+
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <table>
             <thead>
                 <tr>
-                    <th>Platform</th>
-                    <th>Filename</th>
-                    <th>Cookies</th>
-                    <th>Uploaded</th>
-                    <th>Actions</th>
+                    <th>Provider</th>
+                    <th>Status</th>
+                    <th>Usage</th>
+                    <th>Last Used</th>
                 </tr>
             </thead>
             <tbody>
-                {% for cookie in cookie_files %}
+                {% for key in recent_keys %}
                 <tr>
                     <td>
-                        <div class="cookie-platform">
-                            <span class="platform-icon">🍪</span>
-                            <span>{{ cookie.platform or 'claude' }}</span>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span>{{ key.provider_icon }}</span>
+                            <span style="font-weight: 500;">{{ key.provider_name }}</span>
                         </div>
                     </td>
                     <td>
-                        <span class="cookie-filename">{{ cookie.filename }}</span>
+                        {% if key.is_active and not key.dead %}
+                        <span class="badge badge-success">Active</span>
+                        {% elif key.dead %}
+                        <span style="background: rgba(248,81,73,0.1); color: #f85149; padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; box-shadow: var(--shadow-border);">Dead</span>
+                        {% else %}
+                        <span class="badge badge-warning">Suspended</span>
+                        {% endif %}
                     </td>
-                    <td>
-                        <span class="cookie-count">{{ cookie.count }}</span>
-                    </td>
-                    <td>
-                        <span class="cookie-date">{{ cookie.uploaded or '—' }}</span>
-                    </td>
-                    <td>
-                        <a href="/cookies/view/{{ cookie.filename }}" class="view-link">View →</a>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="5" class="text-center text-muted" style="padding: 2rem;">
-                        No cookie sessions yet. Upload Claude cookies to get started.
+                    <td style="font-family: var(--font-mono);">{{ "{:,}".format(key.usage_count) }}</td>
+                    <td style="color: var(--text-tertiary);">
+                        {{ key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'Never' }}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+</div>
 
-    <!-- Available Models -->
-    <div class="section-header">
-        <h2 class="section-title">Available Models ({{ models_count or 20 }})</h2>
-    </div>
-    <div class="models-section">
-        <div class="models-grid">
-            <div class="model-badge">gpt-4o</div>
-            <div class="model-badge">gpt-4-turbo</div>
-            <div class="model-badge">gpt-3.5-turbo</div>
-            <div class="model-badge">claude-3-5-sonnet-20241022</div>
-            <div class="model-badge">claude-3-5-haiku-20241022</div>
-            <div class="model-badge">claude-3-opus-20240229</div>
-            <div class="model-badge">gemini-2.0-flash-exp</div>
-            <div class="model-badge">gemini-1.5-pro</div>
-            <div class="model-badge">gemini-1.5-flash</div>
-            <div class="model-badge">llama-3.3-70b-instruct</div>
-            <div class="model-badge">llama-3.1-405b-instruct</div>
-            <div class="model-badge">deepseek-r1</div>
-            <div class="model-badge">qwen-2.5-72b-instruct</div>
-            <div class="model-badge">meta-llama-3-70b</div>
-            <div class="model-badge">mistral-large-2411</div>
-        </div>
-        <div class="quick-actions">
-            <a href="/docs" target="_blank" class="action-link">
-                <span class="action-icon">📚</span>
-                <span>Full API Documentation</span>
-            </a>
-            <a href="/keys" class="action-link">
-                <span class="action-icon">🔑</span>
-                <span>Manage API Keys</span>
-            </a>
-            <a href="/suspended" class="action-link">
-                <span class="action-icon">🔍</span>
-                <span>View Suspended Keys</span>
-            </a>
-        </div>
-    </div>
+<!-- Quick Actions -->
+<div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+    <a href="/cookies" class="btn btn-primary">🍪 Manage Cookies</a>
+    <a href="/keys" class="btn btn-secondary">🔑 View Keys</a>
+    <a href="/docs" target="_blank" class="btn btn-secondary">📚 API Docs</a>
 </div>
 {% endblock %}

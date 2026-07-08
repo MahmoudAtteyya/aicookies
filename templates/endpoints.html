@@ -1,413 +1,127 @@
 {% extends "base.html" %}
 
-{% block title %}Custom Endpoints — AI Proxy Gateway{% endblock %}
-
-{% block head %}
-<style>
-/* ═══════════════════════════════════════════════════════════════════
-   PREMIUM ENDPOINTS PAGE — scoped styles (uses base.html CSS vars)
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* ── Hero ── */
-.ep-hero {
-    position: relative;
-    overflow: hidden;
-    border-radius: var(--r-xl);
-    padding: 1.75rem 2rem;
-    margin-bottom: 1.5rem;
-    background:
-        radial-gradient(circle at 80% 30%, var(--accent-glow) 0%, transparent 55%),
-        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
-    border: 1px solid var(--border-accent);
-    box-shadow: var(--shadow-glow), var(--shadow-md);
-}
-.ep-hero::after {
-    content: '';
-    position: absolute;
-    top: -50%; right: -10%;
-    width: 350px; height: 350px;
-    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-    border-radius: 50%;
-    pointer-events: none;
-}
-.ep-hero-inner { position: relative; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
-.ep-hero h2 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; margin: 0; background: linear-gradient(135deg, var(--text), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.ep-hero p { color: var(--text-dim); margin: 0.3rem 0 0; font-size: 0.88rem; }
-
-/* ── Stat cards ── */
-.ep-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-.ep-stat {
-    position: relative;
-    background: linear-gradient(160deg, var(--bg-card) 0%, var(--bg-elevated) 100%);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 1.1rem 1.1rem 0.9rem;
-    overflow: hidden;
-    transition: transform var(--t-med), box-shadow var(--t-med), border-color var(--t-med);
-}
-.ep-stat::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent), var(--blue)); opacity: 0; transition: opacity var(--t-med); }
-.ep-stat:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--border-light); }
-.ep-stat:hover::before { opacity: 1; }
-.ep-stat .icon { font-size: 1.2rem; margin-bottom: 0.35rem; display: block; }
-.ep-stat .num { font-size: 1.8rem; font-weight: 800; line-height: 1.1; background: linear-gradient(135deg, var(--accent), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.ep-stat .label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-top: 0.2rem; }
-
-/* ── Endpoint card ── */
-.ep-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 1.25rem 1.35rem;
-    margin-bottom: 1rem;
-    transition: transform var(--t-med), box-shadow var(--t-med), border-color var(--t-med);
-    position: relative;
-    overflow: hidden;
-}
-.ep-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-light); }
-.ep-card.inactive { opacity: 0.55; }
-.ep-card .ep-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; }
-.ep-card .ep-info { flex: 1; min-width: 280px; }
-.ep-card .ep-title-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.ep-card h3 { margin: 0; font-size: 1.05rem; font-weight: 700; }
-.ep-card .ep-desc { color: var(--text-dim); margin: 0.4rem 0 0; font-size: 0.85rem; }
-.ep-url {
-    margin-top: 0.65rem;
-    padding: 0.55rem 0.8rem;
-    background: var(--bg-elevated);
-    border-radius: var(--r-sm);
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    border: 1px solid var(--border);
-}
-.ep-url .method { color: var(--green); font-weight: 700; font-size: 0.72rem; }
-.ep-url .path { color: var(--accent); }
-.ep-url .copy-btn { margin-left: auto; background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 0.85rem; transition: color var(--t-fast); }
-.ep-url .copy-btn:hover { color: var(--text); }
-.ep-prompt-box {
-    margin-top: 0.5rem;
-    padding: 0.55rem 0.8rem;
-    background: var(--bg-elevated);
-    border-radius: var(--r-sm);
-    border-left: 3px solid var(--accent);
-}
-.ep-prompt-label { font-size: 0.65rem; color: var(--text-dim); margin-bottom: 0.2rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
-.ep-prompt-text { font-size: 0.78rem; color: var(--text); white-space: pre-wrap; max-height: 70px; overflow: hidden; text-overflow: ellipsis; }
-.ep-meta-row { display: flex; gap: 0.85rem; margin-top: 0.5rem; font-size: 0.72rem; color: var(--text-dim); flex-wrap: wrap; }
-.ep-meta-row span { display: inline-flex; align-items: center; gap: 0.25rem; }
-.ep-actions { display: flex; flex-direction: column; gap: 0.4rem; min-width: 110px; }
-
-/* ── Empty state ── */
-.ep-empty {
-    text-align: center;
-    padding: 3rem 1rem;
-    border: 1px dashed var(--border);
-    border-radius: var(--r-lg);
-    background: var(--bg-card);
-}
-.ep-empty .icon { font-size: 3rem; margin-bottom: 0.75rem; }
-.ep-empty h3 { margin: 0 0 0.4rem; }
-.ep-empty p { color: var(--text-dim); margin: 0 0 1.25rem; font-size: 0.85rem; }
-
-/* ── Modal ── */
-.ep-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 200; align-items: center; justify-content: center; padding: 2rem; backdrop-filter: blur(4px); }
-.ep-modal-bg.show { display: flex; animation: pageFadeIn 0.25s ease; }
-.ep-modal {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-xl);
-    max-width: 680px;
-    width: 100%;
-    max-height: 90vh;
-    overflow-y: auto;
-    padding: 2rem;
-    box-shadow: var(--shadow-lg);
-    animation: modalSlide 0.3s ease;
-}
-@keyframes modalSlide { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.ep-modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-.ep-modal-header h3 { margin: 0; font-size: 1.2rem; }
-.ep-modal-close { background: none; border: none; color: var(--text-dim); font-size: 1.4rem; cursor: pointer; transition: color var(--t-fast); }
-.ep-modal-close:hover { color: var(--text); }
-.ep-form-group { margin-bottom: 1rem; }
-.ep-form-group label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.3rem; font-weight: 500; }
-.ep-form-group label .req { color: var(--red); }
-.ep-form-group input, .ep-form-group select, .ep-form-group textarea {
-    width: 100%; padding: 0.6rem 0.85rem; background: var(--bg-elevated);
-    border: 1px solid var(--border); border-radius: var(--r-sm); color: var(--text);
-    font-family: inherit; font-size: 0.875rem; transition: border-color var(--t-fast);
-}
-.ep-form-group input:focus, .ep-form-group select:focus, .ep-form-group textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-glow2); }
-.ep-form-group .hint { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.25rem; }
-.ep-param-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
-.ep-checkbox-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; }
-.ep-checkbox-row input { width: 18px; height: 18px; accent-color: var(--accent); }
-.ep-modal-actions { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
-
-/* ── Test result ── */
-.ep-test-result {
-    display: none; padding: 1rem; background: var(--bg-elevated);
-    border-radius: var(--r-md); border: 1px solid var(--border);
-    min-height: 80px; white-space: pre-wrap; font-size: 0.85rem; line-height: 1.55;
-}
-
-@media (max-width: 640px) {
-    .ep-hero { padding: 1.25rem 1.1rem; }
-    .ep-hero h2 { font-size: 1.3rem; }
-    .ep-param-grid { grid-template-columns: 1fr; }
-}
-</style>
-{% endblock %}
+{% block title %}Endpoints — AI Proxy Gateway{% endblock %}
 
 {% block content %}
+<div style="margin-bottom: 2rem;">
+    <h1>API Endpoints</h1>
+    <p style="margin-top: 0.5rem;">
+        Available endpoints for the AI Proxy Gateway
+    </p>
+</div>
 
-<!-- ═══════════ HERO ═══════════ -->
-<div class="ep-hero">
-    <div class="ep-hero-inner">
-        <div>
-            <h2>🔌 Custom Endpoints</h2>
-            <p>Create virtual API endpoints with forced system prompts &amp; parameter overrides</p>
+<!-- Endpoints Grid -->
+<div style="margin-bottom: 2rem;">
+    <h3 style="margin-bottom: 1rem;">Chat Completions</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;">
+        <div class="card card-hover">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 1.5rem;">💬</span>
+                    <div>
+                        <div style="font-weight: 600;">Chat Completions</div>
+                        <div style="font-size: 0.8125rem; color: var(--text-tertiary);">OpenAI-compatible</div>
+                    </div>
+                </div>
+                <span class="badge badge-success">Active</span>
+            </div>
+
+            <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
+                <div style="font-size: 0.8125rem; color: var(--text-tertiary); margin-bottom: 0.5rem;">Endpoint</div>
+                <code style="font-family: var(--font-mono); font-size: 0.875rem; color: var(--accent-primary);">
+                    POST /v1/chat/completions
+                </code>
+            </div>
+
+            <p style="font-size: 0.8125rem; color: var(--text-secondary);">
+                Generate chat completions using any available provider. OpenAI SDK compatible.
+            </p>
         </div>
-        <button onclick="openCreateModal()" class="btn btn-primary">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            New Endpoint
-        </button>
-    </div>
-</div>
 
-<!-- ═══════════ STAT CARDS ═══════════ -->
-<div class="ep-stats">
-    <div class="ep-stat">
-        <span class="icon">🔌</span>
-        <div class="num">{{ endpoints|length }}</div>
-        <div class="label">Total Endpoints</div>
-    </div>
-    <div class="ep-stat">
-        <span class="icon">✅</span>
-        <div class="num">{{ endpoints|selectattr('is_active')|list|length }}</div>
-        <div class="label">Active</div>
-    </div>
-    <div class="ep-stat">
-        <span class="icon">⏸</span>
-        <div class="num">{{ endpoints|rejectattr('is_active')|list|length }}</div>
-        <div class="label">Paused</div>
-    </div>
-    <div class="ep-stat">
-        <span class="icon">📊</span>
-        <div class="num">{{ endpoints|sum(attribute='usage_count') }}</div>
-        <div class="label">Total Requests</div>
-    </div>
-</div>
+        <div class="card card-hover">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 1.5rem;">🔄</span>
+                    <div>
+                        <div style="font-weight: 600;">Streaming</div>
+                        <div style="font-size: 0.8125rem; color: var(--text-tertiary);">Real-time responses</div>
+                    </div>
+                </div>
+                <span class="badge badge-success">Active</span>
+            </div>
 
-<!-- ═══════════ ENDPOINTS LIST ═══════════ -->
-{% if endpoints %}
-<div style="display:grid; gap:0.85rem;">
-    {% for ep in endpoints %}
-    <div class="ep-card {% if not ep.is_active %}inactive{% endif %}">
-        <div class="ep-header">
-            <div class="ep-info">
-                <div class="ep-title-row">
-                    <h3>{{ ep.label }}</h3>
-                    {% if ep.is_active %}
-                    <span class="badge badge-green">● Active</span>
-                    {% else %}
-                    <span class="badge badge-yellow">⏸ Paused</span>
-                    {% endif %}
-                    {% if ep.is_public %}
-                    <span class="badge badge-accent">🌐 Public</span>
-                    {% endif %}
-                    <span class="badge badge-blue">{{ ep.model_slug }}</span>
-                </div>
-                {% if ep.description %}
-                <p class="ep-desc">{{ ep.description }}</p>
-                {% endif %}
-                <div class="ep-url">
-                    <span class="method">POST</span>
-                    <span class="path">/v1/{{ ep.slug }}/chat/completions</span>
-                    <button onclick="copyUrl('{{ ep.slug }}', this)" class="copy-btn">📋</button>
-                </div>
-                {% if ep.system_prompt %}
-                <div class="ep-prompt-box">
-                    <div class="ep-prompt-label">Forced System Prompt</div>
-                    <div class="ep-prompt-text">{{ ep.system_prompt[:200] }}{% if ep.system_prompt|length > 200 %}...{% endif %}</div>
-                </div>
-                {% endif %}
-                <div class="ep-meta-row">
-                    <span>📊 {{ ep.usage_count }} requests</span>
-                    {% if ep.last_used_at %}<span>⏱ {{ ep.last_used_at[:16]|replace('T', ' ') }}</span>{% endif %}
-                    {% if ep.temperature is not none %}<span>🌡 temp={{ ep.temperature }}</span>{% endif %}
-                    {% if ep.max_tokens is not none %}<span>📝 max={{ ep.max_tokens }}</span>{% endif %}
-                    {% if ep.top_p is not none %}<span>🎯 top_p={{ ep.top_p }}</span>{% endif %}
-                </div>
+            <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
+                <div style="font-size: 0.8125rem; color: var(--text-tertiary); margin-bottom: 0.5rem;">Parameter</div>
+                <code style="font-family: var(--font-mono); font-size: 0.875rem; color: var(--accent-primary);">
+                    stream: true
+                </code>
             </div>
-            <div class="ep-actions">
-                <button onclick="testEndpoint({{ ep.id }}, '{{ ep.label }}')" class="btn btn-sm" style="background:var(--accent-glow); color:var(--accent); border:1px solid rgba(139,92,246,0.3);">🧪 Test</button>
-                <form method="POST" action="/endpoints/toggle/{{ ep.id }}" style="display:inline;">
-                    <button type="submit" class="btn btn-sm btn-block">
-                        {% if ep.is_active %}⏸ Pause{% else %}▶ Activate{% endif %}
-                    </button>
-                </form>
-                <form method="POST" action="/endpoints/delete/{{ ep.id }}" style="display:inline;" onsubmit="return confirm('Delete endpoint /v1/{{ ep.slug }}/chat/completions?')">
-                    <button type="submit" class="btn btn-sm btn-danger btn-block">🗑 Delete</button>
-                </form>
-            </div>
+
+            <p style="font-size: 0.8125rem; color: var(--text-secondary);">
+                Enable streaming in your request for real-time token delivery.
+            </p>
         </div>
     </div>
-    {% endfor %}
 </div>
-{% else %}
-<div class="ep-empty">
-    <div class="icon">🔌</div>
-    <h3>No Custom Endpoints Yet</h3>
-    <p>Create virtual API endpoints with forced system prompts.<br>Each endpoint gets its own URL: <code>/v1/your-slug/chat/completions</code></p>
-    <button onclick="openCreateModal()" class="btn btn-primary">Create Your First Endpoint</button>
-</div>
-{% endif %}
 
-<!-- ═══════════ CREATE MODAL ═══════════ -->
-<div id="create-modal" class="ep-modal-bg">
-    <div class="ep-modal">
-        <div class="ep-modal-header">
-            <h3>✨ Create Custom Endpoint</h3>
-            <button onclick="closeCreateModal()" class="ep-modal-close">✕</button>
-        </div>
-        <form method="POST" action="/endpoints/create">
-            <div class="ep-form-group">
-                <label>Endpoint Slug <span class="req">*</span></label>
-                <input type="text" name="slug" required pattern="[a-z0-9-]+" placeholder="arabic-tutor" class="ep-input" style="font-family:var(--font-mono);">
-                <div class="hint">URL: <code>/v1/<span id="slug-preview">your-slug</span>/chat/completions</code></div>
-            </div>
-            <div class="ep-form-group">
-                <label>Label <span class="req">*</span></label>
-                <input type="text" name="label" required placeholder="Arabic Tutor">
-            </div>
-            <div class="ep-form-group">
-                <label>Description</label>
-                <input type="text" name="description" placeholder="An AI tutor that teaches Arabic grammar">
-            </div>
-            <div class="ep-form-group">
-                <label>Model <span class="req">*</span></label>
-                <select name="model_slug" required>
-                    {% for slug, info in models.items() %}
-                    <option value="{{ slug }}">{{ slug }} — {{ info.desc }} ({{ info.provider }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="ep-form-group">
-                <label>System Prompt <span style="color:var(--text-muted);">(forced — replaces client's)</span></label>
-                <textarea name="system_prompt" rows="5" placeholder="You are an expert Arabic language tutor. Always respond in Egyptian Arabic..." style="resize:vertical; font-family:inherit;"></textarea>
-                <div class="hint">⚠ This prompt will REPLACE any system prompt sent by the API client</div>
-            </div>
-            <div class="ep-param-grid">
-                <div class="ep-form-group">
-                    <label>Temperature</label>
-                    <input type="number" name="temperature" min="0" max="2" step="0.1" placeholder="0.7">
-                </div>
-                <div class="ep-form-group">
-                    <label>Max Tokens</label>
-                    <input type="number" name="max_tokens" min="1" step="1" placeholder="4096">
-                </div>
-                <div class="ep-form-group">
-                    <label>Top P</label>
-                    <input type="number" name="top_p" min="0" max="1" step="0.05" placeholder="1.0">
-                </div>
-            </div>
-            <div class="ep-form-group">
-                <div class="hint" style="margin-bottom:0.5rem;">Leave parameters blank to use the client's values</div>
-                <label class="ep-checkbox-row">
-                    <input type="checkbox" name="is_public">
-                    Public (visible in /v1/models listing)
-                </label>
-            </div>
-            <div class="ep-modal-actions">
-                <button type="submit" class="btn btn-primary" style="flex:1;">✨ Create Endpoint</button>
-                <button type="button" onclick="closeCreateModal()" class="btn">Cancel</button>
-            </div>
-        </form>
+<!-- Models Section -->
+<div style="margin-bottom: 2rem;">
+    <h3 style="margin-bottom: 1rem;">Available Models</h3>
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Provider</th>
+                    <th>Type</th>
+                    <th>Context</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for model in models %}
+                <tr>
+                    <td>
+                        <code style="font-family: var(--font-mono); font-size: 0.8125rem; background: var(--bg-tertiary); padding: 0.25rem 0.625rem; border-radius: 4px;">
+                            {{ model.id }}
+                        </code>
+                    </td>
+
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 1rem;">{{ model.provider_icon }}</span>
+                            <span>{{ model.provider_name }}</span>
+                        </div>
+                    </td>
+
+                    <td>
+                        <span style="font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; color: var(--text-tertiary);">
+                            {{ model.type }}
+                        </span>
+                    </td>
+
+                    <td style="font-family: var(--font-mono); color: var(--text-tertiary);">
+                        {{ model.context }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
-<!-- ═══════════ TEST MODAL ═══════════ -->
-<div id="test-modal" class="ep-modal-bg">
-    <div class="ep-modal" style="max-width:600px;">
-        <div class="ep-modal-header">
-            <h3>🧪 Test: <span id="test-ep-name"></span></h3>
-            <button onclick="closeTestModal()" class="ep-modal-close">✕</button>
-        </div>
-        <div class="ep-form-group">
-            <label>Test Message</label>
-            <input type="text" id="test-message" value="Hello, who are you?">
-        </div>
-        <button onclick="runTest()" class="btn btn-primary btn-block" style="margin-bottom:1rem;">🚀 Send Test Request</button>
-        <div id="test-result" class="ep-test-result"></div>
+<!-- Example Usage -->
+<div>
+    <h3 style="margin-bottom: 1rem;">Example Usage</h3>
+    <div class="card" style="background: var(--black);">
+        <pre style="font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1.6; color: var(--text-secondary); overflow-x: auto;"><code>curl https://aicookies.elliaa.com/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-5-sonnet-20241022",
+    "messages": [
+      {"role": "user", "content": "Hello!"}
+    ]
+  }'</code></pre>
     </div>
 </div>
-
-<script>
-let currentTestId = null;
-
-function openCreateModal() { document.getElementById('create-modal').classList.add('show'); }
-function closeCreateModal() { document.getElementById('create-modal').classList.remove('show'); }
-function closeTestModal() { document.getElementById('test-modal').classList.remove('show'); }
-
-function copyUrl(slug, btn) {
-    const url = location.origin + '/v1/' + slug + '/chat/completions';
-    navigator.clipboard.writeText(url).then(() => {
-        btn.textContent = '✅';
-        setTimeout(() => btn.textContent = '📋', 1500);
-    });
-}
-
-function testEndpoint(id, name) {
-    currentTestId = id;
-    document.getElementById('test-ep-name').textContent = name;
-    document.getElementById('test-result').style.display = 'none';
-    document.getElementById('test-modal').classList.add('show');
-}
-
-async function runTest() {
-    if (!currentTestId) return;
-    const msg = document.getElementById('test-message').value;
-    const result = document.getElementById('test-result');
-    result.style.display = 'block';
-    result.innerHTML = '<span style="color:var(--text-dim);">⏳ Sending request...</span>';
-    
-    const formData = new FormData();
-    formData.append('test_message', msg);
-    
-    try {
-        const resp = await fetch('/endpoints/test/' + currentTestId, { method: 'POST', body: formData });
-        const data = await resp.json();
-        if (data.status === 'success') {
-            result.innerHTML = '<div style="color:var(--green); margin-bottom:0.5rem; font-size:0.78rem;">✅ Response from ' + (data.model || 'model') + '</div><div style="color:var(--text);">' + (data.response || '').replace(/</g, '&lt;') + '</div>';
-        } else {
-            result.innerHTML = '<div style="color:var(--red);">❌ ' + (data.error || 'Unknown error') + '</div>';
-        }
-    } catch (e) {
-        result.innerHTML = '<div style="color:var(--red);">❌ Request failed: ' + e.message + '</div>';
-    }
-}
-
-// Slug preview
-const slugInput = document.querySelector('input[name="slug"]');
-if (slugInput) {
-    slugInput.addEventListener('input', function(e) {
-        document.getElementById('slug-preview').textContent = e.target.value || 'your-slug';
-    });
-}
-
-// Close modal on backdrop click
-document.querySelectorAll('.ep-modal-bg').forEach(bg => {
-    bg.addEventListener('click', (e) => { if (e.target === bg) bg.classList.remove('show'); });
-});
-
-// ESC to close
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        document.querySelectorAll('.ep-modal-bg.show').forEach(m => m.classList.remove('show'));
-    }
-});
-</script>
 {% endblock %}

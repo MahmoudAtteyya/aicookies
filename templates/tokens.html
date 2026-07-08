@@ -1,315 +1,131 @@
 {% extends "base.html" %}
-{% block title %}Token Management — AI Proxy Gateway{% endblock %}
 
-{% block head %}
-<style>
-/* ═══════════════════════════════════════════════════════════════════
-   PREMIUM TOKENS PAGE — scoped styles
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* ── Hero ── */
-.tk-hero {
-    position: relative;
-    overflow: hidden;
-    border-radius: var(--r-xl);
-    padding: 1.75rem 2rem;
-    margin-bottom: 1.5rem;
-    background:
-        radial-gradient(circle at 80% 30%, var(--accent-glow) 0%, transparent 55%),
-        linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-card) 100%);
-    border: 1px solid var(--border-accent);
-    box-shadow: var(--shadow-glow), var(--shadow-md);
-}
-.tk-hero::after {
-    content: '';
-    position: absolute;
-    top: -50%; right: -10%;
-    width: 350px; height: 350px;
-    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-    border-radius: 50%;
-    pointer-events: none;
-}
-.tk-hero-inner { position: relative; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
-.tk-hero h2 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; margin: 0; background: linear-gradient(135deg, var(--text), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.tk-hero p { color: var(--text-dim); margin: 0.3rem 0 0; font-size: 0.88rem; }
-
-/* ── Stat cards ── */
-.tk-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-.tk-stat {
-    position: relative;
-    background: linear-gradient(160deg, var(--bg-card) 0%, var(--bg-elevated) 100%);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 1.1rem 1.1rem 0.9rem;
-    overflow: hidden;
-    transition: transform var(--t-med), box-shadow var(--t-med), border-color var(--t-med);
-}
-.tk-stat::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent), var(--blue)); opacity: 0; transition: opacity var(--t-med); }
-.tk-stat:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--border-light); }
-.tk-stat:hover::before { opacity: 1; }
-.tk-stat .icon { font-size: 1.2rem; margin-bottom: 0.35rem; display: block; }
-.tk-stat .num { font-size: 1.8rem; font-weight: 800; line-height: 1.1; background: linear-gradient(135deg, var(--accent), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.tk-stat .label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; margin-top: 0.2rem; }
-.tk-stat .num.green { background: linear-gradient(135deg, var(--green), #2d9b3e); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.tk-stat .num.yellow { background: linear-gradient(135deg, var(--yellow), #b8860b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.tk-stat .num.blue { background: linear-gradient(135deg, var(--blue), #3070c0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-
-/* ── Token cards ── */
-.tk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-.tk-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    padding: 1.25rem;
-    transition: transform var(--t-med), box-shadow var(--t-med), border-color var(--t-med);
-    position: relative;
-}
-.tk-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-light); }
-.tk-card .tk-label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; display: flex; align-items: center; gap: 0.4rem; }
-.tk-card .tk-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
-.tk-card .tk-dot.paused { background: var(--yellow); }
-.tk-key-display {
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    padding: 0.65rem 0.85rem;
-    word-break: break-all;
-    margin: 0.6rem 0;
-    color: var(--green);
-    position: relative;
-}
-.tk-key-display .tk-copy { position: absolute; top: 0.4rem; left: 0.4rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.7rem; color: var(--text-dim); opacity: 0; transition: opacity var(--t-fast); }
-.tk-key-display:hover .tk-copy { opacity: 1; }
-.tk-card .tk-meta { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-dim); margin-top: 0.75rem; gap: 0.5rem; }
-.tk-card .tk-meta-item { display: flex; flex-direction: column; gap: 0.15rem; }
-.tk-card .tk-meta-item .val { color: var(--text); font-weight: 600; font-size: 0.8rem; }
-.tk-usage-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
-.tk-usage-bar .fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--accent)); border-radius: 2px; transition: width var(--t-slow); }
-.tk-card .tk-actions { display: flex; gap: 0.5rem; margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--border); }
-.tk-card .tk-actions .btn { padding: 0.3rem 0.8rem; font-size: 0.8rem; }
-
-/* ── Modal ── */
-.tk-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 200; align-items: center; justify-content: center; padding: 2rem; backdrop-filter: blur(4px); }
-.tk-modal-bg.show { display: flex; animation: pageFadeIn 0.25s ease; }
-.tk-modal {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--r-xl);
-    max-width: 520px; width: 100%;
-    padding: 2rem;
-    box-shadow: var(--shadow-lg);
-    animation: modalSlide 0.3s ease;
-}
-@keyframes modalSlide { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.tk-modal h3 { margin: 0 0 0.5rem; font-size: 1.2rem; color: var(--accent); }
-.tk-modal p { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
-.tk-new-key-box {
-    background: rgba(63,185,80,0.08); border: 2px solid rgba(63,185,80,0.3);
-    border-radius: var(--r-md); padding: 1rem; margin: 1rem 0;
-    font-family: var(--font-mono); font-size: 0.85rem; word-break: break-all;
-    color: var(--green); position: relative;
-}
-.tk-new-key-box .tk-copy-icon { position: absolute; top: 0.5rem; left: 0.5rem; cursor: pointer; color: var(--text-dim); font-size: 0.9rem; }
-.tk-warning { color: var(--yellow); font-size: 0.82rem; margin: 0.5rem 0; }
-.tk-modal-actions { display: flex; gap: 0.75rem; margin-top: 1rem; }
-
-@media (max-width: 640px) {
-    .tk-hero { padding: 1.25rem 1.1rem; }
-    .tk-hero h2 { font-size: 1.3rem; }
-    .tk-grid { grid-template-columns: 1fr; }
-}
-</style>
-{% endblock %}
+{% block title %}Tokens — AI Proxy Gateway{% endblock %}
 
 {% block content %}
-
-<!-- ═══════════ HERO ═══════════ -->
-<div class="tk-hero">
-    <div class="tk-hero-inner">
+<div style="margin-bottom: 2rem;">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
         <div>
-            <h2>🎫 Token Management</h2>
-            <p>Create, monitor, and revoke API tokens (<code>sk-aic-*</code>) that work with all models</p>
+            <h1>Tokens</h1>
+            <p style="margin-top: 0.5rem;">
+                Generate and manage access tokens
+            </p>
         </div>
-        <button onclick="openGenModal()" class="btn btn-primary">➕ Generate New Token</button>
+        <button onclick="toggleTokenForm()" class="btn btn-primary">
+            ➕ Generate Token
+        </button>
     </div>
 </div>
 
-<!-- ═══════════ STAT CARDS ═══════════ -->
-<div class="tk-stats">
-    <div class="tk-stat">
-        <span class="icon">🎫</span>
-        <div class="num">{{ tokens|length }}</div>
-        <div class="label">Total Tokens</div>
-    </div>
-    <div class="tk-stat">
-        <span class="icon">✅</span>
-        <div class="num green">{{ tokens|selectattr('is_active','equalto',1)|list|length }}</div>
-        <div class="label">Active</div>
-    </div>
-    <div class="tk-stat">
-        <span class="icon">⏸</span>
-        <div class="num yellow">{{ tokens|selectattr('is_active','equalto',0)|list|length }}</div>
-        <div class="label">Paused</div>
-    </div>
-    <div class="tk-stat">
-        <span class="icon">📊</span>
-        <div class="num blue">{{ total_requests }}</div>
-        <div class="label">Total Requests</div>
-    </div>
-</div>
+<!-- Generate Token Form -->
+<div id="tokenForm" style="display: none; margin-bottom: 2rem;">
+    <div class="card">
+        <h4 style="margin-bottom: 1rem;">Generate New Token</h4>
+        <form method="POST" action="/tokens/generate">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                        Label
+                    </label>
+                    <input type="text" name="label" class="form-input" placeholder="e.g., Production API" required>
+                </div>
 
-<!-- ═══════════ TOKEN CARDS ═══════════ -->
-{% if tokens %}
-<div class="tk-grid">
-    {% for t in tokens %}
-    <div class="tk-card">
-        <div class="tk-label">
-            {{ t.label or 'unlabeled' }}
-            {% if t.is_active %}<span class="tk-dot"></span>{% else %}<span class="tk-dot paused"></span>{% endif %}
-        </div>
-        <div class="tk-key-display">
-            <span>sk-aic-{{ t.key_hash[:8] }}••••••••{{ t.key_hash[-4:] }}</span>
-            <span class="tk-copy" onclick="copyKey('{{ t.id }}', '{{ t.full_key or '' }}')">📋</span>
-        </div>
-        <div class="tk-meta">
-            <div class="tk-meta-item">
-                <span>Created</span>
-                <span class="val">{{ t.created_at[:10] if t.created_at else '—' }}</span>
+                <div>
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                        Expires
+                    </label>
+                    <select name="expires" class="form-input">
+                        <option value="never">Never</option>
+                        <option value="7d">7 days</option>
+                        <option value="30d" selected>30 days</option>
+                        <option value="90d">90 days</option>
+                    </select>
+                </div>
             </div>
-            <div class="tk-meta-item">
-                <span>Last Used</span>
-                <span class="val">{{ t.last_used_at[:10] if t.last_used_at else 'Never' }}</span>
-            </div>
-            <div class="tk-meta-item">
-                <span>Requests</span>
-                <span class="val">{{ t.usage_count or 0 }}</span>
-            </div>
-        </div>
-        {% if t.usage_count and t.usage_count > 0 %}
-        <div class="tk-usage-bar"><div class="fill" style="width: {{ [t.usage_count / (total_requests or 1) * 100, 100]|min }}%"></div></div>
-        {% endif %}
-        <div class="tk-actions">
-            {% if t.is_active %}
-            <form method="POST" action="/tokens/pause/{{ t.id }}" style="display:inline">
-                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-sm">⏸ Pause</button>
-            </form>
-            {% else %}
-            <form method="POST" action="/tokens/activate/{{ t.id }}" style="display:inline">
-                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-sm">▶ Activate</button>
-            </form>
-            {% endif %}
-            <form method="POST" action="/tokens/revoke/{{ t.id }}" style="display:inline" onsubmit="return confirm('⚠️ Are you sure? This token will stop working immediately.')">
-                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-sm btn-danger">🗑 Revoke</button>
-            </form>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% else %}
-<div class="card empty-state">
-    <div class="icon">🎫</div>
-    <h3>No API tokens yet</h3>
-    <p>Generate your first token to start using the API.</p>
-    <button onclick="openGenModal()" class="btn btn-primary">➕ Generate Token</button>
-</div>
-{% endif %}
 
-<!-- ═══════════ GENERATE MODAL ═══════════ -->
-<div id="genModal" class="tk-modal-bg">
-    <div class="tk-modal">
-        <h3>🔑 Generate New API Token</h3>
-        <p>The token will work with all models immediately.</p>
-        <form method="POST" action="/tokens/create" id="genForm" onsubmit="return handleGenSubmit(event)">
-            <div class="form-group" style="margin-top:1rem;">
-                <label>Label (optional)</label>
-                <input type="text" name="label" placeholder="e.g. production-app, test-key, client-xyz" maxlength="64">
-            </div>
-            <div class="tk-modal-actions">
-                <button type="submit" class="btn btn-primary" style="flex:1;">🔑 Generate</button>
-                <button type="button" class="btn" onclick="closeGenModal()">Cancel</button>
+            <div style="display: flex; gap: 0.75rem;">
+                <button type="submit" class="btn btn-primary">Generate</button>
+                <button type="button" onclick="toggleTokenForm()" class="btn btn-secondary">Cancel</button>
             </div>
         </form>
-        <div id="genResult" style="display:none;">
-            <div class="tk-new-key-box">
-                <span class="tk-copy-icon" onclick="copyNewKey()">📋</span>
-                <span id="newKeyText"></span>
-            </div>
-            <p class="tk-warning">⚠️ This key is shown only once. Copy it now — it cannot be retrieved later.</p>
-            <div class="tk-modal-actions">
-                <button class="btn btn-primary" onclick="copyNewKey()">📋 Copy Key</button>
-                <button class="btn" onclick="closeGenModalAndReload()">Done</button>
-            </div>
-        </div>
     </div>
 </div>
 
+<!-- Tokens Table -->
+<div class="card" style="padding: 0; overflow: hidden;">
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Label</th>
+                    <th>Token</th>
+                    <th>Provider</th>
+                    <th>Usage</th>
+                    <th>Created</th>
+                    <th>Expires</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for token in tokens %}
+                <tr>
+                    <td>
+                        <span style="font-weight: 500;">{{ token.label }}</span>
+                    </td>
+
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <code style="font-family: var(--font-mono); font-size: 0.8125rem; background: var(--bg-tertiary); padding: 0.25rem 0.625rem; border-radius: 4px; color: var(--text-secondary);">
+                                {{ token.token[:20] }}...
+                            </code>
+                            <button 
+                                onclick="copyToClipboard('{{ token.token }}')"
+                                style="background: var(--bg-tertiary); color: var(--text-secondary); border: none; padding: 0.25rem; border-radius: 4px; cursor: pointer; transition: all 0.15s;"
+                                title="Copy token"
+                            >
+                                📋
+                            </button>
+                        </div>
+                    </td>
+
+                    <td>
+                        <span class="badge badge-info">{{ token.provider }}</span>
+                    </td>
+
+                    <td style="font-family: var(--font-mono);">{{ "{:,}".format(token.usage_count) }}</td>
+
+                    <td style="color: var(--text-tertiary); font-size: 0.8125rem;">
+                        {{ token.created_at.strftime('%Y-%m-%d') }}
+                    </td>
+
+                    <td style="color: var(--text-tertiary); font-size: 0.8125rem;">
+                        {{ token.expires_at.strftime('%Y-%m-%d') if token.expires_at else 'Never' }}
+                    </td>
+
+                    <td>
+                        <form method="POST" action="/tokens/{{ token.id }}/revoke" style="display: inline;" onsubmit="return confirm('Revoke this token?');">
+                            <button type="submit" style="background: var(--bg-tertiary); color: #f85149; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.8125rem;">
+                                🗑️
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
 <script>
-function openGenModal() {
-    document.getElementById('genModal').classList.add('show');
-    document.getElementById('genResult').style.display = 'none';
-    document.getElementById('genForm').style.display = 'block';
+function toggleTokenForm() {
+    const form = document.getElementById('tokenForm');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
 }
-function closeGenModal() {
-    document.getElementById('genModal').classList.remove('show');
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text);
 }
-function closeGenModalAndReload() {
-    closeGenModal();
-    location.reload();
-}
-function handleGenSubmit(e) {
-    e.preventDefault();
-    var form = e.target;
-    var formData = new FormData(form);
-    fetch('/tokens/create', {method: 'POST', body: formData})
-        .then(r => r.json())
-        .then(data => {
-            if (data.api_key) {
-                document.getElementById('genForm').style.display = 'none';
-                document.getElementById('genResult').style.display = 'block';
-                document.getElementById('newKeyText').textContent = data.api_key;
-            } else {
-                alert('Error: ' + (data.error || 'Unknown error'));
-            }
-        })
-        .catch(err => alert('Network error: ' + err));
-    return false;
-}
-function copyNewKey() {
-    var key = document.getElementById('newKeyText').textContent;
-    navigator.clipboard.writeText(key).then(() => {
-        // Use base.html toast system
-        showToast('✅ Key copied to clipboard!');
-    });
-}
-function copyKey(id, fullKey) {
-    if (fullKey) {
-        navigator.clipboard.writeText(fullKey).then(() => showToast('✅ Copied!'));
-    } else {
-        showToast('⚠️ Full key not available (shown only at creation)');
-    }
-}
-// Use base.html toast system
-function showToast(msg) {
-    const container = document.getElementById('toastContainer');
-    if (!container) { alert(msg); return; }
-    const toast = document.createElement('div');
-    toast.className = 'toast info';
-    toast.textContent = msg;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 4200);
-}
-// Close modal on backdrop click
-document.getElementById('genModal').addEventListener('click', function(e) {
-    if (e.target === this) closeGenModal();
-});
-// ESC to close
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeGenModal();
-});
 </script>
 {% endblock %}

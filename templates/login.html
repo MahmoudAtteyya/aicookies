@@ -13,7 +13,7 @@
 
     <style>
         /* ═══════════════════════════════════════════════════════════════════
-           VERCEL LOGIN PAGE — Shadow-as-border, minimal, whitespace
+           VERCEL LOGIN PAGE — Blue accent, pure black, white text
            ═══════════════════════════════════════════════════════════════════ */
         :root {
             /* ── Primary palette ── */
@@ -29,19 +29,19 @@
             --text-secondary: #a0a0a0;
             --text-tertiary:  var(--gray-500);
 
-            /* ── Accent ── */
-            --accent-primary: #ff5b4f;
-            --accent-hover:   #ff7668;
-            --accent-bg:      rgba(255,91,79,0.08);
+            /* ── Accent (Vercel Blue) ── */
+            --accent-primary: #0070f3;
+            --accent-hover:   #1a7ff3;
+            --accent-bg:      rgba(0,112,243,0.08);
 
             /* ── Shadows ── */
             --shadow-border:       rgba(255,255,255,0.08) 0px 0px 0px 1px;
             --shadow-border-hover: rgba(255,255,255,0.12) 0px 0px 0px 1px;
             --shadow-card:         var(--shadow-border), rgba(0,0,0,0.5) 0px 2px 4px;
-            --shadow-lg:          var(--shadow-border), rgba(0,0,0,0.6) 0px 8px 32px;
+            --shadow-lg:           var(--shadow-border), rgba(0,0,0,0.6) 0px 8px 32px;
 
             /* ── Focus ── */
-            --focus-ring: hsla(212,100%,48%,1);
+            --focus-ring: 0 0 0 3px rgba(0,112,243,0.2);
 
             /* ── Fonts ── */
             --font-sans: 'Geist', system-ui, -apple-system, sans-serif;
@@ -83,15 +83,15 @@
         }
 
         /* ═══════════════════════════════════════════════════════════════════
-           BACKGROUND ( градиент + градиент orbs)
+           BACKGROUND (Gradient + Grid pattern + Blue orbs)
            ═══════════════════════════════════════════════════════════════════ */
         .bg-gradient {
             position: fixed;
             inset: 0;
             background: 
-                radial-gradient(circle at 20% 50%, rgba(255,91,79,0.06) 0%, transparent 50%),
+                radial-gradient(circle at 20% 50%, rgba(0,112,243,0.06) 0%, transparent 50%),
                 radial-gradient(circle at 80% 50%, rgba(0,112,243,0.04) 0%, transparent 50%),
-                radial-gradient(circle at 50% 100%, rgba(222,29,141,0.03) 0%, transparent 50%);
+                radial-gradient(circle at 50% 100%, rgba(0,112,243,0.03) 0%, transparent 50%);
             opacity: 0.8;
             pointer-events: none;
             z-index: 0;
@@ -123,7 +123,7 @@
         .orb-1 {
             width: 300px;
             height: 300px;
-            background: radial-gradient(circle, rgba(255,91,79,0.1), transparent 70%);
+            background: radial-gradient(circle, rgba(0,112,243,0.1), transparent 70%);
             top: 10%;
             right: 10%;
             animation-delay: 0s;
@@ -136,15 +136,6 @@
             bottom: 10%;
             left: 5%;
             animation-delay: -5s;
-        }
-
-        .orb-3 {
-            width: 250px;
-            height: 250px;
-            background: radial-gradient(circle, rgba(222,29,141,0.07), transparent 70%);
-            top: 60%;
-            right: 15%;
-            animation-delay: -10s;
         }
 
         @keyframes float {
@@ -162,9 +153,7 @@
             width: 100%;
             max-width: 420px;
             background: var(--black-elevated);
-            box-shadow: 
-                var(--shadow-lg),
-                inset 0 1px 0 rgba(255,255,255,0.03);
+            box-shadow: var(--shadow-lg);
             border-radius: 12px;
             padding: 3rem 2.5rem;
             animation: slideUp var(--transition-base) ease-out;
@@ -244,9 +233,7 @@
         }
 
         .form-input:focus {
-            box-shadow: 
-                0 0 0 3px rgba(0,112,243,0.2),
-                var(--shadow-border-hover);
+            box-shadow: var(--focus-ring), var(--shadow-border-hover);
         }
 
         .form-input::placeholder {
@@ -283,17 +270,13 @@
 
         .btn:hover {
             background: var(--accent-hover);
-            box-shadow: 
-                var(--shadow-border-hover),
-                0px 4px 12px rgba(255,91,79,0.2);
+            box-shadow: var(--shadow-border-hover), 0px 4px 12px rgba(0,112,243,0.2);
             transform: translateY(-1px);
         }
 
         .btn:focus {
             outline: none;
-            box-shadow: 
-                0 0 0 3px rgba(0,112,243,0.3),
-                var(--shadow-border-hover);
+            box-shadow: var(--focus-ring), var(--shadow-border-hover);
         }
 
         .btn:active {
@@ -315,7 +298,6 @@
         .login-footer {
             margin-top: 2rem;
             padding-top: 1.5rem;
-            border-top: none;
             box-shadow: var(--shadow-border);
             text-align: center;
         }
@@ -419,7 +401,6 @@
     <div class="bg-grid"></div>
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
-    <div class="orb orb-3"></div>
 
     <!-- Login Card -->
     <div class="login-card">
@@ -498,11 +479,6 @@
 
         // Auto-focus username on load
         document.getElementById('username').focus();
-
-        // Smooth transition on page unload
-        window.addEventListener('beforeunload', function() {
-            document.body.style.opacity = '0';
-        });
     </script>
 </body>
 </html>

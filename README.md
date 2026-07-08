@@ -181,6 +181,31 @@ The gateway supports 6 providers — 4 free-tier and 2 paid/cookie-based:
 | **Claude (Anthropic)** | `claude` | `claude.ai` | `sk-ant-` | Cookie | ✅ Cookie-based |
 | **OpenAI** | `openai` | `api.openai.com/v1` | `sk-` / `sk-pro-` | Paid | ❌ |
 
+### 🔍 Auto-Detect Provider from Key Format
+
+The system automatically detects which provider an API key belongs to based on its prefix and format. **No manual provider selection needed** — just paste the key!
+
+| Provider | Key Prefix | Length | Regex Pattern | Example |
+|----------|------------|--------|----------------|---------|
+| **NVIDIA NIM** | `nvapi-` | 70-90 chars | `nvapi-[A-Za-z0-9]{64,}` | `nvapi-X7kM9pL...` |
+| **OpenRouter** | `sk-or-v1-` | 50-60 chars | `sk-or-v1-[A-Za-z0-9]{40,}` | `sk-or-v1-abc...` |
+| **Google AI Studio** | `AIza` | 39 chars | `AIza[A-Za-z0-9_-]{35}` | `AIzaSyXXXXXXXX...` |
+| **Anthropic Claude** | `sk-ant-` | 70-80 chars | `sk-ant-[a-z0-9]{4}-[A-Za-z0-9]{60,}` | `sk-ant-XXXX-abc...` |
+| **OpenAI** | `sk-`, `sk-proj-`, `sk-svcacct-` | 48-56+ chars | `sk(-[a-z]+)?-[A-Za-z0-9]{32,}` | `sk-proj-abc...` |
+| **Fireworks** | *(no prefix)* | 40+ chars | `[a-z0-9]{40,}` | `a1b2c3d4e5f6...` |
+
+**How it works:**
+1. The system checks the key against known prefixes (`nvapi-`, `sk-or-`, `AIza`, `sk-ant-`, `sk-proj-`, etc.)
+2. Validates the length matches expected ranges (e.g., NVIDIA keys are 70-90 chars)
+3. Verifies alphanumeric structure for prefixless keys (Fireworks)
+4. Returns the detected provider or falls back to "Unknown" if no match
+
+**Error: "Unknown" detection?**
+- Ensure the key starts with the correct prefix for its provider
+- Check the key length matches the expected range
+- Verify no extra whitespace or line breaks around the key
+- Supported providers must exist in the database (contact admin if missing)
+
 ### NVIDIA NIM
 
 NVIDIA's inference microservices platform provides OpenAI-compatible access to open-source models hosted on NVIDIA's infrastructure. All models run on NVIDIA's optimized inference stack.

@@ -346,17 +346,42 @@ body, nav, .container { font-family: var(--font-sans); }
 {% block scripts %}
 <script>
 // ── Live provider auto-detect preview ──
+// Key patterns (based on research 2025-07):
+// NVIDIA NIM:    nvapi-[A-Za-z0-9]{64,}         (~70-90 chars)
+// OpenRouter:    sk-or-v1-[A-Za-z0-9]{40,}      (~50-60 chars)
+// Google AI:     AIza[A-Za-z0-9_-]{35}          (exactly 39 chars, starts with AIza)
+// Anthropic:     sk-ant-[a-z0-9]{4}-[A-Za-z0-9]{60,}  (~70-80 chars)
+// OpenAI:        sk-(-[a-z]+)?-[A-Za-z0-9]{32,} (sk-, sk-proj-, sk-svcacct-, 48-56+ chars)
+// Fireworks:     [A-Za-z0-9]{32,64}             (no prefix, hex-like, 40+ chars)
 function detectProviderFromKey(apiKey) {
     const k = (apiKey || '').trim();
     const kl = k.toLowerCase();
     const klen = k.length;
-    if (!k) return null;
-    if (kl.startsWith('nvapi-')) return { slug:'nvidia', name:'NVIDIA' };
+    if (!k || klen < 10) return null;
+    
+    // 1. NVIDIA NIM: nvapi- prefix (70-90 chars)
+    if (kl.startsWith('nvapi-') && klen >= 70) return { slug:'nvidia', name:'NVIDIA' };
+    
+    // 2. OpenRouter: sk-or-v1- or sk-or- prefix (50-60 chars)
     if (kl.startsWith('sk-or-v1-') || kl.startsWith('sk-or-')) return { slug:'openrouter', name:'OpenRouter' };
+    
+    // 3. Google AI Studio: AIza prefix (exactly 39 chars preferred, 35+ fallback)
+    if (k.startsWith('AIza') && klen === 39) return { slug:'google', name:'Google' };
+    
+    // 4. Anthropic/Claude: sk-ant- prefix (70-80 chars)
+    if (kl.startsWith('sk-ant-') && klen >= 70) return { slug:'claude', name:'Claude' };
+    
+    // 5. OpenAI: sk-, sk-proj-, sk-svcacct- (48-56+ chars, not sk-or/sk-ant)
+    if (kl.startsWith('sk-proj-') || kl.startsWith('sk-svcacct-') || 
+        (kl.startsWith('sk-') && !kl.startsWith('sk-or') && !kl.startsWith('sk-ant') && klen >= 48))
+        return { slug:'openai', name:'OpenAI' };
+    
+    // 6. Fireworks: 40+ char hex-like strings (no distinctive prefix)
+    if (klen >= 40 && /^[a-z0-9]+$/i.test(k)) return { slug:'fireworks', name:'Fireworks' };
+    
+    // 7. Google AI Studio fallback (AIza + 35+ chars)
     if (k.startsWith('AIza') && klen >= 35) return { slug:'google', name:'Google' };
-    if (kl.startsWith('sk-ant-')) return { slug:'claude', name:'Claude' };
-    if (kl.startsWith('sk-pro-') || (kl.startsWith('sk-') && !kl.startsWith('sk-or') && !kl.startsWith('sk-ant'))) return { slug:'openai', name:'OpenAI' };
-    if (klen >= 40 && /^[a-z0-9]+$/.test(kl)) return { slug:'fireworks', name:'Fireworks' };
+    
     return null;
 }
 

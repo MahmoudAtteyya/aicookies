@@ -599,29 +599,51 @@ def detect_provider_from_key(api_key):
     
     Returns dict {id, slug, name} from the database, or None if unrecognized.
     Supports: NVIDIA NIM, OpenRouter, Google AI Studio, Fireworks, OpenAI, Anthropic (Claude).
+    
+    Key patterns (based on research 2025-07):
+    - NVIDIA NIM:    nvapi-[A-Za-z0-9]{64,}         (~70-90 chars)
+    - OpenRouter:    sk-or-v1-[A-Za-z0-9]{40,}      (~50-60 chars)
+    - Google AI:     AIza[A-Za-z0-9_-]{35}          (exactly 39 chars, starts with AIza)
+    - Anthropic:     sk-ant-[a-z0-9]{4}-[A-Za-z0-9]{60,}  (~70-80 chars)
+    - OpenAI:        sk-(-[a-z]+)?-[A-Za-z0-9]{32,} (sk-, sk-proj-, sk-svcacct-, 48-56+ chars)
+    - Fireworks:     [A-Za-z0-9]{32,64}             (no prefix, hex-like, 40+ chars)
     """
     k = api_key.strip()
     kl = k.lower()
     klen = len(k)
     
-    # NVIDIA NIM keys start with "nvapi-"
-    if kl.startswith("nvapi-"):
+    if klen < 10:  # Too short to be valid
+        return None
+    
+    # 1. NVIDIA NIM keys: nvapi- prefix (70-90 chars)
+    if kl.startswith("nvapi-") and klen >= 70:
         slug = "nvidia"
-    # OpenRouter keys start with "sk-or-"
+    
+    # 2. OpenRouter keys: sk-or-v1- or sk-or- prefix (50-60 chars)
     elif kl.startswith("sk-or-v1-") or kl.startswith("sk-or-"):
         slug = "openrouter"
-    # Google AI Studio keys start with "AIza" (39-40 chars)
-    elif k.startswith("AIza") and klen >= 35:
+    
+    # 3. Google AI Studio keys: AIza prefix (exactly 39 chars)
+    elif k.startswith("AIza") and klen == 39:
         slug = "google"
-    # Anthropic/Claude keys start with "sk-ant-"
-    elif kl.startswith("sk-ant-"):
+    
+    # 4. Anthropic/Claude keys: sk-ant- prefix (70-80 chars, with mid-hyphen)
+    elif kl.startswith("sk-ant-") and klen >= 70:
         slug = "claude"
-    # OpenAI keys: "sk-pro-" or "sk-" (but not sk-or/sk-ant)
-    elif kl.startswith("sk-pro-") or (kl.startswith("sk-") and not kl.startswith("sk-or") and not kl.startswith("sk-ant")):
+    
+    # 5. OpenAI keys: sk-, sk-proj-, sk-svcacct- (not sk-or/sk-ant)
+    elif (kl.startswith("sk-proj-") or kl.startswith("sk-svcacct-") or 
+          (kl.startswith("sk-") and not kl.startswith("sk-or") and not kl.startswith("sk-ant") and klen >= 48)):
         slug = "openai"
-    # Fireworks keys: 40+ char hex-like strings (no distinctive prefix)
+    
+    # 6. Fireworks keys: 40+ char hex-like strings (no distinctive prefix)
     elif klen >= 40 and all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in kl):
         slug = "fireworks"
+    
+    # 7. Google AI Studio fallback (AIza + 35+ chars)
+    elif k.startswith("AIza") and klen >= 35:
+        slug = "google"
+    
     else:
         return None
     

@@ -642,8 +642,8 @@ def detect_provider_from_key(api_key):
           (kl.startswith("sk-") and not kl.startswith("sk-or") and not kl.startswith("sk-ant") and klen >= 48)):
         slug = "openai"
     
-    # 6. Fireworks keys: 40+ char hex-like strings (no distinctive prefix)
-    elif klen >= 40 and all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in kl):
+    # 6. Fireworks keys: fw_ prefix (typically 25 chars)
+    elif kl.startswith("fw_") and klen >= 20:
         slug = "fireworks"
     
     # 7. Google AI Studio fallback (AIza + 35+ chars)

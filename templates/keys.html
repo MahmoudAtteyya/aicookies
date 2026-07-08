@@ -352,7 +352,7 @@ body, nav, .container { font-family: var(--font-sans); }
 // Google AI:     AIza[A-Za-z0-9_-]{35}          (exactly 39 chars, starts with AIza)
 // Anthropic:     sk-ant-[a-z0-9]{4}-[A-Za-z0-9]{60,}  (~70-80 chars)
 // OpenAI:        sk-(-[a-z]+)?-[A-Za-z0-9]{32,} (sk-, sk-proj-, sk-svcacct-, 48-56+ chars)
-// Fireworks:     [A-Za-z0-9]{32,64}             (no prefix, hex-like, 40+ chars)
+// Fireworks:     fw_[A-Za-z0-9]{20,}            (prefix 'fw_', ~25 chars)
 function detectProviderFromKey(apiKey) {
     const k = (apiKey || '').trim();
     const kl = k.toLowerCase();
@@ -376,8 +376,8 @@ function detectProviderFromKey(apiKey) {
         (kl.startsWith('sk-') && !kl.startsWith('sk-or') && !kl.startsWith('sk-ant') && klen >= 48))
         return { slug:'openai', name:'OpenAI' };
     
-    // 6. Fireworks: 40+ char hex-like strings (no distinctive prefix)
-    if (klen >= 40 && /^[a-z0-9]+$/i.test(k)) return { slug:'fireworks', name:'Fireworks' };
+    // 6. Fireworks: fw_ prefix (~25 chars)
+    if (kl.startsWith('fw_') && klen >= 20) return { slug:'fireworks', name:'Fireworks' };
     
     // 7. Google AI Studio fallback (AIza + 35+ chars)
     if (k.startsWith('AIza') && klen >= 35) return { slug:'google', name:'Google' };

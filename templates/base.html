@@ -6,9 +6,12 @@
     <meta name="description" content="AI Proxy Gateway — OpenAI-compatible API with multi-provider support, smart key rotation, and Claude cookie orchestration.">
     <title>{% block title %}AI Proxy Gateway{% endblock %}</title>
 
-    <!-- Cairo font from Google Fonts -->
+    <!-- Vercel Geist font system -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Cairo for Arabic content -->
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <style>
@@ -18,29 +21,37 @@
            ═══════════════════════════════════════════════════════════════════ */
 
         :root {
-            /* ── Core palette (dark theme) ── */
-            --bg:           #0d1117;
-            --bg-elevated:  #161b22;
-            --bg-card:      #161b22;
-            --bg-input:     #0d1117;
-            --bg-hover:     #1c2128;
+            /* ── Vercel-inspired dark palette ── */
+            --bg:           #000000;
+            --bg-elevated:  #0a0a0a;
+            --bg-card:      #111111;
+            --bg-input:     #0a0a0a;
+            --bg-hover:     #1a1a1a;
 
-            /* ── Borders ── */
-            --border:       #30363d;
-            --border-light: #484f58;
-            --border-accent:#e63946;
+            /* ── Vercel shadow-as-border (most important!) ── */
+            --border-shadow: rgba(255,255,255,0.1) 0px 0px 0px 1px;
+            --border-light: rgba(255,255,255,0.15);
+            --border-hover: rgba(255,255,255,0.2);
+
+            /* ── Legacy borders (for compatibility) ── */
+            --border:       rgba(255,255,255,0.1);
+            --border-accent: #e63946;
 
             /* ── Text ── */
-            --text:         #c9d1d9;
-            --text-dim:     #8b949e;
-            --text-muted:   #6e7681;
+            --text:         #fafafa;
+            --text-dim:     #a0a0a0;
+            --text-muted:   #737373;
 
-            /* ── Accent (red) ── */
-            --accent:       #e63946;
-            --accent-hover: #f15560;
-            --accent-dim:   #b32832;
-            --accent-glow:  rgba(230,57,70,0.12);
-            --accent-glow2: rgba(230,57,70,0.06);
+            /* ── Accent (Vercel workflow red) ── */
+            --accent:       #ff5b4f;
+            --accent-hover: #ff7668;
+            --accent-dim:   #cc4a3f;
+            --accent-glow:  rgba(255,91,79,0.15);
+
+            /* ── Vercel workflow colors ── */
+            --ship-red:     #ff5b4f;
+            --preview-pink: #de1d8d;
+            --develop-blue: #0a72ef;
 
             /* ── Status colors ── */
             --green:        #3fb950;
@@ -71,9 +82,9 @@
             --t-med:  0.25s ease;
             --t-slow:  0.4s ease;
 
-            /* ── Fonts ── */
-            --font-sans: 'Cairo', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
-            --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+            /* ── Fonts (Vercel Geist system) ── */
+            --font-sans: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace;
 
             /* ── Layout ── */
             --nav-h: 60px;
@@ -303,24 +314,35 @@
         .flash.info    { background: var(--blue-bg);   color: var(--blue);   border: 1px solid rgba(88,166,255,0.3); }
 
         /* ═══════════════════════════════════════════════════════════════════
-           CARDS
+           CARDS (Vercel shadow-as-border technique)
            ═══════════════════════════════════════════════════════════════════ */
         .card {
             background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--r-lg);
+            /* Vercel shadow stack: border + elevation + ambient + inner glow */
+            box-shadow: 
+                rgba(255,255,255,0.08) 0px 0px 0px 1px,  /* border */
+                rgba(0,0,0,0.5) 0px 2px 2px,                /* subtle elevation */
+                rgba(0,0,0,0.4) 0px 8px 8px -8px,           /* ambient depth */
+                inset 0 1px 0 rgba(255,255,255,0.05);      /* inner glow */
+            border-radius: 8px;
             padding: 1.5rem;
             margin-bottom: 1rem;
-            transition: transform var(--t-med), border-color var(--t-med), box-shadow var(--t-med);
+            transition: box-shadow var(--t-med), transform var(--t-med);
+            border: none; /* No CSS border - use shadow! */
         }
         .card:hover {
-            border-color: var(--border-light);
+            box-shadow: 
+                rgba(255,255,255,0.12) 0px 0px 0px 1px,
+                rgba(0,0,0,0.6) 0px 4px 4px,
+                rgba(0,0,0,0.5) 0px 12px 12px -6px,
+                inset 0 1px 0 rgba(255,255,255,0.08);
             transform: translateY(-2px);
-            box-shadow: var(--shadow-md);
         }
         .card-accent {
-            border-color: var(--accent);
-            box-shadow: var(--shadow-glow);
+            box-shadow: 
+                rgba(255,91,79,0.3) 0px 0px 0px 1px,
+                rgba(0,0,0,0.5) 0px 2px 2px,
+                0 0 20px var(--accent-glow);
         }
 
         /* ═══════════════════════════════════════════════════════════════════

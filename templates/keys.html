@@ -135,7 +135,7 @@
                             </form>
                             {% endif %}
 
-                            <form method="POST" action="/keys/{{ key.id }}/delete" style="display: inline;" onsubmit="return confirm('Delete this key?');">
+                            <form method="POST" action="/delete-key/{{ key.id }}" style="display: inline;" onsubmit="return confirm('Delete this key?');">
                                 <button type="submit" style="background: var(--bg-tertiary); color: #f85149; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.8125rem;">
                                     🗑️
                                 </button>

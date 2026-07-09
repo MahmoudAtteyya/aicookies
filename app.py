@@ -3794,6 +3794,49 @@ def cookies_page():
     conn.close()
     return render_template("cookies.html", files=cookie_files)
 
+@app.route("/cookies/upload", methods=["POST"])
+@login_required
+def upload_cookies():
+    """Upload cookie file"""
+    if "file" not in request.files:
+        flash("No file uploaded", "error")
+        return redirect(url_for("cookies_page"))
+    
+    file = request.files["file"]
+    if file.filename == "":
+        flash("No file selected", "error")
+        return redirect(url_for("cookies_page"))
+    
+    # Get form data
+    platform = request.form.get("platform", "unknown")
+    
+    # Read file content
+    content = file.read().decode("utf-8", errors="ignore")
+    cookie_count = content.count("=")  # Simple count
+    
+    # Save to database
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO cookie_files (platform, filename, content, cookie_count) VALUES (?,?,?,?)",
+        (platform, file.filename, content, cookie_count)
+    )
+    conn.commit()
+    conn.close()
+    
+    flash(f"Uploaded {cookie_count} cookies from {file.filename}", "success")
+    return redirect(url_for("cookies_page"))
+
+@app.route("/cookies/<int:file_id>/delete", methods=["POST"])
+@login_required
+def delete_cookie_file(file_id):
+    """Delete a cookie file"""
+    conn = get_db()
+    conn.execute("DELETE FROM cookie_files WHERE id=?", (file_id,))
+    conn.commit()
+    conn.close()
+    flash("Cookie file deleted", "success")
+    return redirect(url_for("cookies_page"))
+
 @app.route("/docs")
 @login_required
 def docs_page():
@@ -4491,6 +4534,39 @@ def api_latest():
     conn.close()
     if not f: return jsonify({"error": "No cookies"}), 404
     return jsonify(dict(f))
+
+@app.route("/keys/<int:key_id>/suspend", methods=["POST"])
+@login_required
+def suspend_key(key_id):
+    """Suspend an API key"""
+    conn = get_db()
+    conn.execute("UPDATE api_keys SET suspended=1, suspended_at=CURRENT_TIMESTAMP WHERE id=?", (key_id,))
+    conn.commit()
+    conn.close()
+    flash("Key suspended successfully", "success")
+    return redirect(url_for("keys_page"))
+
+@app.route("/keys/<int:key_id>/activate", methods=["POST"])
+@login_required
+def activate_key(key_id):
+    """Activate a suspended/dead key"""
+    conn = get_db()
+    conn.execute("UPDATE api_keys SET is_active=1, suspended=0, dead=0, suspended_at=NULL WHERE id=?", (key_id,))
+    conn.commit()
+    conn.close()
+    flash("Key activated successfully", "success")
+    return redirect(url_for("keys_page"))
+
+@app.route("/keys/<int:key_id>/revive", methods=["POST"])
+@login_required
+def revive_key(key_id):
+    """Revive a dead key"""
+    conn = get_db()
+    conn.execute("UPDATE api_keys SET dead=0, is_active=1, suspended=0 WHERE id=?", (key_id,))
+    conn.commit()
+    conn.close()
+    flash("Key revived successfully", "success")
+    return redirect(url_for("keys_page"))
 
 @app.route("/keys/add", methods=["POST"])
 @login_required

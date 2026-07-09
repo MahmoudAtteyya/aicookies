@@ -101,14 +101,14 @@
                 
                 <td>
                     <div style="display: flex; gap: 0.5rem;">
-                        <form method="POST" action="/tokens/{{ token['id'] }}/revoke" style="display: inline;">
+                        <form method="POST" action="/tokens/revoke/{{ token['id'] }}" style="display: inline;">
                             <button type="submit" class="btn btn-secondary" style="padding: 0.375rem 0.75rem; font-size: 0.8125rem;" onclick="return confirm('Revoke this token?')">
                                 ⏸️ Revoke
                             </button>
                         </form>
-                        <form method="POST" action="/tokens/{{ token['id'] }}/delete" style="display: inline;">
-                            <button type="submit" class="btn btn-danger" style="padding: 0.375rem 0.75rem; font-size: 0.8125rem;" onclick="return confirm('Delete this token permanently?')">
-                                🗑️
+                        <form method="POST" action="/tokens/revoke/{{ token['id'] }}" style="display: inline;">
+                            <button type="submit" class="btn btn-secondary" style="padding: 0.375rem 0.75rem; font-size: 0.8125rem; background: var(--bg-tertiary); color: #f85149; border: none; cursor: pointer;" onclick="return confirm('Delete this token?')">
+                                🗑️ Delete
                             </button>
                         </form>
                     </div>

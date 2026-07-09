@@ -93,7 +93,7 @@
                 
                 <td style="color: var(--text-tertiary); font-size: 0.8125rem;">
                     {% if token['created_at'] %}
-                    {{ token['created_at'].strftime('%Y-%m-%d') }}
+                    {{ token['created_at'][:10] if token['created_at'] is string else token['created_at'].strftime('%Y-%m-%d') }}
                     {% else %}
                     —
                     {% endif %}

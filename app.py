@@ -1879,6 +1879,7 @@ def extract_claude_cookies(cookie_file):
     We send ALL cookies to maximize Cloudflare acceptance — 
     including cf_clearance, __cf_bm, __ssid, _cfuvid, etc.
     Validates cookie names (safe charset) and auto-extracts XSRF token.
+    Supports both tab-separated and space-separated formats.
     """
     raw = cookie_file["raw_content"]
     cookies = []
@@ -1886,7 +1887,11 @@ def extract_claude_cookies(cookie_file):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
+        # Try tab-separated first (standard Netscape format)
         parts = line.split("\t")
+        # If not enough parts, try space-separated (alternative format)
+        if len(parts) < 7:
+            parts = line.split()
         if len(parts) < 7:
             continue
         name = parts[5]

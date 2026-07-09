@@ -3761,8 +3761,23 @@ def dashboard():
     providers = conn.execute("SELECT p.*, COUNT(k.id) as key_count FROM api_providers p LEFT JOIN api_keys k ON k.provider_id = p.id AND k.is_active = 1 AND k.dead = 0 AND k.suspended = 0 GROUP BY p.id ORDER BY p.name").fetchall()
     dead_keys = conn.execute("SELECT COUNT(*) FROM api_keys WHERE dead = 1").fetchone()[0]
     suspended_keys = conn.execute("SELECT COUNT(*) FROM api_keys WHERE suspended = 1").fetchone()[0]
+    
+    # Calculate stats for dashboard
+    total_keys = conn.execute("SELECT COUNT(*) FROM api_keys").fetchone()[0]
+    active_keys = conn.execute("SELECT COUNT(*) FROM api_keys WHERE is_active = 1 AND dead = 0 AND suspended = 0").fetchone()[0]
+    total_usage = conn.execute("SELECT COALESCE(SUM(usage_count), 0) FROM api_keys").fetchone()[0]
+    
     conn.close()
-    return render_template("dashboard.html", files=cookie_files, claude_count=claude_count, providers=providers, dead_keys=dead_keys, suspended_keys=suspended_keys, models=MODELS)
+    
+    stats = {
+        'total': total_keys,
+        'active': active_keys,
+        'dead': dead_keys,
+        'suspended': suspended_keys,
+        'usage': total_usage
+    }
+    
+    return render_template("dashboard.html", files=cookie_files, claude_count=claude_count, providers=providers, dead_keys=dead_keys, suspended_keys=suspended_keys, models=MODELS, stats=stats)
 
 @app.route("/dashboard")
 @login_required
@@ -3849,9 +3864,10 @@ def tokens_page():
         last_used_at TIMESTAMP
     )""")
     tokens = conn.execute("SELECT * FROM proxy_api_keys ORDER BY created_at DESC").fetchall()
+    tokens_list = [dict(t) for t in tokens]  # Convert to dicts
     total_requests = conn.execute("SELECT COALESCE(SUM(usage_count),0) FROM proxy_api_keys").fetchone()[0]
     conn.close()
-    return render_template("tokens.html", tokens=tokens, total_requests=total_requests)
+    return render_template("tokens.html", tokens=tokens_list, total_requests=total_requests)
 
 @app.route("/tokens/create", methods=["POST"])
 @login_required

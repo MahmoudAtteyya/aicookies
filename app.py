@@ -416,10 +416,27 @@ MODELS = {
     # ───────────────────────────────────────────────────────────────────────
     # Claude (cookie-based — special handling, no API key needed)
     # ───────────────────────────────────────────────────────────────────────
+    "claude-sonnet-5": {
+        "provider": "claude", "real_model": "claude-sonnet-5",
+        "desc": "Claude Sonnet 5 — Best speed/intelligence balance, 200K ctx", "style": "direct", "tokens": 200000,
+        "developer": "Anthropic", "display_name": "Claude Sonnet 5",
+        "max_output": 16384, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "$3.00", "out": "$15.00"},
+    },
+    # ── Model alias for convenience ──
+    "claude": {
+        "provider": "claude", "real_model": "claude-sonnet-5",
+        "desc": "Claude (alias) — Same as claude-sonnet-5", "style": "direct", "tokens": 200000,
+        "developer": "Anthropic", "display_name": "Claude",
+        "max_output": 16384, "params": "Undisclosed",
+        "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": True, "json": True, "stream": True},
+        "pricing": {"in": "$3.00", "out": "$15.00"},
+    },
     "claude-sonnet-4-6": {
         "provider": "claude", "real_model": "claude-sonnet-4-6",
-        "desc": "Claude Sonnet 4 — 200K context, cookie-based", "style": "direct", "tokens": 200000,
-        "developer": "Anthropic", "display_name": "Claude Sonnet 4",
+        "desc": "Claude Sonnet 4 (legacy) — 200K context, cookie-based", "style": "direct", "tokens": 200000,
+        "developer": "Anthropic", "display_name": "Claude Sonnet 4 (Legacy)",
         "max_output": 8192, "params": "Undisclosed",
         "capabilities": {"text": True, "code": True, "thinking": True, "tools": True, "vision": True, "web_search": False, "json": True, "stream": True},
         "pricing": {"in": "$3.00", "out": "$15.00"},
@@ -2634,12 +2651,36 @@ def _cache_set(key, data, ttl=CONV_CACHE_TTL):
 def proxy_to_claude(real_model, model_slug):
     """Forward request to Claude.ai web API using stored browser cookies.
     
-    Smart rotation features:
-    - Least-Used first (distributes load evenly)
-    - Cooldown timer after 429 (5 min, auto-recovery)
-    - Dead token detection on 401/403 (permanent removal)
-    - Seamless failover: retries next token on failure within same request
-    - Thread-safe with RLock for concurrent requests
+    PROFESSIONAL MULTI-ACCOUNT ROTATION:
+    ─────────────────────────────────────
+    Uses free Claude.ai accounts with intelligent failover and seamless continuation.
+    
+    Key Features:
+    ─────────────
+    1. **Smart Account Selection**:
+       - Least-used first (distributes load across all accounts)
+       - Affinity pinning (multi-turn conversations stick to same account)
+       - Tier awareness (prio accounts get higher priority)
+    
+    2. **Robust Error Recovery**:
+       - 429 Rate Limit → 5-min cooldown, auto-retry next account
+       - 401/403 Auth Error → Mark account as DEAD, permanent removal
+       - Connection Timeout → Immediate failover, no waiting
+       - Cloudflare Challenge → Temporary cooldown, account survives
+    
+    3. **Intelligent Continuation** (Critical for Free Accounts):
+       - When account quota exhausts MID-RESPONSE:
+         * Capture partial text generated so far
+         * Switch to next available account
+         * Resume from EXACTLY where previous account stopped
+         * No duplicate text, seamless conversation flow
+       - Pattern: "Continue from: [partial text]... (just continue naturally)"
+    
+    4. **Thread-Safe Concurrency**:
+       - RLock protects all account state
+       - Safe for parallel requests
+       - Per-account cooldown tracking
+    
     """
     cookie_sets = get_claude_cookie_sets()
     if not cookie_sets:
@@ -2747,14 +2788,22 @@ def proxy_to_claude(real_model, model_slug):
             
             # ── Continuation: if we have partial text from a failed attempt, ask Claude to continue ──
             if accumulated_partial:
+                # SMART CONTINUATION: Preserve context and resume seamlessly
                 effective_prompt = (
                     f"{prompt_text}\n\n"
                     f"---\n\n"
-                    f"[A previous attempt to answer this was interrupted. Here is what was generated so far:]\n"
-                    f'"{accumulated_partial}"\n\n'
-                    f"[Continue the answer from exactly where it left off. Do not repeat the text above. "
-                    f"Just continue naturally as if you never stopped.]"
+                    f"[⚠️ CONTINUATION NOTICE]\n"
+                    f"The previous response was interrupted mid-generation due to account quota limits.\n"
+                    f"Below is what was generated so far:\n\n"
+                    f'"""{accumulated_partial}"""\n\n'
+                    f"[INSTRUCTIONS]\n"
+                    f"Continue exactly from where the text above stopped. \n"
+                    f"- Do NOT repeat or rephrase what already written\n"
+                    f"- Do NOT add introductions like 'Continuing...' or 'As mentioned...'\n"
+                    f"- Just continue naturally as if you never stopped\n"
+                    f"- Match the tone, style, and formatting of the partial text\n"
                 )
+                app.logger.info(f"[claude] Continuation mode: resuming from {len(accumulated_partial)} chars")
             
             headers = {
                 "Cookie": cookie_header,
@@ -2948,15 +2997,36 @@ def proxy_to_claude(real_model, model_slug):
             # ── Capture partial response for continuation ──
             # If we got ANY text back before the error (e.g. timeout during thinking),
             # accumulate it so the next cookie can continue from where this one stopped.
+            _resp2 = locals().get('resp2')
             try:
-                _r2 = locals().get('resp2')
-                if _r2 is not None:
-                    partial_text, _ = _capture_stream_partial(_r2)
+                if _resp2 is not None:
+                    partial_text, _ = _capture_stream_partial(_resp2)
                     if partial_text:
+                        # SMART DEDUPLICATION: Avoid overlapping text
+                        # If the new partial ends with same words as accumulated starts, trim overlap
+                        if accumulated_partial and partial_text:
+                            # Find longest suffix-prefix overlap
+                            overlap_len = 0
+                            min_check = min(len(accumulated_partial), len(partial_text), 100)
+                            for i in range(1, min_check + 1):
+                                if accumulated_partial[-i:] == partial_text[:i]:
+                                    overlap_len = i
+                            if overlap_len > 0:
+                                partial_text = partial_text[overlap_len:]
+                                app.logger.info(f"[claude] Deduplicated {overlap_len} chars overlap")
+                        
                         accumulated_partial = (accumulated_partial + partial_text).strip()
                         app.logger.info(f"[claude] Captured {len(partial_text)} chars partial text for continuation (total: {len(accumulated_partial)})")
-            except Exception:
-                pass
+            except Exception as dedupe_err:
+                app.logger.debug(f"[claude] Deduplication error: {dedupe_err}")
+                # Fallback: just append without dedup
+                try:
+                    if _resp2 is not None:
+                        partial_text, _ = _capture_stream_partial(_resp2)
+                        if partial_text:
+                            accumulated_partial = (accumulated_partial + partial_text).strip()
+                except Exception:
+                    pass
 
             # Check for Cloudflare challenge FIRST (before generic 403 handling)
             if code == 403 and ("challenge" in body_err.lower() or "just a moment" in body_err.lower()):
@@ -3449,8 +3519,14 @@ def proxy_chat_standard():
     except:
         return format_error_response("INVALID_REQUEST", "", detail="Invalid JSON body. Send {\"model\":\"...\",\"messages\":[...]}")
     
-    if not model_slug or model_slug not in MODELS:
-        return format_error_response("MODEL_NOT_FOUND", model_slug or "unknown")
+    # ── Default model fallback ──
+    # If no model specified, use claude-sonnet-5 as the default
+    if not model_slug:
+        model_slug = "claude-sonnet-5"
+        app.logger.info(f"[proxy] No model specified, defaulting to {model_slug}")
+    
+    if model_slug not in MODELS:
+        return format_error_response("MODEL_NOT_FOUND", model_slug)
     
     model_info = MODELS[model_slug]
     resp = proxy_to_provider(model_info["provider"], model_info["real_model"], model_slug)

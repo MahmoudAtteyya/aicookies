@@ -73,7 +73,7 @@
                     </td>
 
                     <td style="color: var(--text-tertiary); font-size: 0.8125rem;">
-                        {{ key.suspended_at.strftime('%Y-%m-%d %H:%M') if key.suspended_at else '—' }}
+                        {{ (key.suspended_at[:16] if key.suspended_at is string else key.suspended_at.strftime('%Y-%m-%d %H:%M')) if key.suspended_at else '—' }}
                     </td>
 
                     <td>

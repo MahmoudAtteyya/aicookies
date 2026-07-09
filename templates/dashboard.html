@@ -144,7 +144,7 @@
                     </td>
                     <td style="font-family: var(--font-mono);">{{ "{:,}".format(key.usage_count) }}</td>
                     <td style="color: var(--text-tertiary);">
-                        {{ key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'Never' }}
+                        {{ (key.last_used_at[:16] if key.last_used_at is string else key.last_used_at.strftime('%Y-%m-%d %H:%M')) if key.last_used_at else 'Never' }}
                     </td>
                 </tr>
                 {% endfor %}

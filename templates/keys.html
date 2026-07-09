@@ -108,7 +108,7 @@
                     </td>
 
                     <td style="color: var(--text-tertiary); font-size: 0.8125rem;">
-                        {{ key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'Never' }}
+                        {{ (key.last_used_at[:16] if key.last_used_at is string else key.last_used_at.strftime('%Y-%m-%d %H:%M')) if key.last_used_at else 'Never' }}
                     </td>
 
                     <td>

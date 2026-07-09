@@ -129,7 +129,7 @@
                     </td>
 
                     <td style="color: var(--text-tertiary); font-size: 0.8125rem;">
-                        {{ file.uploaded_at.strftime('%Y-%m-%d %H:%M') }}
+                        {{ file.uploaded_at[:16] if file.uploaded_at is string else file.uploaded_at.strftime('%Y-%m-%d %H:%M') }}
                     </td>
 
                     <td>

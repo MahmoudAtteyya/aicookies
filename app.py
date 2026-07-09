@@ -4492,6 +4492,38 @@ def api_latest():
     if not f: return jsonify({"error": "No cookies"}), 404
     return jsonify(dict(f))
 
+@app.route("/keys/add", methods=["POST"])
+@login_required
+def add_key():
+    """Add new API key from form submission"""
+    conn = get_db()
+    provider_id = request.form.get("provider_id")
+    label = request.form.get("label", "")
+    key_value = request.form.get("key_value", "").strip()
+    
+    if not provider_id or not key_value:
+        conn.close()
+        flash("Provider and key value are required", "error")
+        return redirect(url_for("keys_page"))
+    
+    # Validate provider exists
+    prov = conn.execute("SELECT id FROM api_providers WHERE id=?", (provider_id,)).fetchone()
+    if not prov:
+        conn.close()
+        flash("Invalid provider", "error")
+        return redirect(url_for("keys_page"))
+    
+    # Insert new key
+    conn.execute(
+        "INSERT INTO api_keys (provider_id, label, key_value, is_active) VALUES (?,?,?,1)",
+        (provider_id, label, key_value)
+    )
+    conn.commit()
+    conn.close()
+    
+    flash("API key added successfully", "success")
+    return redirect(url_for("keys_page"))
+
 @app.route("/api/keys", methods=["GET", "POST"])
 @login_required
 def api_keys():

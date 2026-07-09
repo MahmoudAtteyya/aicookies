@@ -3893,7 +3893,7 @@ def upload_cookies():
     # Save to database
     conn = get_db()
     conn.execute(
-        "INSERT INTO cookie_files (platform, filename, content, cookie_count) VALUES (?,?,?,?)",
+        "INSERT INTO cookie_files (platform, filename, raw_content, cookie_count) VALUES (?,?,?,?)",
         (platform, file.filename, content, cookie_count)
     )
     conn.commit()

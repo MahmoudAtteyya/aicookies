@@ -4011,6 +4011,17 @@ def proxy_info(model_slug):
         "auth_required": bool(PROXY_API_KEY_HASH),
     })
 
+@app.route('/v1/models/reload', methods=['POST'])
+def reload_models():
+    """Force reload of models from database."""
+    global MODELS
+    MODELS = get_all_models()
+    return jsonify({
+        'status': 'ok',
+        'models_count': len(MODELS),
+        'message': f'Reloaded {len(MODELS)} models from database'
+    })
+
 @app.route("/v1/models", methods=["GET"])
 def list_models():
     """List all available proxy models."""
@@ -5272,9 +5283,20 @@ def api_list_providers():
         d = dict(p); d["free_models"] = json.loads(p["free_models"]) if p["free_models"] else []; result.append(d)
     return jsonify(result)
 
-@app.route("/api/models")
-@login_required
-def api_models():
+@app.route('/v1/models/reload', methods=['POST'])
+def reload_models():
+    """Force reload of models from database."""
+    global MODELS
+    MODELS = get_all_models()
+    return jsonify({
+        'status': 'ok',
+        'models_count': len(MODELS),
+        'message': f'Reloaded {len(MODELS)} models from database'
+    })
+
+@app.route('/v1/models')
+@app.route('/v1/engines')
+def list_models():
     conn = get_db()
     result = []
     for slug, info in MODELS.items():

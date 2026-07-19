@@ -181,6 +181,8 @@ let models = [];
 
 function addModel() {
     const input = document.getElementById('modelInput');
+    if (!input) return;
+    
     const modelName = input.value.trim();
     
     if (modelName && !models.includes(modelName)) {
@@ -199,6 +201,8 @@ function removeModel(modelName) {
 function renderModels() {
     const container = document.getElementById('modelsContainer');
     const hiddenInput = document.getElementById('free_models');
+    
+    if (!container || !hiddenInput) return;
     
     container.innerHTML = models.map(model => `
         <span style="display: inline-flex; align-items: center; gap: 0.5rem; 
@@ -219,6 +223,7 @@ function renderModels() {
 // Wait for DOM to load before attaching event listeners
 document.addEventListener('DOMContentLoaded', function() {
     const modelInput = document.getElementById('modelInput');
+    const addButton = document.querySelector('button[onclick="addModel()"]');
     
     if (modelInput) {
         // Handle Enter key
@@ -234,6 +239,14 @@ document.addEventListener('DOMContentLoaded', function() {
             if (e.key === 'Enter') {
                 e.preventDefault();
             }
+        });
+    }
+    
+    // Also attach click listener to Add button directly
+    if (addButton) {
+        addButton.addEventListener('click', function(e) {
+            e.preventDefault();
+            addModel();
         });
     }
 });

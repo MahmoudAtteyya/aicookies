@@ -21,13 +21,13 @@
 <div id="tokenForm" style="display: none; margin-bottom: 2rem;">
     <div class="card">
         <h4 style="margin-bottom: 1rem;">Generate New Token</h4>
-        <form method="POST" action="/tokens/create">
+        <form id="tokenCreateForm" onsubmit="return createToken(event)">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
                 <div>
                     <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem;">
                         Label
                     </label>
-                    <input type="text" name="label" class="form-input" placeholder="e.g., Production API" required>
+                    <input type="text" name="label" id="tokenLabel" class="form-input" placeholder="e.g., Production API">
                 </div>
             </div>
 
@@ -36,6 +36,23 @@
                 <button type="button" onclick="toggleTokenForm()" class="btn btn-secondary">Cancel</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Token Created Modal -->
+<div id="tokenModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; padding: 1rem;">
+    <div style="max-width: 500px; margin: 5rem auto; background: var(--bg-primary); border-radius: 12px; padding: 2rem;">
+        <h3 style="margin-bottom: 1rem; color: #10b981;">✅ Token Created Successfully!</h3>
+        <p style="margin-bottom: 1.5rem; color: var(--text-secondary); font-size: 0.875rem;">
+            Copy this token now. It won't be shown again!
+        </p>
+        <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; word-break: break-all; font-family: var(--font-mono); font-size: 0.875rem;">
+            <span id="newTokenValue" style="color: var(--text-primary);"></span>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+            <button onclick="copyToken()" class="btn btn-primary">📋 Copy Token</button>
+            <button onclick="closeTokenModal()" class="btn btn-secondary">Close</button>
+        </div>
     </div>
 </div>
 
@@ -129,9 +146,53 @@
 </div>
 
 <script>
+let newToken = '';
+
 function toggleTokenForm() {
     const form = document.getElementById('tokenForm');
     form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function createToken(e) {
+    e.preventDefault();
+    
+    const label = document.getElementById('tokenLabel').value.trim() || 'default';
+    
+    try {
+        const response = await fetch('/tokens/create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({label: label})
+        });
+        
+        const data = await response.json();
+        
+        if (data.api_key) {
+            newToken = data.api_key;
+            document.getElementById('newTokenValue').textContent = data.api_key;
+            document.getElementById('tokenModal').style.display = 'block';
+            document.getElementById('tokenForm').style.display = 'none';
+            document.getElementById('tokenLabel').value = '';
+            
+            // Reload page after closing modal
+            // location.reload();
+        }
+    } catch (err) {
+        alert('Error creating token: ' + err.message);
+    }
+    
+    return false;
+}
+
+function copyToken() {
+    navigator.clipboard.writeText(newToken).then(() => {
+        alert('✅ Token copied to clipboard!');
+    });
+}
+
+function closeTokenModal() {
+    document.getElementById('tokenModal').style.display = 'none';
+    location.reload();
 }
 </script>
 {% endblock %}

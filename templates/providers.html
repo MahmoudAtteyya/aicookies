@@ -72,7 +72,7 @@
                 <input type="text" id="modelInput" 
                     placeholder="Type model name and press Enter or Add"
                     style="flex: 1; min-width: 200px; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono);">
-                <button type="button" onclick="addModel()" class="btn btn-secondary" style="padding: 0.75rem 1rem;">
+                <button type="button" id="addModelBtn" class="btn btn-secondary" style="padding: 0.75rem 1rem;">
                     Add
                 </button>
             </div>
@@ -223,7 +223,7 @@ function renderModels() {
 // Wait for DOM to load before attaching event listeners
 document.addEventListener('DOMContentLoaded', function() {
     const modelInput = document.getElementById('modelInput');
-    const addButton = document.querySelector('button[onclick="addModel()"]');
+    const addButton = document.getElementById('addModelBtn');
     
     if (modelInput) {
         // Handle Enter key
@@ -242,7 +242,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Also attach click listener to Add button directly
+    // Attach click listener to Add button
     if (addButton) {
         addButton.addEventListener('click', function(e) {
             e.preventDefault();

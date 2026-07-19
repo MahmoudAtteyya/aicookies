@@ -3651,6 +3651,75 @@ def proxy_health():
     })
 
 
+@app.route("/v1/debug/provider/<provider_slug>", methods=["GET"])
+def debug_provider(provider_slug):
+    """Debug endpoint to check provider keys status. No auth required for debugging."""
+    conn = get_db()
+    
+    # Get provider info
+    provider = conn.execute(
+        "SELECT * FROM api_providers WHERE slug = ?", 
+        (provider_slug,)
+    ).fetchone()
+    
+    if not provider:
+        conn.close()
+        return jsonify({"error": f"Provider '{provider_slug}' not found"}), 404
+    
+    # Get all keys for this provider
+    keys = conn.execute("""
+        SELECT id, key_value, is_active, dead, suspended, 
+               usage_count, last_error_msg, last_error_at, created_at
+        FROM api_keys 
+        WHERE provider_id = ?
+        ORDER BY created_at DESC
+    """, (provider['id'],)).fetchall()
+    conn.close()
+    
+    # Summarize key status
+    total_keys = len(keys)
+    active_keys = [k for k in keys if k['is_active'] == 1 and k['dead'] == 0 and k['suspended'] == 0]
+    dead_keys = [k for k in keys if k['dead'] == 1]
+    suspended_keys = [k for k in keys if k['suspended'] == 1]
+    inactive_keys = [k for k in keys if k['is_active'] == 0 and k['dead'] == 0 and k['suspended'] == 0]
+    
+    return jsonify({
+        "provider": {
+            "slug": provider['slug'],
+            "name": provider['name'],
+            "base_url": provider['base_url'],
+            "provider_type": provider['provider_type'],
+            "free_models": json.loads(provider['free_models']) if provider['free_models'] else []
+        },
+        "keys_summary": {
+            "total": total_keys,
+            "active": len(active_keys),
+            "dead": len(dead_keys),
+            "suspended": len(suspended_keys),
+            "inactive": len(inactive_keys)
+        },
+        "active_keys": [{
+            "id": k['id'],
+            "key_preview": k['key_value'][:20] + "..." if len(k['key_value']) > 20 else k['key_value'],
+            "usage_count": k['usage_count'],
+            "last_error": k['last_error_msg'],
+            "last_error_at": k['last_error_at']
+        } for k in active_keys[:5]],  # Show first 5 active keys
+        "dead_keys": [{
+            "id": k['id'],
+            "key_preview": k['key_value'][:20] + "..." if len(k['key_value']) > 20 else k['key_value'],
+            "last_error": k['last_error_msg'],
+            "last_error_at": k['last_error_at']
+        } for k in dead_keys[:3]],  # Show first 3 dead keys
+        "suspended_keys": [{
+            "id": k['id'],
+            "key_preview": k['key_value'][:20] + "..." if len(k['key_value']) > 20 else k['key_value'],
+            "last_error": k['last_error_msg'],
+            "last_error_at": k['last_error_at']
+        } for k in suspended_keys[:3]],  # Show first 3 suspended keys
+    })
+
+
 @app.after_request
 def add_cors_headers(response):
     """Add CORS headers for API endpoints only. Frontend pages are protected."""

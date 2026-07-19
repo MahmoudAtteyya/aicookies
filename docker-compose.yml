@@ -1,4 +1,20 @@
 services:
+  # ── Redis for Stream Buffer Storage ──
+  redis:
+    image: redis:7-alpine
+    container_name: aicookies-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   aicookies:
     build: .
     container_name: aicookies
@@ -16,12 +32,16 @@ services:
       - PROXY_API_KEY_HASH=39ed4e7fecce75348ef79a2a2fa89dff3e1971022ae405a82d1e79d7b94215be
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - COOKIE_ENCRYPTION_KEY=${COOKIE_ENCRYPTION_KEY:-}
+      - REDIS_URL=redis://redis:6379/0
       # IPRoyal Residential Proxy (disabled - account suspended)
       # - PROXY_ENABLED=false
       # - PROXY_USER=7MbCthZqPB0y1E1T
       # - PROXY_PASS=sTj24Oqhz2RPrIM8
       # - PROXY_HOST=geo.iproyal.com
       # - PROXY_PORT=12321
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - dokploy-network
     labels:
@@ -44,6 +64,9 @@ services:
       - "traefik.http.middlewares.aicookies-secheaders.headers.customresponseheaders.X-API-Proxy=AI-Cookies-Gateway"
       - "traefik.http.services.aicookies.loadbalancer.server.port=5050"
       - "traefik.docker.network=dokploy-network"
+
+volumes:
+  redis-data:
 
 networks:
   dokploy-network:

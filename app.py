@@ -4362,6 +4362,87 @@ def keys_page():
         total_keys=len(keys_list),
         current_provider='all')
 
+@app.route("/keys/upload", methods=["POST"])
+@login_required
+def keys_upload():
+    """Upload multiple keys from a text file for a specific provider."""
+    provider_id = request.form.get("provider_id")
+    if not provider_id:
+        flash("❌ Please select a provider", "danger")
+        return redirect(url_for("keys_page"))
+    
+    if "keys_file" not in request.files:
+        flash("❌ No file uploaded", "danger")
+        return redirect(url_for("keys_page"))
+    
+    file = request.files["keys_file"]
+    if file.filename == "":
+        flash("❌ No file selected", "danger")
+        return redirect(url_for("keys_page"))
+    
+    if not file.filename.endswith(".txt"):
+        flash("❌ Only .txt files are supported", "danger")
+        return redirect(url_for("keys_page"))
+    
+    try:
+        # Read file content
+        content = file.read().decode("utf-8")
+        keys = [line.strip() for line in content.split("\n") if line.strip()]
+        
+        if not keys:
+            flash("❌ No keys found in file", "danger")
+            return redirect(url_for("keys_page"))
+        
+        conn = get_db()
+        added_count = 0
+        duplicate_count = 0
+        
+        # Get provider info
+        provider = conn.execute(
+            "SELECT id, name, slug FROM api_providers WHERE id = ?",
+            (provider_id,)
+        ).fetchone()
+        
+        if not provider:
+            flash("❌ Provider not found", "danger")
+            conn.close()
+            return redirect(url_for("keys_page"))
+        
+        provider_name = provider["name"]
+        
+        for key_val in keys:
+            # Check if key already exists
+            existing = conn.execute(
+                "SELECT id FROM api_keys WHERE key_value = ?",
+                (key_val,)
+            ).fetchone()
+            
+            if existing:
+                duplicate_count += 1
+                continue
+            
+            # Add key
+            label = f"{provider_name} key"
+            conn.execute(
+                "INSERT INTO api_keys (provider_id, label, key_value) VALUES (?, ?, ?)",
+                (int(provider_id), label, key_val)
+            )
+            added_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        flash(
+            f"✅ Added {added_count} keys for {provider_name}"
+            + (f" ({duplicate_count} duplicates skipped)" if duplicate_count > 0 else ""),
+            "success"
+        )
+        
+    except Exception as e:
+        flash(f"❌ Error uploading keys: {str(e)[:100]}", "danger")
+    
+    return redirect(url_for("keys_page"))
+
 @app.route("/delete-key/<int:key_id>", methods=["POST"])
 @login_required
 def delete_key(key_id):

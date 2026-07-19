@@ -61,12 +61,38 @@
                 Enable streaming in your request for real-time token delivery.
             </p>
         </div>
+        
+        <!-- Auto-generated Provider Endpoints -->
+        <div class="card card-hover">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 1.5rem;">🔌</span>
+                    <div>
+                        <div style="font-weight: 600;">Provider Endpoints</div>
+                        <div style="font-size: 0.8125rem; color: var(--text-tertiary);">Auto-generated</div>
+                    </div>
+                </div>
+                <span class="badge badge-success">{{ models|length }} models</span>
+            </div>
+
+            <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
+                <div style="font-size: 0.8125rem; color: var(--text-tertiary); margin-bottom: 0.5rem;">Example</div>
+                <code style="font-family: var(--font-mono); font-size: 0.875rem; color: var(--accent-primary);">
+                    POST /v1/{provider-slug}/chat/completions
+                </code>
+            </div>
+
+            <p style="font-size: 0.8125rem; color: var(--text-secondary);">
+                Each provider gets its own endpoint segment for direct routing.
+            </p>
+        </div>
     </div>
 </div>
 
 <!-- Models Section -->
 <div style="margin-bottom: 2rem;">
     <h3 style="margin-bottom: 1rem;">Available Models</h3>
+    {% if models %}
     <div class="card" style="padding: 0; overflow: hidden;">
         <table>
             <thead>
@@ -107,6 +133,15 @@
             </tbody>
         </table>
     </div>
+    {% else %}
+    <div class="card" style="text-align: center; padding: 3rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">No models available yet.</p>
+        <p style="color: var(--text-tertiary); font-size: 0.875rem;">
+            Add providers with models from the <a href="{{ url_for('providers_page') }}" style="color: var(--accent-primary);">Providers page</a>.
+        </p>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Example Usage -->

@@ -4068,9 +4068,44 @@ def tokens_revoke(token_id):
 def endpoints_page():
     """Custom endpoints management dashboard."""
     conn = get_db()
+    
+    # Get all providers with their models
+    providers = conn.execute("""
+        SELECT id, slug, name, base_url, provider_type, free_models
+        FROM api_providers
+        ORDER BY name
+    """).fetchall()
+    
+    # Parse models from providers
+    available_models = []
+    for p in providers:
+        provider = dict(p)
+        try:
+            models_list = json.loads(provider['free_models']) if provider['free_models'] else []
+        except:
+            models_list = []
+        
+        # Add each model
+        for model_id in models_list:
+            icon_map = {
+                'anthropic': '🤖', 'openai': '🧠', 'google': '🔵',
+                'mistral': '🌪️', 'fireworks': '🎆', 'groq': '⚡',
+                'perplexity': '🔍', 'cohere': '🧩', 'nvidia': '💚',
+                'openrouter': '🔀'
+            }
+            available_models.append({
+                'id': model_id,
+                'provider_name': provider['name'],
+                'provider_slug': provider['slug'],
+                'provider_icon': icon_map.get(provider['slug'], '🔑'),
+                'type': provider['provider_type'],
+                'context': '—'  # Context not stored per-model yet
+            })
+    
     endpoints = conn.execute("SELECT * FROM custom_endpoints ORDER BY created_at DESC").fetchall()
     conn.close()
-    return render_template("endpoints.html", endpoints=endpoints, models=MODELS)
+    
+    return render_template("endpoints.html", endpoints=endpoints, models=available_models)
 
 
 @app.route("/endpoints/create", methods=["POST"])

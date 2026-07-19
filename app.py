@@ -287,38 +287,6 @@ def init_db():
         FOREIGN KEY (key_id) REFERENCES api_keys(id) ON DELETE CASCADE)""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_key_account_info_key ON key_account_info(key_id)")
 
-    # ── Seed providers ──
-    providers = [
-        ("nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1", "free",
-         '["nvidia/llama-3.3-nemotron-super-49b-v1","nvidia/llama-3.1-nemotron-70b-instruct","qwen/qwen2.5-32b-instruct","deepseek-ai/deepseek-r1","mistralai/mistral-nemo-minitrait-8b-16k"]',
-         "1000 free credits/month. OpenAI-compatible. Keys start with 'nvapi-'."),
-        ("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "free",
-         '["google/gemini-2.0-flash-exp:free","deepseek/deepseek-r1:free","meta-llama/llama-3.3-70b-instruct:free","qwen/qwen-2.5-32b-instruct:free","google/gemma-3-27b-it:free","mistralai/mistral-7b-instruct:free"]',
-         "Free tier models (:free suffix). OpenAI-compatible. Keys start with 'sk-or-v1-'."),
-        ("google", "Google AI Studio", "https://generativelanguage.googleapis.com/v1beta", "free",
-         '["gemini-2.0-flash","gemini-2.5-flash","gemini-2.5-pro","gemini-2.0-flash-lite"]',
-         "Free tier: 15 RPM (5 RPM for Pro). OpenAI-compatible. Keys start with 'AIza'."),
-        ("fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "prepaid",
-         '["accounts/fireworks/models/glm-5p2","accounts/fireworks/models/kimi-k2p7-code","accounts/fireworks/models/qwen3p7-plus","accounts/fireworks/models/deepseek-v4-pro"]',
-         "$6 per account. When depleted → permanently dead. OpenAI-compatible."),
-        ("openai", "OpenAI", "https://api.openai.com/v1", "paid",
-         '["gpt-4o","gpt-4o-mini","gpt-4-turbo","o1-pro","o3-mini"]',
-         "Paid API keys. Keys start with 'sk-', 'sk-proj-', or 'sk-svcacct-'."),
-        ("claude", "Claude (Anthropic)", "https://api.anthropic.com/v1", "cookie",
-         '["claude-sonnet-4-20250514","claude-3-5-sonnet-20241022"]',
-         "Cookie-based access or API keys. Keys start with 'sk-ant-'."),
-    ]
-
-    active_slugs = {p[0] for p in providers}
-    for slug, name, base_url, ptype, models, desc in providers:
-        conn.execute("""INSERT OR IGNORE INTO api_providers (slug, name, base_url, provider_type, free_models, description)
-            VALUES (?, ?, ?, ?, ?, ?)""", (slug, name, base_url, ptype, models, desc))
-        conn.execute("""UPDATE api_providers SET name=?, base_url=?, provider_type=?, free_models=?, description=?
-            WHERE slug=?""", (name, base_url, ptype, models, desc, slug))
-    existing = conn.execute("SELECT slug FROM api_providers").fetchall()
-    for row in existing:
-        if row["slug"] not in active_slugs:
-            conn.execute("DELETE FROM api_providers WHERE slug = ?", (row["slug"],))
     conn.commit()
     conn.close()
 

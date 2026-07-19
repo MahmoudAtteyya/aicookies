@@ -315,10 +315,11 @@ def _ensure_db_tables():
         try:
             MODELS = get_all_models()
             app._models_loaded = True
-            app.logger.info(f"[MODELS] Loaded {len(MODELS)} models from database")
+            app.logger.info(f"[MODELS] Loaded {len(MODELS)} models from database and hardcoded")
         except Exception as e:
             app.logger.error(f"[MODELS] Error loading models: {e}")
-            MODELS = {}
+            # Fallback to hardcoded only
+            MODELS = dict(HARDCODED_MODELS)
 
 # ── Auth decorator ───────────────────────────────────────────────────────
 def login_required(f):
@@ -450,6 +451,44 @@ def get_all_models():
     
     return models
         
+        for provider in providers:
+            provider_models = conn.execute(
+                "SELECT model_slug, display_name FROM provider_models WHERE provider_id = ?",
+                (provider['id'],)
+            ).fetchall()
+            
+            for model in provider_models:
+                model_key = f"{provider['slug']}/{model['model_slug']}"
+                
+                models[model_key] = {
+                    'provider': provider['slug'],
+                    'real_model': model['model_slug'],
+                    'provider_name': provider['name'],
+                    'base_url': provider['base_url'],
+                    'desc': model['display_name'] or model['model_slug'],
+                    'style': 'reasoning' if 'r1' in model['model_slug'].lower() else 'direct',
+                    'tokens': 128000,
+                    'developer': provider['name'],
+                    'display_name': model['display_name'] or model['model_slug'],
+                    'max_output': 8192,
+                    'params': 'Unknown',
+                    'capabilities': {
+                        'text': True, 'code': True, 'thinking': False,
+                        'tools': True, 'vision': False, 'web_search': False,
+                        'json': True, 'stream': True
+                    },
+                    'pricing': {'in': 'Unknown', 'out': 'Unknown'},
+                }
+        
+        app.logger.info(f"[get_all_models] Loaded {len(models)} models from {len(providers)} providers")
+        
+    except Exception as e:
+        app.logger.error(f"[get_all_models] Error loading models: {e}")
+    finally:
+        conn.close()
+    
+    return models
+
 # Global MODELS dict (loaded dynamically)
 MODELS = None
 

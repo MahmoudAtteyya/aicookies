@@ -3651,6 +3651,52 @@ def proxy_health():
     })
 
 
+@app.route("/v1/debug/reset_keys/<provider_slug>", methods=["POST"])
+def debug_reset_keys(provider_slug):
+    """Reset all keys for a provider to active status.
+    
+    This clears error flags and marks all keys as active.
+    Use when you know keys are working but database shows stale errors.
+    """
+    conn = get_db()
+    
+    provider = conn.execute(
+        "SELECT id, slug, name FROM providers WHERE slug=?",
+        (provider_slug,)
+    ).fetchone()
+    
+    if not provider:
+        conn.close()
+        return jsonify({"error": f"Provider '{provider_slug}' not found"}), 404
+    
+    # Reset all keys for this provider
+    result = conn.execute(
+        """UPDATE api_keys 
+           SET is_active=1, dead=0, suspended=0, 
+               error_count=0, last_error_msg=NULL, last_error_at=NULL
+           WHERE provider_id=?""",
+        (provider['id'],)
+    )
+    
+    affected = result.rowcount
+    conn.commit()
+    
+    # Get updated counts
+    active_count = conn.execute(
+        "SELECT COUNT(*) FROM api_keys WHERE provider_id=? AND is_active=1 AND dead=0 AND suspended=0",
+        (provider['id'],)
+    ).fetchone()[0]
+    
+    conn.close()
+    
+    return jsonify({
+        "provider": provider['slug'],
+        "keys_reset": affected,
+        "active_now": active_count,
+        "message": f"Successfully reset {affected} keys for {provider['name']}. All errors cleared."
+    })
+
+
 @app.route("/v1/debug/provider/<provider_slug>", methods=["GET"])
 def debug_provider(provider_slug):
     """Debug endpoint to check provider keys status. No auth required for debugging."""

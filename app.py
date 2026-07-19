@@ -785,6 +785,21 @@ _STREAM_BUFFERS = {}  # {stream_id: {tokens: [], accumulated_text: str, ...}}
 _STREAM_LOCK = threading.Lock()
 _STREAM_TTL = 300  # 5 minutes
 
+# ── CIRCUIT BREAKER — Prevent cascade failures ──
+_CIRCUIT_BREAKER = {}  # {provider_slug: {"failures": int, "last_failure": timestamp, "state": "closed|open|half-open"}}
+_CIRCUIT_LOCK = threading.Lock()
+_CIRCUIT_FAILURE_THRESHOLD = 5  # Open circuit after 5 consecutive failures
+_CIRCUIT_RECOVERY_TIMEOUT = 60  # Try half-open after 60 seconds
+_CIRCUIT_SUCCESS_THRESHOLD = 3  # Close circuit after 3 successes in half-open
+
+# ── REQUEST TRACING ──
+_REQUEST_TRACES = {}  # {request_id: {"start": timestamp, "provider": str, "key_id": int, "events": []}}
+_TRACE_LOCK = threading.Lock()
+
+# ── HEALTH CHECK SYSTEM ──
+_KEY_HEALTH_SCORES = {}  # {key_id: {"score": 0-100, "last_check": timestamp, "consecutive_failures": int}}
+_HEALTH_LOCK = threading.Lock()
+
 # ── Hybrid Storage: Redis (preferred) + In-Memory (fallback) ──
 def _get_buffer_storage():
     """Return Redis client if available, else in-memory dict."""
@@ -885,6 +900,172 @@ def finalize_stream_buffer(stream_id: str):
         buf["status"] = "completed"
         buf["completed_at"] = time.time()
         _set_buffer(stream_id, buf)
+
+# ════════════════════════════════════════════════════════════════════════════
+# CIRCUIT BREAKER — Prevent cascade failures across providers
+# ════════════════════════════════════════════════════════════════════════════
+def get_circuit_state(provider_slug: str) -> str:
+    """
+    Get circuit state for provider.
+    
+    States:
+    - "closed": Normal operation
+    - "open": Provider failing, requests blocked
+    - "half-open": Testing if provider recovered
+    """
+    with _CIRCUIT_LOCK:
+        if provider_slug not in _CIRCUIT_BREAKER:
+            return "closed"
+        
+        circuit = _CIRCUIT_BREAKER[provider_slug]
+        
+        # Check if recovery timeout passed
+        if circuit["state"] == "open":
+            if time.time() - circuit["last_failure"] > _CIRCUIT_RECOVERY_TIMEOUT:
+                circuit["state"] = "half-open"
+                circuit["successes"] = 0
+                app.logger.info(f"[circuit] {provider_slug} entering half-open state")
+        
+        return circuit["state"]
+
+def record_circuit_failure(provider_slug: str):
+    """Record failure for circuit breaker."""
+    with _CIRCUIT_LOCK:
+        if provider_slug not in _CIRCUIT_BREAKER:
+            _CIRCUIT_BREAKER[provider_slug] = {
+                "failures": 0,
+                "successes": 0,
+                "last_failure": 0,
+                "state": "closed"
+            }
+        
+        circuit = _CIRCUIT_BREAKER[provider_slug]
+        circuit["failures"] += 1
+        circuit["last_failure"] = time.time()
+        
+        # Open circuit if threshold reached
+        if circuit["failures"] >= _CIRCUIT_FAILURE_THRESHOLD and circuit["state"] == "closed":
+            circuit["state"] = "open"
+            app.logger.error(f"[circuit] {provider_slug} CIRCUIT OPENED — {circuit['failures']} consecutive failures")
+
+def record_circuit_success(provider_slug: str):
+    """Record success for circuit breaker."""
+    with _CIRCUIT_LOCK:
+        if provider_slug not in _CIRCUIT_BREAKER:
+            _CIRCUIT_BREAKER[provider_slug] = {
+                "failures": 0,
+                "successes": 0,
+                "last_failure": 0,
+                "state": "closed"
+            }
+        
+        circuit = _CIRCUIT_BREAKER[provider_slug]
+        circuit["failures"] = 0  # Reset failures on success
+        
+        # Close circuit if enough successes in half-open
+        if circuit["state"] == "half-open":
+            circuit["successes"] += 1
+            if circuit["successes"] >= _CIRCUIT_SUCCESS_THRESHOLD:
+                circuit["state"] = "closed"
+                app.logger.info(f"[circuit] {provider_slug} CIRCUIT CLOSED — provider recovered")
+
+# ════════════════════════════════════════════════════════════════════════════
+# REQUEST TRACING — Full request lifecycle tracking
+# ════════════════════════════════════════════════════════════════════════════
+def create_request_trace(request_id: str, metadata: dict):
+    """Create trace for request."""
+    with _TRACE_LOCK:
+        _REQUEST_TRACES[request_id] = {
+            "start": time.time(),
+            "metadata": metadata,
+            "events": [],
+            "key_attempts": [],
+            "status": "pending"
+        }
+
+def add_trace_event(request_id: str, event: str, data: dict = None):
+    """Add event to request trace."""
+    with _TRACE_LOCK:
+        if request_id in _REQUEST_TRACES:
+            _REQUEST_TRACES[request_id]["events"].append({
+                "timestamp": time.time(),
+                "event": event,
+                "data": data or {}
+            })
+
+def finalize_request_trace(request_id: str, status: str):
+    """Mark request as complete."""
+    with _TRACE_LOCK:
+        if request_id in _REQUEST_TRACES:
+            trace = _REQUEST_TRACES[request_id]
+            trace["status"] = status
+            trace["end"] = time.time()
+            trace["duration_ms"] = int((trace["end"] - trace["start"]) * 1000)
+            
+            # Cleanup old traces (keep last 1000)
+            if len(_REQUEST_TRACES) > 1000:
+                oldest = sorted(_REQUEST_TRACES.keys(), key=lambda k: _REQUEST_TRACES[k]["start"])[:500]
+                for old_id in oldest:
+                    del _REQUEST_TRACES[old_id]
+
+# ════════════════════════════════════════════════════════════════════════════
+# HEALTH CHECK SYSTEM — Predict key exhaustion
+# ════════════════════════════════════════════════════════════════════════════
+def update_key_health(key_id: int, success: bool, latency_ms: int = 0):
+    """
+    Update health score for key.
+    
+    Scoring:
+    - Success: +5 points (max 100)
+    - Failure: -20 points (min 0)
+    - Bonus for fast response (latency < 1000ms): +2
+    """
+    with _HEALTH_LOCK:
+        if key_id not in _KEY_HEALTH_SCORES:
+            _KEY_HEALTH_SCORES[key_id] = {
+                "score": 50,  # Start at neutral
+                "consecutive_failures": 0,
+                "last_check": time.time()
+            }
+        
+        health = _KEY_HEALTH_SCORES[key_id]
+        
+        if success:
+            health["score"] = min(100, health["score"] + 5)
+            health["consecutive_failures"] = 0
+            if latency_ms < 1000:
+                health["score"] = min(100, health["score"] + 2)  # Speed bonus
+        else:
+            health["score"] = max(0, health["score"] - 20)
+            health["consecutive_failures"] += 1
+        
+        health["last_check"] = time.time()
+        
+        # Predict exhaustion if score < 20
+        if health["score"] < 20:
+            app.logger.warning(f"[health] Key #{key_id} PREDICTED EXHAUSTION — score={health['score']}")
+
+def get_key_health(key_id: int) -> dict:
+    """Get health info for key."""
+    with _HEALTH_LOCK:
+        return _KEY_HEALTH_SCORES.get(key_id, {
+            "score": 50,
+            "consecutive_failures": 0,
+            "last_check": 0
+        })
+
+def get_healthy_keys(keys: list) -> list:
+    """Filter keys by health score (prefer healthy keys)."""
+    scored_keys = []
+    for key in keys:
+        health = get_key_health(key["id"])
+        scored_keys.append((key, health["score"]))
+    
+    # Sort by health score (descending)
+    scored_keys.sort(key=lambda x: x[1], reverse=True)
+    
+    # Return keys with score > 30 (unlikely to fail)
+    return [k for k, score in scored_keys if score > 30]
 
 def inject_continuation_context(original_body: bytes, partial_response: str, model: str) -> bytes:
     """
@@ -1367,6 +1548,16 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             partial_response_for_continuation = buf_state["accumulated_text"]
             app.logger.info(f"[stream] Resuming from buffer {stream_buffer_id}: {len(partial_response_for_continuation)} chars")
     
+    # ── REQUEST TRACING ──
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    create_request_trace(request_id, {
+        "provider": provider_slug,
+        "model": model_slug,
+        "streaming": request.headers.get("Accept") == "text/event-stream",
+        "resume": bool(stream_buffer_id)
+    })
+    add_trace_event(request_id, "request_start", {"model": model_slug, "provider": provider_slug})
+    
     while retry_count < max_retries:
         retry_count += 1
         
@@ -1381,6 +1572,10 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
         # Filter out keys we've already tried in this request
         untried_keys = [k for k in keys if k["id"] not in tried_key_ids]
         
+        # ── HEALTH-AWARE KEY SELECTION ──
+        # Prefer keys with high health scores (predictive failure avoidance)
+        untried_keys = get_healthy_keys(untried_keys) if untried_keys else []
+        
         if not untried_keys:
             # We've tried all available keys — wait and refresh one more time
             # (maybe new keys were added while we were trying)
@@ -1388,8 +1583,17 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             time.sleep(2)  # Brief pause before final refresh
             keys = get_provider_keys(provider_slug, use_cache=False)  # Force refresh
             untried_keys = [k for k in keys if k["id"] not in tried_key_ids]
+            untried_keys = get_healthy_keys(untried_keys) if untried_keys else []
             if not untried_keys:
                 break  # No new keys appeared
+        
+        # ── CIRCUIT BREAKER CHECK ──
+        circuit_state = get_circuit_state(provider_slug)
+        if circuit_state == "open":
+            app.logger.warning(f"[circuit] {provider_slug} circuit OPEN — skipping provider")
+            break  # Provider is failing, don't waste time
+        elif circuit_state == "half-open":
+            app.logger.info(f"[circuit] {provider_slug} half-open — testing recovery")
         
         # ── Try each untried key ──
         for key_info in untried_keys:
@@ -1400,6 +1604,9 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             
             # Mark as tried
             tried_key_ids.add(key_id)
+            
+            # ── TRACE EVENT ──
+            add_trace_event(request_id, "key_attempt", {"key_id": key_id, "provider": provider_slug})
             
             start = time.time()
             error_msg = None
@@ -1495,12 +1702,20 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
 
                     record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
                     
+                    # ── UPDATE HEALTH & CIRCUIT BREAKER ──
+                    update_key_health(key_id, success=False, latency_ms=latency)
+                    record_circuit_failure(provider_slug)
+                    
                     # ── CRITICAL: Continue to next key, don't give up! ──
                     continue
 
                 # ── Success — record and return ──
                 bump_key_usage(key_id)
                 record_proxy_request(model_slug, provider_slug, key_id, "ok", latency)
+                
+                # ── UPDATE HEALTH & CIRCUIT BREAKER ──
+                update_key_health(key_id, success=True, latency_ms=latency)
+                record_circuit_success(provider_slug)
 
                 if is_streaming:
                     # Create buffer for streaming response
@@ -5952,6 +6167,121 @@ def api_provider_detail(slug):
     return jsonify(result)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+# ── PROMETHEUS METRICS ──
+@app.route('/metrics', methods=['GET'])
+def prometheus_metrics():
+    """
+    Prometheus-compatible metrics endpoint.
+    
+    Metrics exposed:
+    - aicookies_requests_total{status="success|error",provider,model}
+    - aicookies_key_health_score{key_id}
+    - aicookies_circuit_state{provider}
+    - aicookies_active_streams
+    - aicookies_buffer_size_bytes
+    """
+    lines = []
+    
+    # ── Request Metrics (from DB) ──
+    try:
+        conn = get_db()
+        
+        # Total requests by status
+        req_stats = conn.execute("""
+            SELECT provider_slug, model_slug, status, COUNT(*) as count
+            FROM proxy_requests
+            WHERE timestamp > datetime('now', '-1 hour')
+            GROUP BY provider_slug, model_slug, status
+        """).fetchall()
+        
+        for row in req_stats:
+            lines.append(f'aicookies_requests_total{{provider="{row["provider_slug"]}",model="{row["model_slug"]}",status="{row["status"]}"}} {row["count"]}')
+        
+        conn.close()
+    except Exception as e:
+        lines.append(f'# Error fetching request metrics: {e}')
+    
+    # ── Key Health Scores ──
+    with _HEALTH_LOCK:
+        for key_id, health in _KEY_HEALTH_SCORES.items():
+            lines.append(f'aicookies_key_health_score{{key_id="{key_id}"}} {health["score"]}')
+    
+    # ── Circuit Breaker States ──
+    with _CIRCUIT_LOCK:
+        for provider, circuit in _CIRCUIT_BREAKER.items():
+            state_value = {"closed": 0, "half-open": 1, "open": 2}.get(circuit["state"], 0)
+            lines.append(f'aicookies_circuit_state{{provider="{provider}"}} {state_value}')
+    
+    # ── Stream Buffer Metrics ──
+    with _STREAM_LOCK:
+        active_streams = len([s for s in _STREAM_BUFFERS.values() if s.get("status") == "active"])
+        total_bytes = sum(len(s.get("accumulated_text", "")) for s in _STREAM_BUFFERS.values())
+        
+        lines.append(f'aicookies_active_streams {active_streams}')
+        lines.append(f'aicookies_buffer_size_bytes {total_bytes}')
+    
+    return "\n".join(lines), 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+# ── SYSTEM STATUS ENDPOINT ──
+@app.route('/v1/system/status', methods=['GET'])
+def system_status():
+    """
+    Comprehensive system status dashboard.
+    
+    Returns:
+    - Circuit breaker states
+    - Key health scores
+    - Active streams
+    - Request tracing (last 10)
+    - Redis connectivity
+    """
+    status = {
+        "timestamp": time.time(),
+        "circuit_breakers": {},
+        "key_health": {},
+        "streams": {
+            "active": 0,
+            "total_buffered_bytes": 0
+        },
+        "tracing": {
+            "recent_requests": []
+        },
+        "redis": "connected" if REDIS_AVAILABLE else "fallback_to_memory"
+    }
+    
+    # Circuit breakers
+    with _CIRCUIT_LOCK:
+        for provider, circuit in _CIRCUIT_BREAKER.items():
+            status["circuit_breakers"][provider] = {
+                "state": circuit["state"],
+                "failures": circuit["failures"],
+                "last_failure": circuit["last_failure"]
+            }
+    
+    # Key health
+    with _HEALTH_LOCK:
+        for key_id, health in list(_KEY_HEALTH_SCORES.items())[:20]:  # Top 20
+            status["key_health"][key_id] = health
+    
+    # Streams
+    with _STREAM_LOCK:
+        status["streams"]["active"] = len([s for s in _STREAM_BUFFERS.values() if s.get("status") == "active"])
+        status["streams"]["total_buffered_bytes"] = sum(len(s.get("accumulated_text", "")) for s in _STREAM_BUFFERS.values())
+    
+    # Recent traces
+    with _TRACE_LOCK:
+        recent_ids = sorted(_REQUEST_TRACES.keys(), key=lambda k: _REQUEST_TRACES[k]["start"], reverse=True)[:10]
+        for req_id in recent_ids:
+            trace = _REQUEST_TRACES[req_id]
+            status["tracing"]["recent_requests"].append({
+                "request_id": req_id,
+                "status": trace["status"],
+                "duration_ms": trace.get("duration_ms", 0),
+                "events_count": len(trace["events"])
+            })
+    
+    return jsonify(status)
+
 # ── Stream Resume API Endpoint ──
 @app.route('/v1/stream/resume/<stream_id>', methods=['GET'])
 def stream_resume(stream_id):

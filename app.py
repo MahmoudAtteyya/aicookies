@@ -5283,19 +5283,6 @@ def api_list_providers():
         d = dict(p); d["free_models"] = json.loads(p["free_models"]) if p["free_models"] else []; result.append(d)
     return jsonify(result)
 
-@app.route('/v1/models')
-@app.route('/v1/engines')
-def list_models():
-    conn = get_db()
-    result = []
-    for slug, info in MODELS.items():
-        kc = conn.execute("SELECT COUNT(*) FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE p.slug=? AND k.is_active=1 AND k.dead=0 AND k.suspended=0", (info["provider"],)).fetchone()[0]
-        dead = conn.execute("SELECT COUNT(*) FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE p.slug=? AND k.dead=1", (info["provider"],)).fetchone()[0]
-        suspended = conn.execute("SELECT COUNT(*) FROM api_keys k JOIN api_providers p ON k.provider_id=p.id WHERE p.slug=? AND k.suspended=1", (info["provider"],)).fetchone()[0]
-        result.append({"slug": slug, "provider": info["provider"], "real_model": info["real_model"], "desc": info["desc"], "active_keys": kc, "dead_keys": dead, "suspended_keys": suspended, "endpoint": f"/v1/{slug}/chat/completions"})
-    conn.close()
-    return jsonify(result)
-
 @app.route("/api/stats")
 @login_required
 def api_stats():

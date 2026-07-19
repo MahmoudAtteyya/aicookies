@@ -181,9 +181,13 @@ let models = [];
 
 function addModel() {
     const input = document.getElementById('modelInput');
-    if (!input) return;
+    if (!input) {
+        console.error('modelInput not found');
+        return;
+    }
     
     const modelName = input.value.trim();
+    console.log('Adding model:', modelName);
     
     if (modelName && !models.includes(modelName)) {
         models.push(modelName);
@@ -202,7 +206,10 @@ function renderModels() {
     const container = document.getElementById('modelsContainer');
     const hiddenInput = document.getElementById('free_models');
     
-    if (!container || !hiddenInput) return;
+    if (!container || !hiddenInput) {
+        console.error('Container or hidden input not found');
+        return;
+    }
     
     container.innerHTML = models.map(model => `
         <span style="display: inline-flex; align-items: center; gap: 0.5rem; 
@@ -218,37 +225,45 @@ function renderModels() {
     `).join('');
     
     hiddenInput.value = JSON.stringify(models);
+    console.log('Models updated:', models);
 }
 
-// Wait for DOM to load before attaching event listeners
-document.addEventListener('DOMContentLoaded', function() {
+// Initialize when script loads
+(function() {
     const modelInput = document.getElementById('modelInput');
     const addButton = document.getElementById('addModelBtn');
     
+    console.log('Initializing model input handlers...');
+    console.log('modelInput:', modelInput);
+    console.log('addButton:', addButton);
+    
     if (modelInput) {
-        // Handle Enter key
         modelInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                e.stopPropagation();
                 addModel();
+                return false;
             }
         });
 
-        // Prevent form submission on Enter in model input
         modelInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
+                e.stopPropagation();
+                return false;
             }
         });
     }
     
-    // Attach click listener to Add button
     if (addButton) {
         addButton.addEventListener('click', function(e) {
             e.preventDefault();
+            e.stopPropagation();
             addModel();
+            return false;
         });
     }
-});
+})();
 </script>
 {% endblock %}

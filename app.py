@@ -4163,8 +4163,10 @@ def endpoints_page():
                 'perplexity': '🔍', 'cohere': '🧩', 'nvidia': '💚',
                 'openrouter': '🔀'
             }
+            # Model ID format: provider_slug/model_slug
+            model_full_id = f"{provider['slug']}/{model_id}"
             available_models.append({
-                'id': model_id,
+                'id': model_full_id,
                 'provider_name': provider['name'],
                 'provider_slug': provider['slug'],
                 'provider_icon': icon_map.get(provider['slug'], '🔑'),

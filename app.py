@@ -10,6 +10,15 @@ from urllib.parse import unquote
 import httpx
 from curl_cffi import requests as curl_requests
 
+# ── Redis for Distributed Buffer Storage (optional) ──
+try:
+    import redis
+    REDIS_CLIENT = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_CLIENT = None
+    REDIS_AVAILABLE = False
+
 app = Flask(__name__)
 
 # ── Stable SECRET_KEY (critical for multi-worker gunicorn) ──
@@ -771,67 +780,111 @@ def parse_netscape_cookies(raw):
 import threading
 import uuid as _uuid
 
-# In-memory stream buffers (use Redis for distributed deployment)
+# In-memory stream buffers (fallback if Redis unavailable)
 _STREAM_BUFFERS = {}  # {stream_id: {tokens: [], accumulated_text: str, ...}}
 _STREAM_LOCK = threading.Lock()
 _STREAM_TTL = 300  # 5 minutes
 
+# ── Hybrid Storage: Redis (preferred) + In-Memory (fallback) ──
+def _get_buffer_storage():
+    """Return Redis client if available, else in-memory dict."""
+    return REDIS_CLIENT if REDIS_AVAILABLE else _STREAM_BUFFERS
+
+def _set_buffer(stream_id: str, data: dict):
+    """Store buffer in Redis or memory."""
+    if REDIS_AVAILABLE:
+        try:
+            REDIS_CLIENT.setex(
+                f"stream:{stream_id}",
+                _STREAM_TTL,
+                json.dumps(data)
+            )
+        except Exception as e:
+            app.logger.warning(f"[redis] Failed to set buffer: {e}")
+            _STREAM_BUFFERS[stream_id] = data
+    else:
+        with _STREAM_LOCK:
+            _STREAM_BUFFERS[stream_id] = data
+
+def _get_buffer(stream_id: str) -> dict:
+    """Retrieve buffer from Redis or memory."""
+    if REDIS_AVAILABLE:
+        try:
+            data = REDIS_CLIENT.get(f"stream:{stream_id}")
+            return json.loads(data) if data else None
+        except Exception as e:
+            app.logger.warning(f"[redis] Failed to get buffer: {e}")
+    
+    with _STREAM_LOCK:
+        return _STREAM_BUFFERS.get(stream_id)
+
 def create_stream_buffer(request_id: str, metadata: dict) -> str:
     """Create a buffer for streaming response tracking."""
     stream_id = f"stream_{request_id}_{_uuid.uuid4().hex[:8]}"
-    with _STREAM_LOCK:
-        _STREAM_BUFFERS[stream_id] = {
-            "tokens": [],
-            "accumulated_text": "",
-            "last_checkpoint": 0,
-            "created_at": time.time(),
-            "metadata": metadata,
-            "status": "streaming"
-        }
-        # Cleanup old buffers
-        now = time.time()
-        expired = [k for k, v in _STREAM_BUFFERS.items() if now - v["created_at"] > _STREAM_TTL]
-        for k in expired:
-            del _STREAM_BUFFERS[k]
+    buffer_data = {
+        "tokens": [],
+        "accumulated_text": "",
+        "last_checkpoint": 0,
+        "created_at": time.time(),
+        "metadata": metadata,
+        "status": "streaming"
+    }
+    
+    _set_buffer(stream_id, buffer_data)
+    
+    # Cleanup old in-memory buffers
+    if not REDIS_AVAILABLE:
+        with _STREAM_LOCK:
+            now = time.time()
+            expired = [k for k, v in _STREAM_BUFFERS.items() if now - v["created_at"] > _STREAM_TTL]
+            for k in expired:
+                del _STREAM_BUFFERS[k]
+    
     app.logger.debug(f"[stream] Created buffer {stream_id}")
     return stream_id
 
 def append_stream_token(stream_id: str, token: bytes):
     """Append token to buffer. Called on every chunk from provider."""
-    with _STREAM_LOCK:
-        if stream_id in _STREAM_BUFFERS:
-            _STREAM_BUFFERS[stream_id]["tokens"].append(token)
-            try:
-                decoded = token.decode('utf-8', errors='ignore')
-                _STREAM_BUFFERS[stream_id]["accumulated_text"] += decoded
-            except:
-                pass
+    buf = _get_buffer(stream_id)
+    if not buf:
+        return
+    
+    buf["tokens"].append(token)
+    try:
+        decoded = token.decode('utf-8', errors='ignore')
+        buf["accumulated_text"] += decoded
+    except:
+        pass
+    
+    _set_buffer(stream_id, buf)
 
 def get_stream_buffer_state(stream_id: str) -> dict:
     """Get current buffer state for checkpoint/restore."""
-    with _STREAM_LOCK:
-        if stream_id in _STREAM_BUFFERS:
-            buf = _STREAM_BUFFERS[stream_id]
-            return {
-                "token_count": len(buf["tokens"]),
-                "accumulated_text": buf["accumulated_text"],
-                "last_checkpoint": buf["last_checkpoint"],
-                "status": buf["status"]
-            }
-    return None
+    buf = _get_buffer(stream_id)
+    if not buf:
+        return None
+    
+    return {
+        "token_count": len(buf["tokens"]),
+        "accumulated_text": buf["accumulated_text"],
+        "last_checkpoint": buf["last_checkpoint"],
+        "status": buf["status"]
+    }
 
 def checkpoint_stream(stream_id: str, position: int):
     """Mark checkpoint position for recovery."""
-    with _STREAM_LOCK:
-        if stream_id in _STREAM_BUFFERS:
-            _STREAM_BUFFERS[stream_id]["last_checkpoint"] = position
+    buf = _get_buffer(stream_id)
+    if buf:
+        buf["last_checkpoint"] = position
+        _set_buffer(stream_id, buf)
 
 def finalize_stream_buffer(stream_id: str):
     """Mark stream as complete, keep for TTL."""
-    with _STREAM_LOCK:
-        if stream_id in _STREAM_BUFFERS:
-            _STREAM_BUFFERS[stream_id]["status"] = "completed"
-            _STREAM_BUFFERS[stream_id]["completed_at"] = time.time()
+    buf = _get_buffer(stream_id)
+    if buf:
+        buf["status"] = "completed"
+        buf["completed_at"] = time.time()
+        _set_buffer(stream_id, buf)
 
 def inject_continuation_context(original_body: bytes, partial_response: str, model: str) -> bytes:
     """
@@ -5899,5 +5952,50 @@ def api_provider_detail(slug):
     return jsonify(result)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+# ── Stream Resume API Endpoint ──
+@app.route('/v1/stream/resume/<stream_id>', methods=['GET'])
+def stream_resume(stream_id):
+    """
+    Resume a previously interrupted stream.
+    
+    Returns:
+        - status: streaming|completed|expired|not_found
+        - partial_response: accumulated text so far
+        - resume_token: use as X-Resume-Stream-ID header
+    """
+    buf_state = get_stream_buffer_state(stream_id)
+    
+    if not buf_state:
+        return jsonify({
+            "status": "not_found",
+            "error": "Stream buffer not found or expired",
+            "stream_id": stream_id
+        }), 404
+    
+    return jsonify({
+        "status": buf_state["status"],
+        "stream_id": stream_id,
+        "token_count": buf_state["token_count"],
+        "partial_response": buf_state["accumulated_text"][:500] + "..." if len(buf_state["accumulated_text"]) > 500 else buf_state["accumulated_text"],
+        "full_response_length": len(buf_state["accumulated_text"]),
+        "resume_token": stream_id,
+        "instructions": "Include X-Resume-Stream-ID header in your next request to continue"
+    })
+
+@app.route('/v1/stream/status', methods=['GET'])
+def stream_status():
+    """Get overall stream buffer statistics."""
+    return jsonify({
+        "redis_available": REDIS_AVAILABLE,
+        "active_streams": len(_STREAM_BUFFERS) if not REDIS_AVAILABLE else "unknown (Redis-backed)",
+        "ttl_seconds": _STREAM_TTL,
+        "features": [
+            "automatic_retry_with_continuation",
+            "buffer_preservation_on_failure",
+            "client_initiated_resume",
+            "redis_backed_storage"
+        ]
+    })
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5050, debug=False)

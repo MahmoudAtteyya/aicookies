@@ -5283,17 +5283,6 @@ def api_list_providers():
         d = dict(p); d["free_models"] = json.loads(p["free_models"]) if p["free_models"] else []; result.append(d)
     return jsonify(result)
 
-@app.route('/v1/models/reload', methods=['POST'])
-def reload_models():
-    """Force reload of models from database."""
-    global MODELS
-    MODELS = get_all_models()
-    return jsonify({
-        'status': 'ok',
-        'models_count': len(MODELS),
-        'message': f'Reloaded {len(MODELS)} models from database'
-    })
-
 @app.route('/v1/models')
 @app.route('/v1/engines')
 def list_models():

@@ -3661,7 +3661,7 @@ def debug_reset_keys(provider_slug):
     conn = get_db()
     
     provider = conn.execute(
-        "SELECT id, slug, name FROM providers WHERE slug=?",
+        "SELECT id, slug, name FROM api_providers WHERE slug=?",
         (provider_slug,)
     ).fetchone()
     

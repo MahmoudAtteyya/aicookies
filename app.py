@@ -760,12 +760,33 @@ def parse_netscape_cookies(raw):
         cookies.append({"domain": parts[0], "flag": parts[1], "path": parts[2], "secure": parts[3], "expiration": parts[4], "name": parts[5], "value": parts[6]})
     return cookies
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SMART KEY ROTATION ENGINE
-# ═══════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════════
+# SMART KEY ROTATION ENGINE — Professional Caching & Retry System
+# ════════════════════════════════════════════════════════════════════════════
 
-def get_provider_keys(provider_slug):
-    """Get active, non-dead, non-suspended keys for a provider, ordered by usage_count."""
+# ── Key Cache Config ──
+_KEY_CACHE_TTL = 30  # seconds —多久 refresh cache
+_KEY_CACHE = {}  # {provider_slug: {"keys": [...], "ts": timestamp}}
+
+def get_provider_keys(provider_slug, use_cache=True):
+    """Get active keys with intelligent caching.
+    
+    Cache Strategy:
+    - Cache keys for 30 seconds to avoid DB hits on every request
+    - Auto-refresh cache when keys are marked dead/suspended
+    - Pre-fetch keys on startup for hot providers
+    
+    Returns keys ordered by usage_count (round-robin load balancing).
+    """
+    now = time.time()
+    
+    # Check cache
+    if use_cache and provider_slug in _KEY_CACHE:
+        cached = _KEY_CACHE[provider_slug]
+        if now - cached["ts"] < _KEY_CACHE_TTL:
+            return cached["keys"]
+    
+    # Fetch from DB
     conn = get_db()
     rows = conn.execute("""
         SELECT k.*, p.base_url, p.provider_type
@@ -774,21 +795,46 @@ def get_provider_keys(provider_slug):
         ORDER BY k.usage_count ASC, k.created_at ASC
     """, (provider_slug,)).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    
+    keys = [dict(r) for r in rows]
+    
+    # Update cache
+    _KEY_CACHE[provider_slug] = {"keys": keys, "ts": now}
+    
+    return keys
+
+def invalidate_key_cache(provider_slug):
+    """Force refresh cache for a provider after marking key dead/suspended."""
+    if provider_slug in _KEY_CACHE:
+        del _KEY_CACHE[provider_slug]
+    # Pre-fetch fresh keys
+    get_provider_keys(provider_slug, use_cache=False)
 
 def mark_key_dead(key_id, reason=""):
     """Permanently mark a key as dead (for prepaid providers like Fireworks)."""
     conn = get_db()
+    # Get provider_slug before updating
+    row = conn.execute("SELECT p.slug FROM api_keys k JOIN api_providers p ON k.provider_id = p.id WHERE k.id = ?", (key_id,)).fetchone()
+    provider_slug = row["slug"] if row else None
     conn.execute("UPDATE api_keys SET dead=1, is_active=0, last_error_msg=?, last_error_at=CURRENT_TIMESTAMP WHERE id=?", (reason, key_id))
     conn.commit()
     conn.close()
+    # Invalidate cache
+    if provider_slug:
+        invalidate_key_cache(provider_slug)
 
 def mark_key_suspended(key_id, reason=""):
     """Mark a key as suspended (temporary — admin can reactivate). Differs from dead."""
     conn = get_db()
+    # Get provider_slug before updating
+    row = conn.execute("SELECT p.slug FROM api_keys k JOIN api_providers p ON k.provider_id = p.id WHERE k.id = ?", (key_id,)).fetchone()
+    provider_slug = row["slug"] if row else None
     conn.execute("UPDATE api_keys SET suspended=1, is_active=0, last_error_msg=?, last_error_at=CURRENT_TIMESTAMP WHERE id=?", (reason, key_id))
     conn.commit()
     conn.close()
+    # Invalidate cache
+    if provider_slug:
+        invalidate_key_cache(provider_slug)
 
 def mark_key_rate_limited(key_id, reason=""):
     """Temporarily bump usage so key rotates to the back."""
@@ -1098,99 +1144,203 @@ def fetch_and_store_account_info(key_id, api_key, provider_slug="fireworks"):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def proxy_to_provider(provider_slug, real_model, model_slug):
-    """Forward the incoming request to the actual provider, trying keys in rotation."""
+    """Forward the incoming request to the actual provider, trying keys in rotation.
+    
+    Professional Retry Logic:
+    - Pre-fetch all available keys before starting
+    - Try each key in order (round-robin by usage_count)
+    - If a key fails permanently (402, depleted), mark as dead and try next
+    - If a key fails temporarily (429, timeout), rotate to next key
+    - Keep retrying until ALL keys are exhausted
+    - Support slow provider responses (up to 180s timeout per key)
+    """
     
     # ── Claude: special cookie-based handling ──
     if provider_slug == "claude":
         return proxy_to_claude(real_model, model_slug)
     
     # ── Standard API key providers ──
-    keys = get_provider_keys(provider_slug)
-    if not keys:
-        return jsonify({"error": f"No active keys for provider '{provider_slug}'", "model": model_slug}), 503
     body = request.get_data()
     incoming_headers = {k: v for k, v in request.headers.items() if k.lower() not in ('host', 'content-length', 'authorization', 'accept-encoding')}
     
-    tried_keys = []
+    # Track all keys we've tried (across multiple refreshes)
+    tried_key_ids = set()
+    max_retries = 50  # Safety limit — don't loop forever
+    retry_count = 0
     
-    for key_info in keys:
-        key_id = key_info["id"]
-        base_url = key_info["base_url"]
-        key_val = key_info["key_value"]
-        provider_type = key_info.get("provider_type", "free")
+    while retry_count < max_retries:
+        retry_count += 1
         
-        start = time.time()
-        error_msg = None
+        # ── Refresh keys from cache/DB ──
+        # This ensures we get fresh list after marking keys dead
+        keys = get_provider_keys(provider_slug)
         
-        try:
-            # All current providers (NVIDIA, OpenRouter, Google, Fireworks) use OpenAI-compatible /v1/chat/completions
-            url = f"{base_url}/chat/completions"
-            payload = inject_model_into_body(body, real_model, provider_slug)
+        if not keys:
+            # No more keys available — all exhausted
+            break
+        
+        # Filter out keys we've already tried in this request
+        untried_keys = [k for k in keys if k["id"] not in tried_key_ids]
+        
+        if not untried_keys:
+            # We've tried all available keys — wait and refresh one more time
+            # (maybe new keys were added while we were trying)
+            app.logger.info(f"[proxy] All {len(keys)} keys tried for {provider_slug}/{model_slug}, checking for refresh...")
+            time.sleep(2)  # Brief pause before final refresh
+            keys = get_provider_keys(provider_slug, use_cache=False)  # Force refresh
+            untried_keys = [k for k in keys if k["id"] not in tried_key_ids]
+            if not untried_keys:
+                break  # No new keys appeared
+        
+        # ── Try each untried key ──
+        for key_info in untried_keys:
+            key_id = key_info["id"]
+            base_url = key_info["base_url"]
+            key_val = key_info["key_value"]
+            provider_type = key_info.get("provider_type", "free")
             
-            is_streaming = False
+            # Mark as tried
+            tried_key_ids.add(key_id)
+            
+            start = time.time()
+            error_msg = None
+            
             try:
-                body_data = json.loads(payload)
-                is_streaming = body_data.get("stream", False)
-            except: pass
-            
-            headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json",
-                       "Accept": "text/event-stream" if is_streaming else "application/json"}
-            for h, v in incoming_headers.items():
-                try: headers[h] = v
+                # All current providers use OpenAI-compatible /v1/chat/completions
+                url = f"{base_url}/chat/completions"
+                payload = inject_model_into_body(body, real_model, provider_slug)
+                
+                is_streaming = False
+                try:
+                    body_data = json.loads(payload)
+                    is_streaming = body_data.get("stream", False)
                 except: pass
+                
+                headers = {"Authorization": f"Bearer {key_val}", "Content-Type": "application/json",
+                           "Accept": "text/event-stream" if is_streaming else "application/json"}
+                for h, v in incoming_headers.items():
+                    try: headers[h] = v
+                    except: pass
+                
+                # Use httpx with extended timeout for slow providers (aisa can be slow)
+                # No proxy for aisa (free credits — avoid IP rate limits)
+                proxy = None if provider_slug == "aisa" else get_proxy_url()
+                timeout = 180.0 if provider_slug == "aisa" else 120.0  # Extra time for slow providers
+                
+                with httpx.Client(proxy=proxy, timeout=timeout, verify=False) as client:
+                    resp = client.post(url, content=payload, headers=headers)
+
+                latency = int((time.time() - start) * 1000)
+
+                # ── Check response status ──
+                if resp.status_code >= 400:
+                    code = resp.status_code
+                    try: body_err = resp.text[:500]
+                    except: body_err = ""
+                    body_err_lower = body_err.lower()
+
+                    # ── Determine error type and handle accordingly ──
+                    # 412 = Account suspended (Fireworks-specific)
+                    # 402 = Payment required / depleted credits
+                    # "suspended" = temporarily suspended
+                    # "insufficient" / "quota" / "spending limit" = permanent
+                    # 429 = Rate limited (temporary)
+                    # 401/403 = Auth error
+
+                    is_suspended = (
+                        "suspended" in body_err_lower
+                        and "insufficient" not in body_err_lower
+                        and "quota" not in body_err_lower
+                        and "spending" not in body_err_lower
+                    )
+
+                    is_permanent = (
+                        code == 402 or
+                        "insufficient" in body_err_lower or
+                        "quota" in body_err_lower or
+                        "spending limit" in body_err_lower or
+                        "failure to pay" in body_err_lower or
+                        "billing" in body_err_lower and "limit" in body_err_lower
+                    )
+
+                    if is_suspended:
+                        mark_key_suspended(key_id, f"{code} Account suspended: {body_err[:200]}")
+                        error_msg = "SUSPENDED"
+                        app.logger.warning(f"[proxy] Key #{key_id} ({provider_slug}) SUSPENDED — {code}")
+                    elif is_permanent:
+                        mark_key_dead(key_id, f"{code} Account depleted: {body_err[:200]}")
+                        error_msg = "ACCOUNT_DEPLETED"
+                        app.logger.warning(f"[proxy] Key #{key_id} ({provider_slug}) DEAD (depleted) — {code}")
+                    elif code == 429:
+                        mark_key_rate_limited(key_id, f"429: {body_err[:200]}")
+                        error_msg = "RATE_LIMITED"
+                        app.logger.info(f"[proxy] Key #{key_id} ({provider_slug}) rate limited, trying next key")
+                    elif code in (401, 403):
+                        if provider_type == "prepaid" or provider_slug == "fireworks":
+                            mark_key_dead(key_id, f"{code} Auth failed: {body_err[:200]}")
+                            error_msg = "DEAD_AUTH"
+                        else:
+                            mark_key_error(key_id, f"{code}: {body_err[:200]}")
+                            error_msg = "AUTH_ERROR"
+                    else:
+                        mark_key_error(key_id, f"{code}: {body_err[:200]}")
+                        error_msg = f"HTTP_{code}"
+
+                    record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
+                    
+                    # ── CRITICAL: Continue to next key, don't give up! ──
+                    continue
+
+                # ── Success — record and return ──
+                bump_key_usage(key_id)
+                record_proxy_request(model_slug, provider_slug, key_id, "ok", latency)
+
+                if is_streaming:
+                    def generate():
+                        for chunk in resp.iter_bytes(8192):
+                            yield chunk
+                    return Response(stream_with_context(generate()), status=resp.status_code, headers={
+                        "Content-Type": resp.headers.get("Content-Type", "text/event-stream"),
+                        "X-Proxy-Provider": provider_slug, "X-Proxy-Key": str(key_id),
+                        "X-Proxy-Latency": str(latency), "X-Proxy-Model": real_model,
+                    })
+                else:
+                    resp_body = resp.content
+                    model_entry = MODELS.get(model_slug, {})
+                    if model_entry.get("style") == "reasoning":
+                        resp_body = strip_reasoning_prefix(resp_body, model_slug)
+
+                    return resp_body, resp.status_code, {
+                        "Content-Type": resp.headers.get("Content-Type", "application/json"),
+                        "X-Proxy-Provider": provider_slug, "X-Proxy-Key": str(key_id),
+                        "X-Proxy-Latency": str(latency),
+                    }
             
-            # Use httpx with optional proxy (API keys don't need per-account proxy)
-            # Exception: Aisaa provider uses free credits - bypass proxy to avoid IP-based rate limits
-            proxy = None if provider_slug == "aisa" else get_proxy_url()
-            with httpx.Client(proxy=proxy, timeout=120.0, verify=False) as client:
-                resp = client.post(url, content=payload, headers=headers)
-
-            latency = int((time.time() - start) * 1000)
-
-            # ── Check response status BEFORE recording success ──
-            # If status >= 400, handle error and try next key
-            if resp.status_code >= 400:
-                code = resp.status_code
-                try: body_err = resp.text[:500]
-                except: body_err = ""
+            except httpx.HTTPStatusError as e:
+                latency = int((time.time() - start) * 1000)
+                code = e.response.status_code
+                body_err = e.response.text[:500]
                 body_err_lower = body_err.lower()
-
-                # ── Determine error type and handle accordingly ──
-                # 412 = Account suspended (Fireworks-specific — could be temporary billing)
-                # 402 = Payment required / depleted
-                # "suspended" = temporarily suspended — admin can reactivate
-                # "insufficient" / "quota" / "spending limit" / "failure to pay" = permanent
-                # 429 = Rate limited (temporary)
-                # 401/403 = Auth error (permanent for prepaid, temp for free)
-
+                
                 is_suspended = (
                     "suspended" in body_err_lower
                     and "insufficient" not in body_err_lower
                     and "quota" not in body_err_lower
                     and "spending" not in body_err_lower
                 )
-
                 is_permanent = (
                     code == 402 or
-                    "insufficient" in body_err_lower or
-                    "quota" in body_err_lower or
-                    "spending limit" in body_err_lower or
-                    "failure to pay" in body_err_lower or
-                    "billing" in body_err_lower and "limit" in body_err_lower
+                    "insufficient" in body_err_lower or "quota" in body_err_lower or
+                    "spending limit" in body_err_lower or "failure to pay" in body_err_lower
                 )
-
+                
                 if is_suspended:
-                    # Temporary suspension — key can be reactivated by admin
                     mark_key_suspended(key_id, f"{code} Account suspended: {body_err[:200]}")
                     error_msg = "SUSPENDED"
-                    app.logger.warning(f"[proxy] Key #{key_id} ({provider_slug}) marked SUSPENDED — {code}: {body_err[:100]}")
                 elif is_permanent:
-                    # Permanent death — account depleted, won't recover
-                    mark_key_dead(key_id, f"{code} Account suspended/depleted: {body_err[:200]}")
-                    error_msg = "ACCOUNT_SUSPENDED"
-                    app.logger.warning(f"[proxy] Key #{key_id} ({provider_slug}) marked DEAD — {code}: {body_err[:100]}")
+                    mark_key_dead(key_id, f"{code} Account depleted: {body_err[:200]}")
+                    error_msg = "ACCOUNT_DEPLETED"
                 elif code == 429:
-                    # Temporary rate limit — rotate to back
                     mark_key_rate_limited(key_id, f"429: {body_err[:200]}")
                     error_msg = "RATE_LIMITED"
                 elif code in (401, 403):
@@ -1203,89 +1353,32 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                 else:
                     mark_key_error(key_id, f"{code}: {body_err[:200]}")
                     error_msg = f"HTTP_{code}"
-
+                    
                 record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
-                tried_keys.append({"key_id": key_id, "error": error_msg, "code": code})
-                continue  # ← Try next key!
-
-            # ── Success — record and return ──
-            bump_key_usage(key_id)
-            record_proxy_request(model_slug, provider_slug, key_id, "ok", latency)
-
-            if is_streaming:
-                def generate():
-                    for chunk in resp.iter_bytes(8192):
-                        yield chunk
-                return Response(stream_with_context(generate()), status=resp.status_code, headers={
-                    "Content-Type": resp.headers.get("Content-Type", "text/event-stream"),
-                    "X-Proxy-Provider": provider_slug, "X-Proxy-Key": str(key_id),
-                    "X-Proxy-Latency": str(latency), "X-Proxy-Model": real_model,
-                })
-            else:
-                # ── Post-process non-streaming responses ──
-                resp_body = resp.content
-                # Strip reasoning/thinking prefix for reasoning-style models
-                model_entry = MODELS.get(model_slug, {})
-                if model_entry.get("style") == "reasoning":
-                    resp_body = strip_reasoning_prefix(resp_body, model_slug)
-
-                return resp_body, resp.status_code, {
-                    "Content-Type": resp.headers.get("Content-Type", "application/json"),
-                    "X-Proxy-Provider": provider_slug, "X-Proxy-Key": str(key_id),
-                    "X-Proxy-Latency": str(latency),
-                }
+                continue  # Try next key
+            
+            except httpx.TimeoutException as e:
+                # Timeout — provider is slow, try next key
+                latency = int((time.time() - start) * 1000)
+                error_msg = "TIMEOUT"
+                mark_key_error(key_id, f"Timeout after {latency}ms")
+                record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
+                app.logger.warning(f"[proxy] Key #{key_id} ({provider_slug}) TIMEOUT after {latency}ms")
+                continue  # Try next key
+            
+            except Exception as e:
+                latency = int((time.time() - start) * 1000)
+                error_msg = str(e)[:200]
+                mark_key_error(key_id, error_msg)
+                record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
+                continue  # Try next key
         
-        except httpx.HTTPStatusError as e:
-            latency = int((time.time() - start) * 1000)
-            code = e.response.status_code
-            body_err = e.response.text[:500]
-            # ── Same logic as above — differentiate suspended vs dead ──
-            body_err_lower = body_err.lower()
-            is_suspended = (
-                "suspended" in body_err_lower
-                and "insufficient" not in body_err_lower
-                and "quota" not in body_err_lower
-                and "spending" not in body_err_lower
-            )
-            is_permanent = (
-                code == 402 or
-                "insufficient" in body_err_lower or "quota" in body_err_lower or
-                "spending limit" in body_err_lower or
-                "failure to pay" in body_err_lower
-            )
-            if is_suspended:
-                mark_key_suspended(key_id, f"{code} Account suspended: {body_err[:200]}")
-                error_msg = "SUSPENDED"
-            elif is_permanent:
-                mark_key_dead(key_id, f"{code} Account suspended/depleted: {body_err[:200]}")
-                error_msg = "ACCOUNT_SUSPENDED"
-            elif code == 429:
-                mark_key_rate_limited(key_id, f"429: {body_err[:200]}")
-                error_msg = "RATE_LIMITED"
-            elif code in (401, 403):
-                if provider_type == "prepaid" or provider_slug == "fireworks":
-                    mark_key_dead(key_id, f"{code} Auth failed: {body_err[:200]}")
-                    error_msg = "DEAD_AUTH"
-                else:
-                    mark_key_error(key_id, f"{code}: {body_err[:200]}")
-                    error_msg = "AUTH_ERROR"
-            else:
-                mark_key_error(key_id, f"{code}: {body_err[:200]}")
-                error_msg = f"HTTP_{code}"
-            record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
-            tried_keys.append({"key_id": key_id, "error": error_msg, "code": code})
-            continue
-        
-        except Exception as e:
-            latency = int((time.time() - start) * 1000)
-            error_msg = str(e)[:200]
-            mark_key_error(key_id, error_msg)
-            record_proxy_request(model_slug, provider_slug, key_id, "error", latency, error_msg)
-            tried_keys.append({"key_id": key_id, "error": error_msg})
-            continue
+        # ── End of inner loop — all untried keys exhausted ──
+        # Continue outer loop to refresh keys and retry
+        app.logger.info(f"[proxy] Refresh check #{retry_count} for {provider_slug}/{model_slug}")
     
-    # All keys failed — try cross-provider fallback before giving up
-    app.logger.warning(f"[proxy] All {len(tried_keys)} keys failed for {provider_slug}/{model_slug}: {tried_keys}")
+    # ── All keys exhausted — try cross-provider fallback ──
+    app.logger.warning(f"[proxy] ALL {len(tried_key_ids)} keys exhausted for {provider_slug}/{model_slug}")
     
     # ── Cross-Provider Fallback ──
     # If this provider has a fallback chain, try the next provider automatically
@@ -1300,10 +1393,12 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
         # Build a modified request with the fallback model
         try:
             body_data = json.loads(body)
-            body_data["model"] = MODELS.get(fb_model, {}).get("real_model", fb_model)
+            body_data["model"] = MODELS.get(fb_model, {}).get("real_model", fb_model) if MODELS.get(fb_model) else fb_model
             fb_body = json.dumps(body_data).encode()
+            fb_is_streaming = body_data.get("stream", False)
         except:
             fb_body = body  # If we can't modify, just forward as-is
+            fb_is_streaming = False
         
         for fb_key in fb_keys:
             fb_key_id = fb_key["id"]
@@ -1329,7 +1424,7 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                     app.logger.info(f"[proxy] Fallback SUCCESS: {fb_provider}/{fb_model} via key #{fb_key_id}")
                     
                     # Add fallback notice in headers
-                    if is_streaming:
+                    if fb_is_streaming:
                         def fb_generate():
                             for chunk in fb_resp.iter_bytes(8192):
                                 yield chunk
@@ -1342,12 +1437,12 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                         })
                     else:
                         # ── Post-process fallback non-streaming responses ──
-                        fb_body = fb_resp.content
+                        fb_resp_body = fb_resp.content
                         fb_model_entry = MODELS.get(fb_model, {})
                         if fb_model_entry.get("style") == "reasoning":
-                            fb_body = strip_reasoning_prefix(fb_body, fb_model)
+                            fb_resp_body = strip_reasoning_prefix(fb_resp_body, fb_model)
 
-                        return fb_body, fb_resp.status_code, {
+                        return fb_resp_body, fb_resp.status_code, {
                             "Content-Type": fb_resp.headers.get("Content-Type", "application/json"),
                             "X-Proxy-Provider": fb_provider, "X-Proxy-Key": str(fb_key_id),
                             "X-Proxy-Latency": str(fb_latency),
@@ -1379,7 +1474,7 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
     
     return format_error_response(
         "ALL_KEYS_EXHAUSTED", model_slug, provider_slug,
-        tried_count=len(tried_keys),
+        tried_count=len(tried_key_ids),
         retry_after_ms=5000,
         is_streaming=is_stream,
     )

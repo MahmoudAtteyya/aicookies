@@ -1141,7 +1141,7 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             
             # Use httpx with optional proxy (API keys don't need per-account proxy)
             # Exception: Aisaa provider uses free credits - bypass proxy to avoid IP-based rate limits
-            proxy = None if provider_slug == "aisaa" else get_proxy_url()
+            proxy = None if provider_slug == "aisa" else get_proxy_url()
             with httpx.Client(proxy=proxy, timeout=120.0, verify=False) as client:
                 resp = client.post(url, content=payload, headers=headers)
 

@@ -3921,7 +3921,14 @@ def delete_cookie_file(file_id):
 @app.route("/docs")
 @login_required
 def docs_page():
-    return render_template("docs.html", models=MODELS)
+    conn = get_db()
+    providers = conn.execute("""SELECT slug, name, base_url, provider_type, 
+        CASE WHEN free_models IS NOT NULL AND free_models != '' 
+             THEN json_array_length(free_models) ELSE 0 END as model_count,
+        (SELECT COUNT(*) FROM api_keys k WHERE k.provider_id = api_providers.id AND k.is_active = 1 AND k.dead = 0) as key_count
+        FROM api_providers ORDER BY name""").fetchall()
+    conn.close()
+    return render_template("docs.html", models=MODELS, providers=providers)
 
 @app.route("/docs.md")
 @login_required
@@ -4908,6 +4915,214 @@ def revive_dead_keys():
             app.logger.info(f"[revive] Revived {revived}/{len(dead)} dead keys (manual trigger)")
         return revived
 
-# ── Main ──────────────────────────────────────────────────────────────────
+# ── Provider Management ────────────────────────────────────────────────────
+
+@app.route("/providers")
+@login_required
+def providers_page():
+    """Provider management page."""
+    conn = get_db()
+    providers = conn.execute("""SELECT p.*, 
+        COUNT(DISTINCT k.id) as key_count,
+        CASE WHEN p.free_models IS NOT NULL AND p.free_models != '' 
+             THEN json_array_length(p.free_models) ELSE 0 END as model_count
+        FROM api_providers p 
+        LEFT JOIN api_keys k ON k.provider_id = p.id AND k.is_active = 1
+        GROUP BY p.id ORDER BY p.name""").fetchall()
+    
+    # Add icons based on provider slug or type
+    icon_map = {
+        'nvidia': '🟢', 'openrouter': '🔵', 'google': '🟡',
+        'fireworks': '🎆', 'openai': '🟣', 'claude': '🧠',
+        'deepseek': '🔮', 'groq': '⚡', 'mistral': '🌪️',
+        'anthropic': '🧠', 'meta': '📘', 'cohere': '🔷'
+    }
+    
+    providers_list = []
+    for p in providers:
+        pd = dict(p)
+        pd['icon'] = icon_map.get(p['slug'], '🔌')
+        providers_list.append(pd)
+    
+    conn.close()
+    return render_template("providers.html", providers=providers_list)
+
+@app.route("/providers/create", methods=["POST"])
+@login_required
+def providers_create():
+    """Create a new provider."""
+    slug = request.form.get("slug", "").strip().lower()
+    name = request.form.get("name", "").strip()
+    base_url = request.form.get("base_url", "").strip()
+    provider_type = request.form.get("provider_type", "free")
+    api_docs_url = request.form.get("api_docs_url", "").strip()
+    free_models = request.form.get("free_models", "").strip()
+    description = request.form.get("description", "").strip()
+    
+    # Validation
+    if not slug or not name or not base_url:
+        flash("Slug, name, and base_url are required", "error")
+        return redirect(url_for("providers_page"))
+    
+    import re
+    if not re.match(r'^[a-z0-9]+(-[a-z0-9]+)*$', slug):
+        flash("Slug must be lowercase letters, numbers, and hyphens only", "error")
+        return redirect(url_for("providers_page"))
+    
+    # Validate JSON models if provided
+    if free_models:
+        try:
+            import json
+            json.loads(free_models)
+        except json.JSONDecodeError:
+            flash("free_models must be valid JSON array", "error")
+            return redirect(url_for("providers_page"))
+    
+    conn = get_db()
+    try:
+        conn.execute("""INSERT INTO api_providers 
+            (slug, name, base_url, provider_type, api_docs_url, free_models, description) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (slug, name, base_url, provider_type, api_docs_url or None, free_models or None, description or None))
+        conn.commit()
+        flash(f"Provider '{name}' created successfully!", "success")
+    except Exception as e:
+        flash(f"Error creating provider: {str(e)}", "error")
+    finally:
+        conn.close()
+    
+    return redirect(url_for("providers_page"))
+
+@app.route("/providers/<int:provider_id>/edit")
+@login_required
+def provider_edit(provider_id):
+    """Edit provider form."""
+    conn = get_db()
+    provider = conn.execute("SELECT p.*, COUNT(k.id) as key_count FROM api_providers p LEFT JOIN api_keys k ON k.provider_id = p.id WHERE p.id = ?", (provider_id,)).fetchone()
+    conn.close()
+    
+    if not provider:
+        flash("Provider not found", "error")
+        return redirect(url_for("providers_page"))
+    
+    return render_template("provider_edit.html", provider=provider)
+
+@app.route("/providers/<int:provider_id>/update", methods=["POST"])
+@login_required
+def provider_update(provider_id):
+    """Update provider."""
+    slug = request.form.get("slug", "").strip().lower()
+    name = request.form.get("name", "").strip()
+    base_url = request.form.get("base_url", "").strip()
+    provider_type = request.form.get("provider_type", "free")
+    api_docs_url = request.form.get("api_docs_url", "").strip()
+    free_models = request.form.get("free_models", "").strip()
+    description = request.form.get("description", "").strip()
+    
+    if not slug or not name or not base_url:
+        flash("Slug, name, and base_url are required", "error")
+        return redirect(url_for("provider_edit", provider_id=provider_id))
+    
+    # Validate JSON models if provided
+    if free_models:
+        try:
+            import json
+            json.loads(free_models)
+        except json.JSONDecodeError:
+            flash("free_models must be valid JSON array", "error")
+            return redirect(url_for("provider_edit", provider_id=provider_id))
+    
+    conn = get_db()
+    try:
+        conn.execute("""UPDATE api_providers 
+            SET slug=?, name=?, base_url=?, provider_type=?, api_docs_url=?, free_models=?, description=?
+            WHERE id=?""",
+            (slug, name, base_url, provider_type, api_docs_url or None, free_models or None, description or None, provider_id))
+        conn.commit()
+        flash(f"Provider '{name}' updated successfully!", "success")
+        return redirect(url_for("providers_page"))
+    except Exception as e:
+        flash(f"Error updating provider: {str(e)}", "error")
+        return redirect(url_for("provider_edit", provider_id=provider_id))
+    finally:
+        conn.close()
+
+@app.route("/providers/<int:provider_id>/delete", methods=["POST"])
+@login_required
+def provider_delete(provider_id):
+    """Delete provider and all associated keys."""
+    conn = get_db()
+    provider = conn.execute("SELECT name FROM api_providers WHERE id = ?", (provider_id,)).fetchone()
+    if not provider:
+        flash("Provider not found", "error")
+        conn.close()
+        return redirect(url_for("providers_page"))
+    
+    key_count = conn.execute("SELECT COUNT(*) FROM api_keys WHERE provider_id = ?", (provider_id,)).fetchone()[0]
+    
+    try:
+        # CASCADE will delete associated keys automatically
+        conn.execute("DELETE FROM api_providers WHERE id = ?", (provider_id,))
+        conn.commit()
+        flash(f"Provider '{provider['name']}' deleted ({key_count} keys removed)", "success")
+    except Exception as e:
+        flash(f"Error deleting provider: {str(e)}", "error")
+    finally:
+        conn.close()
+    
+    return redirect(url_for("providers_page"))
+
+# ── Dynamic Provider Endpoints ─────────────────────────────────────────────
+
+def register_provider_routes():
+    """Register dynamic routes for all providers."""
+    conn = get_db()
+    providers = conn.execute("SELECT slug, base_url FROM api_providers").fetchall()
+    conn.close()
+    
+    for provider in providers:
+        slug = provider['slug']
+        # Dynamic route will be handled in the proxy logic
+
+# ── Provider API Info Endpoint ─────────────────────────────────────────────
+
+@app.route("/api/providers")
+@login_required
+def api_providers_list():
+    """API endpoint to list all providers as JSON."""
+    conn = get_db()
+    providers = conn.execute("""SELECT p.*, 
+        COUNT(DISTINCT k.id) as key_count,
+        CASE WHEN p.free_models IS NOT NULL AND p.free_models != '' 
+             THEN json_array_length(p.free_models) ELSE 0 END as model_count
+        FROM api_providers p 
+        LEFT JOIN api_keys k ON k.provider_id = p.id AND k.is_active = 1 AND k.dead = 0
+        GROUP BY p.id ORDER BY p.name""").fetchall()
+    conn.close()
+    
+    return jsonify({
+        "providers": [dict(p) for p in providers],
+        "total": len(providers)
+    })
+
+@app.route("/api/providers/<slug>")
+@login_required
+def api_provider_detail(slug):
+    """API endpoint to get provider details."""
+    conn = get_db()
+    provider = conn.execute("SELECT * FROM api_providers WHERE slug = ?", (slug,)).fetchone()
+    if not provider:
+        conn.close()
+        return jsonify({"error": "Provider not found"}), 404
+    
+    keys = conn.execute("""SELECT id, label, is_active, dead, suspended, usage_count, last_used_at
+        FROM api_keys WHERE provider_id = ? ORDER BY usage_count DESC""", (provider['id'],)).fetchall()
+    conn.close()
+    
+    result = dict(provider)
+    result['keys'] = [dict(k) for k in keys]
+    return jsonify(result)
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5050, debug=False)

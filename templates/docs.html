@@ -400,6 +400,7 @@ table.api tbody tr:last-child td { border-bottom: none; }
         <li><a href="#fim">17. FIM (Code Completion) <span style="color:var(--red);font-size:10px;">DEPRECATED</span></a></li>
         <li><a href="#moderation">18. Moderation <span style="color:var(--red);font-size:10px;">DEPRECATED</span></a></li>
         <li><a href="#vision">19. Vision/Image Input</a></li>
+        <li><a href="#providers">20. Providers Management</a></li>
       </ol>
     </aside>
 
@@ -1922,6 +1923,86 @@ Example:
               <tr><td>Suspension reason</td><td>412/403 error body</td><td>Suspended accounts</td></tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- ============ PROVIDERS ============ -->
+      <section class="section" id="providers">
+        <div class="section-head">
+          <span class="num">20</span>
+          <h2>Providers Management</h2>
+          <a class="anchor" href="#providers">#</a>
+        </div>
+        <p>
+          The gateway supports <strong>dynamic provider registration</strong> — add new AI providers
+          through the admin UI without code changes. Each provider gets its own base URL and
+          endpoint routing automatically.
+        </p>
+
+        <h3>Manage Providers</h3>
+        <a href="/providers" class="btn" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:var(--r-md);background:linear-gradient(135deg,var(--accent),#7c3aed);color:#fff;text-decoration:none;font-weight:600;font-size:14px;">🔧 Open Provider Management</a>
+
+        <h3 style="margin-top:24px;">Registered Providers</h3>
+        {% if providers and providers|length > 0 %}
+        <div class="tbl-wrap">
+          <table class="api">
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Type</th>
+                <th>Base URL</th>
+                <th>Keys</th>
+                <th>Free Models</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in providers %}
+              <tr>
+                <td><strong><code>{{ p.slug }}</code></strong><br><span style="color:var(--text-dim);font-size:12px;">{{ p.name }}</span></td>
+                <td><span class="badge" style="background:rgba(34,197,94,.14);color:#4ade80;">{{ p.provider_type }}</span></td>
+                <td><code style="font-size:12px;">{{ p.base_url }}</code></td>
+                <td style="text-align:center;"><span class="badge badge-ctx">{{ p.key_count }}</span></td>
+                <td style="text-align:center;"><span class="badge badge-provider">{{ p.model_count }}</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="callout info" style="margin-top:12px;">
+          <span class="ico">ⓘ</span>
+          <div class="body">
+            <strong>No providers registered yet.</strong> Click the button above to add your first provider.
+          </div>
+        </div>
+        {% endif %}
+
+        <h3>Provider Schema</h3>
+        <div class="code-block">
+          <button class="copy-btn">copy</button>
+<pre>CREATE TABLE api_providers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,          -- URL-friendly identifier (e.g. 'openai')
+    name TEXT NOT NULL,                 -- Display name (e.g. 'OpenAI')
+    base_url TEXT NOT NULL,             -- API base URL
+    provider_type TEXT DEFAULT 'free',  -- 'free', 'metered', 'enterprise'
+    api_docs_url TEXT,                  -- Link to official docs
+    free_models TEXT,                   -- JSON array of free model slugs
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);</pre>
+        </div>
+
+        <h3>Key Prefix Auto-Detection</h3>
+        <p>Each provider's API keys are auto-detected by format. Below is the current mapping:</p>
+
+        <div class="callout success" style="margin-top:12px;">
+          <span class="ico">✓</span>
+          <div class="body">
+            <strong>Dynamic routing.</strong> When you add a new provider with its base_url, the gateway
+            automatically routes keys matching its format to the correct upstream endpoint.
+          </div>
         </div>
       </section>
 

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Provider — AI Proxy Gateway{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <nav style="font-size: 0.875rem; color: var(--text-tertiary); margin-bottom: 1rem;">
+        <a href="{{ url_for('providers_page') }}" style="color: var(--text-secondary);">Providers</a>
+        <span style="margin: 0 0.5rem;">/</span>
+        <span>Edit {{ provider.name }}</span>
+    </nav>
+    
+    <h1>Edit Provider: {{ provider.name }}</h1>
+</div>
+
+<div class="card">
+    <form action="{{ url_for('provider_update', provider_id=provider.id) }}" method="POST" style="display: grid; gap: 1rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                    Slug (URL identifier)
+                </label>
+                <input type="text" name="slug" value="{{ provider.slug }}" required
+                    pattern="^[a-z0-9]+(-[a-z0-9]+)*$"
+                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono);">
+            </div>
+            
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                    Display Name
+                </label>
+                <input type="text" name="name" value="{{ provider.name }}" required
+                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+            </div>
+        </div>
+        
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                Base URL
+            </label>
+            <input type="url" name="base_url" value="{{ provider.base_url }}" required
+                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono);">
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                    Provider Type
+                </label>
+                <select name="provider_type"
+                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                    <option value="free" {% if provider.provider_type == 'free' %}selected{% endif %}>Free Tier</option>
+                    <option value="paid" {% if provider.provider_type == 'paid' %}selected{% endif %}>Paid</option>
+                    <option value="prepaid" {% if provider.provider_type == 'prepaid' %}selected{% endif %}>Prepaid Credits</option>
+                    <option value="cookie" {% if provider.provider_type == 'cookie' %}selected{% endif %}>Cookie-based</option>
+                </select>
+            </div>
+            
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                    API Docs URL
+                </label>
+                <input type="url" name="api_docs_url" value="{{ provider.api_docs_url or '' }}"
+                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+            </div>
+        </div>
+        
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                Available Models (JSON array)
+            </label>
+            <textarea name="free_models" rows="4"
+                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono); resize: vertical;">{{ provider.free_models or '' }}</textarea>
+        </div>
+        
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                Description
+            </label>
+            <textarea name="description" rows="3"
+                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); resize: vertical;">{{ provider.description or '' }}</textarea>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+            <a href="{{ url_for('providers_page') }}" style="color: var(--text-secondary); font-size: 0.875rem;">
+                ← Back to Providers
+            </a>
+            <button type="submit" class="btn btn-primary">
+                <span style="margin-right: 0.5rem;">💾</span>
+                Save Changes
+            </button>
+        </div>
+    </form>
+</div>
+
+{% if provider.key_count > 0 %}
+<div class="card" style="margin-top: 1.5rem;">
+    <h4 style="margin-bottom: 1rem;">Associated API Keys ({{ provider.key_count }})</h4>
+    <p style="font-size: 0.875rem; color: var(--text-tertiary);">
+        This provider has {{ provider.key_count }} API key(s) configured. Deleting the provider will also delete all associated keys.
+    </p>
+</div>
+{% endif %}
+{% endblock %}

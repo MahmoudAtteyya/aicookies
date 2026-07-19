@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}Providers Management — AI Proxy Gateway{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <h1>API Providers Management</h1>
+    <p style="margin-top: 0.5rem; color: var(--text-secondary);">
+        Manage API providers, their base URLs, and available models
+    </p>
+</div>
+
+<!-- Add Provider Form -->
+<div class="card" style="margin-bottom: 2rem;">
+    <h3 style="margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span style="font-size: 1.25rem;">➕</span>
+        Add New Provider
+    </h3>
+    
+    <form action="{{ url_for('providers_create') }}" method="POST" style="display: grid; gap: 1rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                    Slug (URL identifier) <span style="color: var(--accent-tertiary);">*</span>
+                </label>
+                <input type="text" name="slug" required
+                    placeholder="e.g., deepseek, groq, mistral"
+                    pattern="^[a-z0-9]+(-[a-z0-9]+)*$"
+                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono);">
+                <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: 0.25rem;">
+                    Lowercase letters, numbers, and hyphens only
+                </div>
+            </div>
+            
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                    Display Name <span style="color: var(--accent-tertiary);">*</span>
+                </label>
+                <input type="text" name="name" required
+                    placeholder="e.g., DeepSeek, Groq, Mistral AI"
+                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+            </div>
+        </div>
+        
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                Base URL <span style="color: var(--accent-tertiary);">*</span>
+            </label>
+            <input type="url" name="base_url" required
+                placeholder="https://api.provider.com/v1"
+                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono);">
+            <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: 0.25rem;">
+                OpenAI-compatible API base URL (e.g., https://api.provider.com/v1)
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                    Provider Type
+                </label>
+                <select name="provider_type"
+                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                    <option value="free">Free Tier</option>
+                    <option value="paid">Paid</option>
+                    <option value="prepaid">Prepaid Credits</option>
+                    <option value="cookie">Cookie-based</option>
+                </select>
+            </div>
+            
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                    API Docs URL
+                </label>
+                <input type="url" name="api_docs_url"
+                    placeholder="https://docs.provider.com"
+                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+            </div>
+        </div>
+        
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                Available Models (JSON array)
+            </label>
+            <textarea name="free_models" rows="3"
+                placeholder='["model-1", "model-2", "model-3"]'
+                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: var(--font-mono); resize: vertical;"></textarea>
+            <div style="font-size: 0.75rem; color: var(--text-tertiary); margin-top: 0.25rem;">
+                JSON array of available model IDs (e.g., ["gpt-4o", "gpt-4o-mini"])
+            </div>
+        </div>
+        
+        <div>
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500;">
+                Description
+            </label>
+            <textarea name="description" rows="2"
+                placeholder="Brief description of the provider and key format..."
+                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); resize: vertical;"></textarea>
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem;">
+            <button type="submit" class="btn btn-primary">
+                <span style="margin-right: 0.5rem;">➕</span>
+                Add Provider
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Providers List -->
+<div style="margin-bottom: 2rem;">
+    <h3 style="margin-bottom: 1rem;">Existing Providers</h3>
+    
+    {% if providers %}
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Provider</th>
+                    <th>Base URL</th>
+                    <th>Type</th>
+                    <th>Models</th>
+                    <th>Keys</th>
+                    <th style="text-align: center;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for provider in providers %}
+                <tr>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <span style="font-size: 1.5rem;">{{ provider.icon }}</span>
+                            <div>
+                                <div style="font-weight: 600;">{{ provider.name }}</div>
+                                <code style="font-size: 0.75rem; background: var(--bg-tertiary); padding: 0.125rem 0.375rem; border-radius: 3px; color: var(--text-tertiary);">
+                                    {{ provider.slug }}
+                                </code>
+                            </div>
+                        </div>
+                    </td>
+                    
+                    <td>
+                        <code style="font-size: 0.75rem; background: var(--bg-tertiary); padding: 0.25rem 0.5rem; border-radius: 4px; display: inline-block; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            {{ provider.base_url }}
+                        </code>
+                    </td>
+                    
+                    <td>
+                        <span class="badge badge-{% if provider.provider_type == 'free' %}success{% elif provider.provider_type == 'prepaid' %}warning{% elif provider.provider_type == 'paid' %}info{% else %}secondary{% endif %}">
+                            {{ provider.provider_type }}
+                        </span>
+                    </td>
+                    
+                    <td style="text-align: center;">
+                        <span style="font-family: var(--font-mono); font-size: 0.875rem; color: var(--text-secondary);">
+                            {{ provider.model_count }}
+                        </span>
+                    </td>
+                    
+                    <td style="text-align: center;">
+                        <span style="font-family: var(--font-mono); font-size: 0.875rem; color: var(--text-secondary);">
+                            {{ provider.key_count }}
+                        </span>
+                    </td>
+                    
+                    <td style="text-align: center;">
+                        <div style="display: flex; gap: 0.5rem; justify-content: center;">
+                            <a href="{{ url_for('provider_edit', provider_id=provider.id) }}" 
+                               class="btn btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                                ✏️ Edit
+                            </a>
+                            <form action="{{ url_for('provider_delete', provider_id=provider.id) }}" method="POST" 
+                                  style="display: inline;" 
+                                  onsubmit="return confirm('Delete {{ provider.name }}? This will also delete all associated keys.');">
+                                <button type="submit" class="btn btn-sm btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                                    🗑️ Delete
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card" style="text-align: center; padding: 3rem;">
+        <p style="color: var(--text-tertiary);">No providers configured yet</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Endpoint Preview -->
+<div class="card">
+    <h3 style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span style="font-size: 1.25rem;">🔌</span>
+        Dynamic Endpoints Preview
+    </h3>
+    <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem;">
+        Each provider automatically gets its own endpoint:
+    </p>
+    <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: 6px; font-family: var(--font-mono); font-size: 0.8125rem;">
+        {% for provider in providers %}
+        <div style="margin-bottom: 0.5rem;">
+            <span style="color: var(--accent-primary);">POST</span>
+            <span style="color: var(--text-secondary); margin-left: 0.75rem;">/v1/{{ provider.slug }}/chat/completions</span>
+            <span style="color: var(--text-tertiary); margin-left: 0.75rem;">→ {{ provider.name }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

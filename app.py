@@ -308,6 +308,18 @@ def _ensure_db_tables():
             app._db_initialized = True
         except Exception as e:
             app.logger.error(f"[init_db] Error in before_request: {e}")
+    
+    # Load models from database on first request
+    global MODELS
+    if not getattr(app, '_models_loaded', False):
+        try:
+            MODELS = get_all_models()
+            app._models_loaded = True
+            app.logger.info(f"[MODELS] Loaded {len(MODELS)} models from database and hardcoded")
+        except Exception as e:
+            app.logger.error(f"[MODELS] Error loading models: {e}")
+            # Fallback to hardcoded only
+            MODELS = dict(HARDCODED_MODELS)
 
 # ── Auth decorator ───────────────────────────────────────────────────────
 def login_required(f):
@@ -380,7 +392,8 @@ def check_login_rate_limit(ip):
 # MODEL REGISTRY — maps model slugs to providers
 # ═══════════════════════════════════════════════════════════════════════════
 
-MODELS = {
+# Hardcoded models (Claude, NVIDIA, OpenRouter, etc.)
+HARDCODED_MODELS = {
     # ───────────────────────────────────────────────────────────────────────
     # Claude (cookie-based — special handling, no API key needed)
     # ───────────────────────────────────────────────────────────────────────
@@ -574,6 +587,67 @@ MODELS = {
         "pricing": {"in": "$1.74", "out": "$3.48", "cached_in": "$0.145"},
     },
 }
+
+def get_all_models():
+    """Get all available models from both hardcoded and provider databases.
+    
+    Returns a dict of model_slug -> model_info
+    """
+    models = dict(HARDCODED_MODELS)
+    
+    try:
+        conn = get_db()
+        providers = conn.execute("""
+            SELECT id, slug, name, base_url, provider_type,
+                   (SELECT COUNT(*) FROM api_keys WHERE provider_id = api_providers.id AND is_active = 1) as key_count
+            FROM api_providers
+        """).fetchall()
+        
+        for provider in providers:
+            provider_models = conn.execute(
+                "SELECT model_slug, display_name FROM provider_models WHERE provider_id = ?",
+                (provider['id'],)
+            ).fetchall()
+            
+            for model in provider_models:
+                model_slug = model['model_slug']
+                # Only add if not already in hardcoded models
+                if model_slug not in models:
+                    models[model_slug] = {
+                        'provider': provider['slug'],
+                        'real_model': model_slug,
+                        'desc': model['display_name'] or model_slug,
+                        'style': 'direct',
+                        'tokens': 128000,  # Default
+                        'developer': provider['name'],
+                        'display_name': model['display_name'] or model_slug,
+                        'max_output': 8192,
+                        'params': 'Unknown',
+                        'capabilities': {
+                            'text': True, 'code': True, 'thinking': False,
+                            'tools': True, 'vision': False, 'web_search': False,
+                            'json': True, 'stream': True
+                        },
+                        'pricing': {'in': 'Unknown', 'out': 'Unknown'},
+                    }
+        
+        conn.close()
+    except Exception as e:
+        app.logger.error(f"[get_all_models] Error loading provider models: {e}")
+    
+    return models
+
+# Initialize MODELS from database (lazy load on first use)
+_MODELS_LOADED = False
+
+def _load_models():
+    """Load models dict, merging hardcoded and database models."""
+    global MODELS, _MODELS_LOADED
+    if not _MODELS_LOADED:
+        MODELS = get_all_models()
+        _MODELS_LOADED = True
+    return MODELS
+
 
 # ── Provider base URLs ──────────────────────────────────────────────────────
 PROVIDER_BASE_URLS = {

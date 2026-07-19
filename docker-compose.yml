@@ -16,12 +16,12 @@ services:
       - PROXY_API_KEY_HASH=39ed4e7fecce75348ef79a2a2fa89dff3e1971022ae405a82d1e79d7b94215be
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - COOKIE_ENCRYPTION_KEY=${COOKIE_ENCRYPTION_KEY:-}
-      # IPRoyal Residential Proxy (no KYC, rotating — sticky via dashboard setting)
-      - PROXY_ENABLED=true
-      - PROXY_USER=7MbCthZqPB0y1E1T
-      - PROXY_PASS=sTj24Oqhz2RPrIM8
-      - PROXY_HOST=geo.iproyal.com
-      - PROXY_PORT=12321
+      # IPRoyal Residential Proxy (disabled - account suspended)
+      # - PROXY_ENABLED=false
+      # - PROXY_USER=7MbCthZqPB0y1E1T
+      # - PROXY_PASS=sTj24Oqhz2RPrIM8
+      # - PROXY_HOST=geo.iproyal.com
+      # - PROXY_PORT=12321
     networks:
       - dokploy-network
     labels:

@@ -216,18 +216,25 @@ function renderModels() {
     hiddenInput.value = JSON.stringify(models);
 }
 
-// Handle Enter key
-document.getElementById('modelInput').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        addModel();
-    }
-});
+// Wait for DOM to load before attaching event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    const modelInput = document.getElementById('modelInput');
+    
+    if (modelInput) {
+        // Handle Enter key
+        modelInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addModel();
+            }
+        });
 
-// Prevent form submission on Enter in model input
-document.getElementById('modelInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
+        // Prevent form submission on Enter in model input
+        modelInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+            }
+        });
     }
 });
 </script>

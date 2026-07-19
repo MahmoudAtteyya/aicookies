@@ -101,14 +101,7 @@
 
 {% block scripts %}
 <script>
-// Initialize models from existing data
 let models = [];
-try {
-    const existingModels = document.getElementById('free_models').value;
-    models = existingModels ? JSON.parse(existingModels) : [];
-} catch (e) {
-    models = [];
-}
 
 function addModel() {
     const input = document.getElementById('modelInput');
@@ -147,22 +140,38 @@ function renderModels() {
     hiddenInput.value = JSON.stringify(models);
 }
 
-// Handle Enter key
-document.getElementById('modelInput').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        addModel();
+// Wait for DOM to load before attaching event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    const modelInput = document.getElementById('modelInput');
+    const hiddenInput = document.getElementById('free_models');
+    
+    // Initialize models from existing data
+    try {
+        const existingModels = hiddenInput.value;
+        models = existingModels ? JSON.parse(existingModels) : [];
+    } catch (e) {
+        models = [];
+    }
+    
+    // Initial render
+    renderModels();
+    
+    if (modelInput) {
+        // Handle Enter key
+        modelInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addModel();
+            }
+        });
+
+        // Prevent form submission on Enter in model input
+        modelInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+            }
+        });
     }
 });
-
-// Prevent form submission on Enter in model input
-document.getElementById('modelInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-    }
-});
-
-// Initial render
-renderModels();
 </script>
 {% endblock %}

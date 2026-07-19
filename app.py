@@ -764,6 +764,140 @@ def parse_netscape_cookies(raw):
 # SMART KEY ROTATION ENGINE — Professional Caching & Retry System
 # ════════════════════════════════════════════════════════════════════════════
 
+
+# ════════════════════════════════════════════════════════════════════════════
+# STREAMING CONTEXT BUFFER — Preserve streaming responses across key rotations
+# ════════════════════════════════════════════════════════════════════════════
+import threading
+import uuid as _uuid
+
+# In-memory stream buffers (use Redis for distributed deployment)
+_STREAM_BUFFERS = {}  # {stream_id: {tokens: [], accumulated_text: str, ...}}
+_STREAM_LOCK = threading.Lock()
+_STREAM_TTL = 300  # 5 minutes
+
+def create_stream_buffer(request_id: str, metadata: dict) -> str:
+    """Create a buffer for streaming response tracking."""
+    stream_id = f"stream_{request_id}_{_uuid.uuid4().hex[:8]}"
+    with _STREAM_LOCK:
+        _STREAM_BUFFERS[stream_id] = {
+            "tokens": [],
+            "accumulated_text": "",
+            "last_checkpoint": 0,
+            "created_at": time.time(),
+            "metadata": metadata,
+            "status": "streaming"
+        }
+        # Cleanup old buffers
+        now = time.time()
+        expired = [k for k, v in _STREAM_BUFFERS.items() if now - v["created_at"] > _STREAM_TTL]
+        for k in expired:
+            del _STREAM_BUFFERS[k]
+    app.logger.debug(f"[stream] Created buffer {stream_id}")
+    return stream_id
+
+def append_stream_token(stream_id: str, token: bytes):
+    """Append token to buffer. Called on every chunk from provider."""
+    with _STREAM_LOCK:
+        if stream_id in _STREAM_BUFFERS:
+            _STREAM_BUFFERS[stream_id]["tokens"].append(token)
+            try:
+                decoded = token.decode('utf-8', errors='ignore')
+                _STREAM_BUFFERS[stream_id]["accumulated_text"] += decoded
+            except:
+                pass
+
+def get_stream_buffer_state(stream_id: str) -> dict:
+    """Get current buffer state for checkpoint/restore."""
+    with _STREAM_LOCK:
+        if stream_id in _STREAM_BUFFERS:
+            buf = _STREAM_BUFFERS[stream_id]
+            return {
+                "token_count": len(buf["tokens"]),
+                "accumulated_text": buf["accumulated_text"],
+                "last_checkpoint": buf["last_checkpoint"],
+                "status": buf["status"]
+            }
+    return None
+
+def checkpoint_stream(stream_id: str, position: int):
+    """Mark checkpoint position for recovery."""
+    with _STREAM_LOCK:
+        if stream_id in _STREAM_BUFFERS:
+            _STREAM_BUFFERS[stream_id]["last_checkpoint"] = position
+
+def finalize_stream_buffer(stream_id: str):
+    """Mark stream as complete, keep for TTL."""
+    with _STREAM_LOCK:
+        if stream_id in _STREAM_BUFFERS:
+            _STREAM_BUFFERS[stream_id]["status"] = "completed"
+            _STREAM_BUFFERS[stream_id]["completed_at"] = time.time()
+
+def inject_continuation_context(original_body: bytes, partial_response: str, model: str) -> bytes:
+    """
+    Inject partial response as context for continuation.
+    
+    Strategy:
+    - Add as system message for chat models
+    - Append to prompt for completion models
+    
+    PROFESSIONAL APPROACH:
+    - Last 1500 chars of partial response
+    - Clear instruction to continue seamlessly
+    - No repetition, no apology, no restart
+    """
+    if not partial_response or len(partial_response) < 50:
+        return original_body
+    
+    try:
+        data = json.loads(original_body)
+        
+        # Extract last N characters (preserve context window)
+        context_window = partial_response[-1500:]
+        
+        # Detect if response was cut mid-sentence
+        last_char = context_window[-1] if context_window else ""
+        is_incomplete = last_char not in ".!?\n"
+        
+        # Craft continuation prompt based on model type
+        if "reasoning" in model.lower() or "o1" in model.lower():
+            # Reasoning models need continuation hint
+            continuation = f"""[STREAM INTERRUPTED — RESUMING]
+
+Previous partial response:
+{context_window}
+
+[Continue reasoning from this point. DO NOT restart.]"""
+        else:
+            # Standard chat models
+            continuation = f"""[STREAM INTERRUPTED — RESUMING]
+
+Previous partial response:
+{context_window}
+
+[Continue EXACTLY from where text cuts off. Do NOT repeat or restart. Pick up mid-sentence if needed.]"""
+        
+        # Chat completions format
+        if "messages" in data:
+            # Add continuation hint as system message
+            data["messages"].append({
+                "role": "system", 
+                "content": continuation,
+                "_continuation": True  # Marker for logging
+            })
+            app.logger.info(f"[stream] Injected {len(partial_response)} chars continuation context")
+        else:
+            # Completion format
+            data["prompt"] = data.get("prompt", "") + "\n\n" + continuation
+        
+        return json.dumps(data).encode()
+    except Exception as e:
+        app.logger.warning(f"[stream] Failed to inject context: {e}")
+        return original_body
+
+# ════════════════════════════════════════════════════════════════════════════
+# KEY CACHE — Reduce DB hits for key lookups
+# ════════════════════════════════════════════════════════════════════════════
 # ── Key Cache Config ──
 _KEY_CACHE_TTL = 30  # seconds —多久 refresh cache
 _KEY_CACHE = {}  # {provider_slug: {"keys": [...], "ts": timestamp}}
@@ -1168,6 +1302,18 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
     max_retries = 50  # Safety limit — don't loop forever
     retry_count = 0
     
+    # ── STREAMING CONTINUATION CONTEXT ──
+    # If we're retrying after a stream interruption, inject partial response
+    partial_response_for_continuation = None
+    stream_buffer_id = request.headers.get("X-Resume-Stream-ID")  # Client can request resume
+    
+    if stream_buffer_id:
+        # Client wants to resume from a previous interrupted stream
+        buf_state = get_stream_buffer_state(stream_buffer_id)
+        if buf_state and buf_state["status"] == "streaming":
+            partial_response_for_continuation = buf_state["accumulated_text"]
+            app.logger.info(f"[stream] Resuming from buffer {stream_buffer_id}: {len(partial_response_for_continuation)} chars")
+    
     while retry_count < max_retries:
         retry_count += 1
         
@@ -1208,7 +1354,15 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
             try:
                 # All current providers use OpenAI-compatible /v1/chat/completions
                 url = f"{base_url}/chat/completions"
-                payload = inject_model_into_body(body, real_model, provider_slug)
+                
+                # ── INJECT CONTINUATION CONTEXT IF AVAILABLE ──
+                # If we're retrying after interruption, add partial response as context
+                request_body = body
+                if partial_response_for_continuation:
+                    request_body = inject_continuation_context(body, partial_response_for_continuation, model_slug)
+                    app.logger.info(f"[stream] Injected continuation context for retry")
+                
+                payload = inject_model_into_body(request_body, real_model, provider_slug)
                 
                 is_streaming = False
                 try:
@@ -1296,13 +1450,46 @@ def proxy_to_provider(provider_slug, real_model, model_slug):
                 record_proxy_request(model_slug, provider_slug, key_id, "ok", latency)
 
                 if is_streaming:
-                    def generate():
-                        for chunk in resp.iter_bytes(8192):
-                            yield chunk
-                    return Response(stream_with_context(generate()), status=resp.status_code, headers={
+                    # Create buffer for streaming response
+                    request_id = str(uuid.uuid4())
+                    stream_id = create_stream_buffer(request_id, {
+                        "provider": provider_slug,
+                        "model": model_slug,
+                        "key_id": key_id
+                    })
+                    
+                    def generate_with_buffer():
+                        """Buffered streaming generator with checkpoint + continuation support."""
+                        token_count = 0
+                        try:
+                            for chunk in resp.iter_bytes(8192):
+                                # Buffer it for potential continuation
+                                append_stream_token(stream_id, chunk)
+                                token_count += 1
+                                
+                                # Checkpoint every 50 tokens
+                                if token_count % 50 == 0:
+                                    checkpoint_stream(stream_id, token_count)
+                                
+                                yield chunk
+                            
+                            # Stream completed successfully
+                            finalize_stream_buffer(stream_id)
+                            app.logger.debug(f"[stream] Completed {stream_id}: {token_count} chunks")
+                        except Exception as e:
+                            # Stream interrupted — buffer state preserved
+                            app.logger.warning(f"[stream] Interrupted {stream_id} at token {token_count}: {e}")
+                            checkpoint_stream(stream_id, token_count)
+                            raise  # Re-raise for potential retry
+                    
+                    return Response(stream_with_context(generate_with_buffer()), status=resp.status_code, headers={
                         "Content-Type": resp.headers.get("Content-Type", "text/event-stream"),
-                        "X-Proxy-Provider": provider_slug, "X-Proxy-Key": str(key_id),
-                        "X-Proxy-Latency": str(latency), "X-Proxy-Model": real_model,
+                        "X-Proxy-Provider": provider_slug, 
+                        "X-Proxy-Key": str(key_id),
+                        "X-Proxy-Latency": str(latency), 
+                        "X-Proxy-Model": real_model,
+                        "X-Stream-ID": stream_id,
+                        "X-Buffer-Enabled": "true"
                     })
                 else:
                     resp_body = resp.content

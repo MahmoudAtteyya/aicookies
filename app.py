@@ -3720,6 +3720,197 @@ def debug_provider(provider_slug):
     })
 
 
+@app.route("/v1/debug/test_provider/<provider_slug>", methods=["POST"])
+def debug_test_provider(provider_slug):
+    """Test all keys for a provider and update their status in database.
+    
+    This endpoint makes ACTUAL API calls to test each key and updates
+    the database with the results. Use this to refresh key status.
+    
+    POST body (optional): {"max_keys": 5} to limit tests
+    """
+    conn = get_db()
+    
+    # Get provider info
+    provider = conn.execute(
+        "SELECT id, slug, name, base_url, provider_type FROM providers WHERE slug=?",
+        (provider_slug,)
+    ).fetchone()
+    
+    if not provider:
+        conn.close()
+        return jsonify({"error": f"Provider '{provider_slug}' not found"}), 404
+    
+    # Get ALL keys for this provider (including dead/suspended)
+    keys = conn.execute(
+        """SELECT id, key_value, is_active, suspended, dead, last_error_msg, usage_count
+           FROM api_keys 
+           WHERE provider_id = ?
+           ORDER BY usage_count ASC, last_error_at DESC NULLS FIRST""",
+        (provider['id'],)
+    ).fetchall()
+    
+    conn.close()
+    
+    if not keys:
+        return jsonify({
+            "provider": dict(provider),
+            "message": "No keys found for this provider"
+        })
+    
+    # Test each key
+    import httpx
+    test_results = []
+    
+    # Limit tests if requested
+    body = request.get_json(silent=True) or {}
+    max_keys = body.get('max_keys', len(keys))
+    keys_to_test = keys[:max_keys]
+    
+    for key_info in keys_to_test:
+        key_id = key_info['id']
+        key_val = key_info['key_value']
+        was_status = "active" if key_info['is_active'] and not key_info['dead'] and not key_info['suspended'] else "inactive"
+        
+        # Make test request
+        test_url = f"{provider['base_url'].rstrip('/')}/chat/completions"
+        test_payload = json.dumps({
+            "model": (conn.execute("SELECT model_slug FROM provider_models WHERE provider_id=?", (provider['id'],)).fetchone() or {}).get('model_slug', 'kimi-k3'),
+            "messages": [{"role": "user", "content": "test"}],
+            "max_tokens": 1
+        }).encode()
+        
+        test_headers = {
+            "Authorization": f"Bearer {key_val}",
+            "Content-Type": "application/json"
+        }
+        
+        start_time = time.time()
+        result = {
+            "key_id": key_id,
+            "key_preview": key_val[:20] + "...",
+            "was_status": was_status,
+        }
+        
+        try:
+            with httpx.Client(timeout=20.0, verify=False) as client:
+                resp = client.post(test_url, content=test_payload, headers=test_headers)
+            
+            elapsed = time.time() - start_time
+            
+            if resp.status_code == 200:
+                # Key is working!
+                result['new_status'] = 'active'
+                result['result'] = 'SUCCESS'
+                result['response_time'] = f"{elapsed:.2f}s"
+                
+                # Update database: mark as ACTIVE
+                conn = get_db()
+                conn.execute(
+                    "UPDATE api_keys SET is_active=1, dead=0, suspended=0, last_error_msg=NULL, last_error_at=NULL WHERE id=?",
+                    (key_id,)
+                )
+                conn.commit()
+                conn.close()
+                
+            elif resp.status_code in (401, 403):
+                # Auth error - permanently dead
+                result['new_status'] = 'dead'
+                result['result'] = f'HTTP {resp.status_code}'
+                result['error'] = resp.text[:100]
+                
+                conn = get_db()
+                conn.execute(
+                    "UPDATE api_keys SET is_active=0, dead=1, last_error_msg=?, last_error_at=? WHERE id=?",
+                    (f"HTTP {resp.status_code} Auth failed", datetime.now().isoformat(), key_id)
+                )
+                conn.commit()
+                conn.close()
+                
+            elif resp.status_code == 402:
+                # Payment required - mark as suspended (might be temporary)
+                result['new_status'] = 'suspended'
+                result['result'] = 'HTTP 402 Payment Required'
+                result['error'] = resp.text[:100]
+                
+                conn = get_db()
+                conn.execute(
+                    "UPDATE api_keys SET is_active=0, suspended=1, last_error_msg=?, last_error_at=? WHERE id=?",
+                    ("HTTP 402 Payment Required", datetime.now().isoformat(), key_id)
+                )
+                conn.commit()
+                conn.close()
+                
+            elif resp.status_code == 429:
+                # Rate limited - temporary, keep as active but note error
+                result['new_status'] = 'rate_limited'
+                result['result'] = 'HTTP 429 Rate Limited'
+                
+                conn = get_db()
+                conn.execute(
+                    "UPDATE api_keys SET last_error_msg=?, last_error_at=? WHERE id=?",
+                    ("HTTP 429 Rate Limited", datetime.now().isoformat(), key_id)
+                )
+                conn.commit()
+                conn.close()
+                
+            else:
+                # Other error
+                result['new_status'] = 'error'
+                result['result'] = f'HTTP {resp.status_code}'
+                result['error'] = resp.text[:100]
+                
+                conn = get_db()
+                conn.execute(
+                    "UPDATE api_keys SET last_error_msg=?, last_error_at=? WHERE id=?",
+                    (f"HTTP {resp.status_code}: {resp.text[:100]}", datetime.now().isoformat(), key_id)
+                )
+                conn.commit()
+                conn.close()
+                
+        except httpx.TimeoutException:
+            elapsed = time.time() - start_time
+            result['new_status'] = 'timeout'
+            result['result'] = 'TIMEOUT'
+            result['response_time'] = f"{elapsed:.2f}s"
+            
+            # Don't mark as dead on timeout, just log it
+            conn = get_db()
+            conn.execute(
+                "UPDATE api_keys SET last_error_msg=?, last_error_at=? WHERE id=?",
+                (f"Timeout after {elapsed:.1f}s", datetime.now().isoformat(), key_id)
+            )
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            result['new_status'] = 'error'
+            result['result'] = 'EXCEPTION'
+            result['error'] = str(e)[:100]
+        
+        test_results.append(result)
+        
+        # Small delay between tests
+        time.sleep(0.5)
+    
+    # Summary
+    summary = {
+        "total_tested": len(test_results),
+        "active": sum(1 for r in test_results if r['new_status'] == 'active'),
+        "dead": sum(1 for r in test_results if r['new_status'] == 'dead'),
+        "suspended": sum(1 for r in test_results if r['new_status'] == 'suspended'),
+        "timeout": sum(1 for r in test_results if r['new_status'] == 'timeout'),
+        "errors": sum(1 for r in test_results if r['new_status'] in ('error', 'rate_limited')),
+    }
+    
+    return jsonify({
+        "provider": dict(provider),
+        "summary": summary,
+        "tested_at": datetime.now().isoformat(),
+        "results": test_results
+    })
+
+
 @app.after_request
 def add_cors_headers(response):
     """Add CORS headers for API endpoints only. Frontend pages are protected."""

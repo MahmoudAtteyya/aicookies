@@ -756,6 +756,76 @@ def normalize_model_name(model_id: str) -> str:
     # Return original if no alias found
     return model_id
 
+# ── Auto Model Discovery System ───────────────────────────────────────────────
+def discover_provider_models(provider_id: int, api_base_url: str, api_key: str):
+    """
+    Automatically discover and register models for a provider.
+    
+    Calls the provider's /v1/models endpoint and adds missing models to database.
+    Called when a provider is added or when manually triggered.
+    """
+    try:
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        
+        # Try to fetch models from provider
+        models_url = f"{api_base_url.rstrip('/')}/v1/models"
+        
+        with httpx.Client(timeout=30.0, verify=False) as client:
+            resp = client.get(models_url, headers=headers)
+        
+        if resp.status_code != 200:
+            app.logger.warning(f"[auto-discover] Failed to fetch models from {api_base_url}: {resp.status_code}")
+            return 0
+        
+        data = resp.json()
+        models_data = data.get("data", [])
+        
+        if not models_data:
+            app.logger.warning(f"[auto-discover] No models returned from {api_base_url}")
+            return 0
+        
+        # Get database connection
+        conn = get_db_connection()
+        c = conn.cursor()
+        
+        added_count = 0
+        
+        for model in models_data:
+            model_id = model.get("id")
+            if not model_id:
+                continue
+            
+            # Check if model already exists
+            c.execute("SELECT id FROM models WHERE provider_id = ? AND model_slug = ?", 
+                     (provider_id, model_id))
+            if c.fetchone():
+                continue  # Already exists
+            
+            # Extract model info
+            display_name = model.get("display_name") or model.get("name") or model_id
+            description = model.get("description") or display_name
+            
+            # Determine endpoint based on provider style
+            endpoint = f"/v1/{model_id}/chat/completions"
+            
+            # Add model
+            c.execute("""
+                INSERT INTO models (provider_id, model_slug, display_name, description, endpoint, active, created_at)
+                VALUES (?, ?, ?, ?, ?, 1, datetime('now'))
+            """, (provider_id, model_id, display_name, description, endpoint))
+            
+            added_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        app.logger.info(f"[auto-discover] Added {added_count} models for provider {provider_id}")
+        return added_count
+        
+    except Exception as e:
+        app.logger.error(f"[auto-discover] Error discovering models: {e}")
+        return 0
+
 # ── Auto-detect provider from API key format ────────────────────────────────
 def detect_provider_from_key(api_key):
     """Automatically detect which provider an API key belongs to based on its format/prefix.
@@ -4631,6 +4701,62 @@ def reload_models():
         'status': 'ok',
         'models_count': len(MODELS),
         'message': f'Reloaded {len(MODELS)} models from database'
+    })
+
+@app.route('/v1/providers/<provider_slug>/discover', methods=['POST'])
+def discover_models(provider_slug):
+    """
+    Auto-discover models for a provider.
+    
+    Calls the provider's /v1/models endpoint and adds missing models to database.
+    Requires admin API key.
+    """
+    # Auth check
+    auth_err = check_proxy_auth()
+    if auth_err:
+        return auth_err
+    
+    # Get provider info
+    conn = get_db()
+    provider = conn.execute("""
+        SELECT id, slug, name, api_base_url 
+        FROM api_providers 
+        WHERE slug = ? AND active = 1
+    """, (provider_slug,)).fetchone()
+    conn.close()
+    
+    if not provider:
+        return jsonify({'error': 'Provider not found'}), 404
+    
+    provider_id, slug, name, api_base_url = provider
+    
+    # Get an active API key for this provider
+    conn = get_db()
+    key_row = conn.execute("""
+        SELECT key_value 
+        FROM api_keys 
+        WHERE provider_id = ? AND is_active = 1 AND dead = 0 
+        LIMIT 1
+    """, (provider_id,)).fetchone()
+    conn.close()
+    
+    if not key_row:
+        return jsonify({'error': 'No active keys found for this provider'}), 400
+    
+    api_key = key_row[0]
+    
+    # Discover models
+    added_count = discover_provider_models(provider_id, api_base_url or f"https://api.{slug}.io/v1", api_key)
+    
+    # Reload models cache
+    global MODELS
+    MODELS = get_all_models()
+    
+    return jsonify({
+        'status': 'ok',
+        'provider': slug,
+        'models_discovered': added_count,
+        'total_models': len([m for m in MODELS.values() if m.get('provider') == slug])
     })
 
 @app.route("/v1/models", methods=["GET"])

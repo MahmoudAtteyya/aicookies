@@ -695,6 +695,67 @@ PROVIDER_BASE_URLS = {
     "fireworks": "https://api.fireworks.ai/inference/v1",
 }
 
+# ── Model Alias System ───────────────────────────────────────────────────────
+# Accept multiple names for same model (compatibility layer for Z-Code, etc.)
+#
+_MODEL_ALIASES = {
+    # Z-Code / TokenRouter compatibility aliases
+    "z-ai/glm-5": "fireworks/accounts/fireworks/models/glm-5p2",
+    "z-ai/glm-5-free": "fireworks/accounts/fireworks/models/glm-5p2",
+    "z-ai/glm-5.2-free": "fireworks/accounts/fireworks/models/glm-5p2",
+    "glm-5": "fireworks/accounts/fireworks/models/glm-5p2",
+    "glm-5-free": "fireworks/accounts/fireworks/models/glm-5p2",
+    
+    # Kimi models (short names)
+    "kimi-k3": "aisa/kimi-k3",
+    "kimi": "aisa/kimi-k3",
+    
+    # Qwen models
+    "qwen-plus": "fireworks/accounts/fireworks/models/qwen3p7-plus",
+    "qwen3.7-plus": "fireworks/accounts/fireworks/models/qwen3p7-plus",
+    
+    # TokenRouter prefix compatibility
+    "tokenrouter/z-ai/glm-5.2-free": "fireworks/accounts/fireworks/models/glm-5p2",
+    "tokenrouter/z-ai/glm-5-free": "fireworks/accounts/fireworks/models/glm-5p2",
+    "tokenrouter/z-ai/glm-5": "fireworks/accounts/fireworks/models/glm-5p2",
+}
+
+def normalize_model_name(model_id: str) -> str:
+    """
+    Normalize model name to canonical form using alias map.
+    
+    Examples:
+    - "glm-5" → "fireworks/accounts/fireworks/models/glm-5p2"
+    - "kimi-k3" → "aisa/kimi-k3"
+    - "aisa/kimi-k3" → "aisa/kimi-k3" (unchanged if no alias)
+    - "tokenrouter/z-ai/glm-5.2-free" → "fireworks/accounts/fireworks/models/glm-5p2"
+    """
+    if not model_id:
+        return model_id
+    
+    model_lower = model_id.lower().strip()
+    
+    # Check exact match first
+    if model_lower in _MODEL_ALIASES:
+        return _MODEL_ALIASES[model_lower]
+    
+    # Check partial match (for tokenrouter/ prefix, etc.)
+    if "/" in model_lower:
+        parts = model_lower.split("/", 1)
+        if len(parts) == 2:
+            # Try without first part (tokenrouter → glm-5)
+            without_prefix = parts[1]
+            if without_prefix in _MODEL_ALIASES:
+                return _MODEL_ALIASES[without_prefix]
+            
+            # Try with 'z-ai' prefix (tokenrouter/z-ai/glm-5 → z-ai/glm-5)
+            zai_key = f"z-ai/{without_prefix}"
+            if zai_key in _MODEL_ALIASES:
+                return _MODEL_ALIASES[zai_key]
+    
+    # Return original if no alias found
+    return model_id
+
 # ── Auto-detect provider from API key format ────────────────────────────────
 def detect_provider_from_key(api_key):
     """Automatically detect which provider an API key belongs to based on its format/prefix.
